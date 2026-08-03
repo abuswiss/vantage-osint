@@ -36,9 +36,9 @@ const CHINA_BASKET: StockEntry[] = [
   { symbol: '0857.HK', name: 'PetroChina', display: 'PETROCHINA-H' },
 ];
 
+// Single-variant product: only the geopolitical 'full' feed block remains.
 const CLIENT_VARIANT_BLOCKS: Record<string, string> = {
   full: 'FULL_FEEDS',
-  finance: 'FINANCE_FEEDS',
 };
 
 function clientCategoryBlock(variant: string, category: string): string | null {
@@ -117,11 +117,12 @@ describe('China A/H-share market coverage (#5272)', () => {
 });
 
 describe('China client/server news digest parity (#5272)', () => {
+  // The finance-variant PBoC Watch check was removed with the single-variant
+  // strip — the finance feed set no longer exists on either side.
   const expectedMembership = new Map<string, { variant: string; category: string }>([
     ['Xinhua', { variant: 'full', category: 'asia' }],
     ['MIIT (China)', { variant: 'full', category: 'asia' }],
     ['MOFCOM (China)', { variant: 'full', category: 'asia' }],
-    ['PBoC Watch', { variant: 'finance', category: 'centralbanks' }],
   ]);
 
   for (const [name, { variant, category }] of expectedMembership) {
@@ -131,12 +132,6 @@ describe('China client/server news digest parity (#5272)', () => {
       assert.notEqual(clientRoute, null, `${name} must remain in client ${category}`);
       assert.notEqual(serverRoute, null, `${name} must be present in server ${category}`);
       assert.equal(serverRoute, clientRoute, `${name} client/server routing class drifted`);
-      const otherVariant = variant === 'full' ? 'finance' : 'full';
-      assert.equal(
-        clientRouteClass(otherVariant, category, name),
-        null,
-        `${name} must not be found in client ${otherVariant}.${category}`,
-      );
     });
   }
 

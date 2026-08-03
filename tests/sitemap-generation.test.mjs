@@ -49,7 +49,11 @@ describe('root sitemap generator', () => {
     assert.ok(locations.includes(`${SITE_ORIGIN}/pro`));
     assert.ok(locations.includes('https://worldmonitor.app/mcp'));
     assert.ok(locations.includes(`${SITE_ORIGIN}/pricing.md`));
-    assert.ok(locations.includes('https://tech.worldmonitor.app/dashboard'));
+    // Single-variant product: no variant subdomain dashboards may be listed.
+    assert.ok(
+      locations.every((loc) => /^(?:www\.)?worldmonitor\.app$/.test(new URL(loc).hostname)),
+      'sitemap manifest must only contain apex/www URLs (variant subdomains were removed)',
+    );
     assert.ok(locations.every((loc) => !new URL(loc).pathname.startsWith('/blog')));
     assert.ok(locations.every((loc) => !new URL(loc).pathname.startsWith('/docs')));
 

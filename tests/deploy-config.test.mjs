@@ -35,7 +35,7 @@ const dockerignoreSource = readFileSync(resolve(__dirname, '../.dockerignore'), 
 const vercelIgnoreSource = readFileSync(resolve(__dirname, '../scripts/vercel-ignore.sh'), 'utf-8');
 const SPA_HTML_CACHE_SOURCE = '/((?!api|mcp|a2a|ask|oauth|assets|blog|docs|countries|chokepoints|crises|tools|research|reference|changelog|embed|embed\\.html|favico|map-styles|data|textures|pro|sw\\.js|workbox-[a-f0-9]+\\.js|manifest\\.webmanifest|offline\\.html|robots\\.txt|sitemap\\.xml|schemamap\\.xml|sandbox|llms\\.txt|llms-full\\.txt|openapi\\.yaml|openapi\\.json|auth\\.md|pricing\\.md|support\\.md|ai-search\\.md|agents\\.md|developers\\.md|developers/llms\\.txt|mcp-server\\.md|openapi\\.md|sdks\\.md|agent\\.txt|\\.well-known|wm-widget-sandbox\\.html|mcp-grant\\.html|mcp-grant).*)';
 const GLOBAL_SECURITY_HEADER_SOURCE = '/((?!docs|embed|embed\\.html).*)';
-const APP_ROOT_HOST_PATTERN = '^(?:(?:www|tech|finance|commodity|happy|energy)\\.)?worldmonitor\\.app$';
+const APP_ROOT_HOST_PATTERN = '^(?:www\\.)?worldmonitor\\.app$';
 const GLOBAL_CSP_INLINE_SCRIPT_HTML_FILES = [
   'index.html',
   'settings.html',
@@ -501,11 +501,8 @@ describe('deploy/cache configuration guardrails', () => {
 const DASHBOARD_HTML_DESTINATION = '/dashboard.html';
 
 // Root marketing landing page — a second HTML entry in the pro-test bundle
-// (vite rollupOptions.input), served from public/pro/welcome.html on the full
-// site and app variant roots. Variant dashboards live at /dashboard so the root
-// welcome route is consistent across worldmonitor.app, finance.worldmonitor.app,
-// tech.worldmonitor.app, commodity.worldmonitor.app, happy.worldmonitor.app, and
-// energy.worldmonitor.app.
+// (vite rollupOptions.input), served from public/pro/welcome.html on the
+// apex/www app roots. The dashboard lives at /dashboard.
 // The dashboard source template remains index.html, but the web build renames
 // its output to dashboard.html so Vercel's filesystem cannot shadow the /
 // rewrite. /welcome and /index.html redirect to root so crawlers and humans do
@@ -566,49 +563,38 @@ describe('welcome landing page routing', () => {
     assert.equal(rootDestinationForHost('www.worldmonitor.app'), '/pro/welcome.html');
     assert.equal(rootDestinationForHost('worldmonitor.app.evil.example'), DASHBOARD_HTML_DESTINATION);
 
-    const variantHosts = getVariantHosts().filter((host) => host !== 'www.worldmonitor.app');
-    for (const host of variantHosts) {
+    // Single-variant product: the removed variant subdomains are no longer
+    // recognized app roots.
+    for (const host of ['tech.worldmonitor.app', 'finance.worldmonitor.app', 'energy.worldmonitor.app']) {
       assert.equal(
         rootDestinationForHost(host),
-        '/pro/welcome.html',
-        `${host}/ must serve the welcome page; the variant dashboard route is /dashboard`
+        DASHBOARD_HTML_DESTINATION,
+        `${host}/ must not be treated as an app root after the variant subdomains were removed`
       );
     }
   });
 
-  it('keeps variant canonicals aligned with the /dashboard routing strategy', () => {
+  it('keeps the single full-variant canonical aligned with the /dashboard routing strategy', () => {
     const variantUrls = getVariantUrls();
     assert.equal(variantUrls.full, 'https://www.worldmonitor.app/dashboard');
-
-    const nonFullUrls = Object.entries(variantUrls).filter(([variant]) => variant !== 'full');
-    assert.ok(nonFullUrls.length >= 5, 'expected non-full variant metadata entries');
-    for (const [variant, url] of nonFullUrls) {
-      assert.equal(
-        new URL(url).pathname,
-        '/dashboard',
-        `${variant} canonical must point at /dashboard while the root serves welcome`
-      );
-    }
+    assert.deepEqual(
+      Object.keys(variantUrls),
+      ['full'],
+      'variant-meta.ts must only define the full variant (single-variant product)'
+    );
   });
 
-  it('keeps variant crawler-stub canonicals aligned with variant metadata', () => {
-    const variantUrls = getVariantUrls();
-    const nonFullUrls = Object.entries(variantUrls).filter(([variant]) => variant !== 'full');
-
-    for (const [variant, url] of nonFullUrls) {
-      assert.match(
-        middlewareSource,
-        new RegExp(`\\b${variant}:\\s*\\{[\\s\\S]*?url:\\s*'${escapeRegExp(url)}'`),
-        `${variant} crawler-stub OG/canonical URL must match variant-meta.ts`
-      );
-    }
-
-    for (const variant of ['full', 'tech', 'finance', 'commodity', 'happy']) {
+  it('keeps variant crawler-stub machinery out of middleware.ts', () => {
+    for (const variant of ['tech', 'finance', 'commodity', 'happy', 'energy']) {
       assert.ok(
-        middlewareSource.includes(`href="${variantUrls[variant]}"`),
-        `AI crawler body must link ${variant} to its dashboard canonical`
+        !middlewareSource.includes(`${variant}.worldmonitor.app`),
+        `middleware.ts must not reference the removed ${variant} subdomain`
       );
     }
+    assert.ok(
+      !middlewareSource.includes('VARIANT_HOST_MAP') && !middlewareSource.includes('VARIANT_OG'),
+      'middleware.ts must not keep the variant host map or crawler-stub metadata'
+    );
   });
 
   it('redirects legacy root map-state deep links to /dashboard before welcome routing', () => {
@@ -635,8 +621,6 @@ describe('welcome landing page routing', () => {
   });
 
   it('rewrites /dashboard to the existing SPA shell', () => {
-    // Host-conditioned variant rules (#4996) sit in front; the fallback for
-    // every other host is the un-conditioned rule.
     const rewrite = vercelConfig.rewrites.find((r) => r.source === '/dashboard' && !r.has);
     assert.ok(rewrite, 'expected an un-conditioned rewrite for /dashboard');
     assert.equal(rewrite.destination, DASHBOARD_HTML_DESTINATION);
@@ -751,8 +735,8 @@ describe('welcome landing page routing', () => {
     );
     for (const host of ['tech', 'finance', 'commodity', 'happy', 'energy']) {
       assert.ok(
-        sitemap.includes(`<loc>https://${host}.worldmonitor.app/dashboard</loc>`),
-        `public/sitemap.xml must list https://${host}.worldmonitor.app/dashboard`
+        !sitemap.includes(`<loc>https://${host}.worldmonitor.app/dashboard</loc>`),
+        `public/sitemap.xml must not list the removed https://${host}.worldmonitor.app/dashboard`
       );
     }
     assert.ok(
@@ -1684,14 +1668,19 @@ describe('agent readiness: api-catalog + openapi build', () => {
   it('every web-variant build chains npm run build:openapi', () => {
     // build:desktop and build:pro are intentionally excluded — Tauri
     // sidecar builds and the standalone pro-test workspace don't ship
-    // the OpenAPI spec.
-    const webVariants = ['build:full', 'build:tech', 'build:finance', 'build:happy', 'build:commodity'];
-    for (const variant of webVariants) {
-      const script = pkg.scripts[variant];
-      assert.ok(script, `package.json must define scripts["${variant}"]`);
-      assert.ok(
-        script.includes('npm run build:openapi'),
-        `scripts["${variant}"] must chain "npm run build:openapi" so the web bundle ships the spec; got: ${script}`
+    // the OpenAPI spec. Single-variant product: build:full is the only
+    // web variant build; the removed variant builds must stay removed.
+    const script = pkg.scripts['build:full'];
+    assert.ok(script, 'package.json must define scripts["build:full"]');
+    assert.ok(
+      script.includes('npm run build:openapi'),
+      `scripts["build:full"] must chain "npm run build:openapi" so the web bundle ships the spec; got: ${script}`
+    );
+    for (const legacy of ['build:tech', 'build:finance', 'build:happy', 'build:commodity', 'build:energy']) {
+      assert.equal(
+        pkg.scripts[legacy],
+        undefined,
+        `package.json must not reintroduce scripts["${legacy}"] (single-variant product)`
       );
     }
   });
@@ -2455,90 +2444,55 @@ describe('agent readiness: registry branding + ARD catalog', () => {
   });
 });
 
-describe('variant subdomain dashboard SEO (#4996)', () => {
-  // No hardcoded variant list: every set is extracted from its real source
-  // and compared BIDIRECTIONALLY, so adding a variant to any one surface
-  // (middleware host map, generator, vercel.json rewrites) without the
-  // others fails here instead of shipping a subdomain with full-brand meta.
+describe('variant subdomain dashboard SEO (#4996) — removed with the single-variant reduction', () => {
+  // The multi-variant deployment served tech/finance/commodity/happy/energy
+  // subdomains via host-conditioned /dashboard rewrites, a middleware host
+  // map, and a build-time dashboard-<variant>.html generator. All three
+  // surfaces were deleted; these tests pin the removal so the machinery is
+  // not partially reintroduced.
   const dashboardRewrites = vercelConfig.rewrites.filter((r) => r.source === '/dashboard');
 
-  const rewriteVariants = dashboardRewrites
-    .filter((r) => r.has)
-    .map((r) => {
-      const host = (r.has ?? []).find((h) => h.type === 'host')?.value ?? '';
-      return host.replace('.worldmonitor.app', '');
-    })
-    .sort();
-
-  const middlewareVariants = [...middlewareSource.matchAll(/'([a-z]+)\.worldmonitor\.app': '([a-z]+)'/g)]
-    .map((m) => m[2])
-    .sort();
-
-  const variantHtmlSource = readFileSync(resolve(__dirname, '../src/config/variant-dashboard-html.ts'), 'utf-8');
-  const generatorArrayMatch = variantHtmlSource.match(/WEB_DASHBOARD_VARIANTS = \[([^\]]+)\]/);
-  const generatorVariants = (generatorArrayMatch?.[1] ?? '')
-    .split(',')
-    .map((s) => s.trim().replace(/['"]/g, ''))
-    .filter(Boolean)
-    .sort();
-
-  it('extracted all three variant sets (extraction regressions fail loudly)', () => {
-    assert.ok(rewriteVariants.length > 0, 'no host-conditioned /dashboard rewrites found in vercel.json');
-    assert.ok(middlewareVariants.length > 0, 'VARIANT_HOST_MAP extraction from middleware.ts found nothing');
-    assert.ok(generatorVariants.length > 0, 'WEB_DASHBOARD_VARIANTS extraction from variant-dashboard-html.ts found nothing');
-  });
-
-  it('vercel.json rewrites, middleware host map, and the generator cover the SAME variant set (bidirectional)', () => {
-    assert.deepEqual(rewriteVariants, middlewareVariants, 'vercel.json /dashboard host rewrites vs middleware VARIANT_HOST_MAP diverged');
-    assert.deepEqual(rewriteVariants, generatorVariants, 'vercel.json /dashboard host rewrites vs WEB_DASHBOARD_VARIANTS diverged');
-  });
-
-  it('each variant host rewrite targets its generated variant file', () => {
-    for (const rule of dashboardRewrites.filter((r) => r.has)) {
-      const host = (rule.has ?? []).find((h) => h.type === 'host')?.value ?? '';
-      const variant = host.replace('.worldmonitor.app', '');
-      assert.match(host, /^[a-z]+\.worldmonitor\.app$/, `unexpected host condition shape: ${host}`);
-      assert.strictEqual(
-        rule.destination,
-        `/dashboard-${variant}.html`,
-        `${host} rewrite must target the build-generated variant file`
+  it('vercel.json has exactly one un-conditioned /dashboard rewrite and no variant host rules', () => {
+    assert.strictEqual(dashboardRewrites.length, 1, 'exactly one /dashboard rewrite expected');
+    assert.strictEqual(dashboardRewrites[0].has, undefined, 'the /dashboard rewrite must not be host-conditioned');
+    assert.strictEqual(dashboardRewrites[0].destination, DASHBOARD_HTML_DESTINATION);
+    for (const rule of vercelConfig.rewrites) {
+      assert.ok(
+        !/^\/dashboard-[a-z]+\.html$/.test(rule.destination ?? ''),
+        `no rewrite may target a generated variant dashboard file: ${rule.destination}`
       );
     }
   });
 
-  it('keeps the host-specific rules BEFORE the generic /dashboard rewrite (order is match priority)', () => {
-    const genericIndex = dashboardRewrites.findIndex((r) => !r.has);
-    assert.ok(genericIndex >= 0, 'generic /dashboard -> /dashboard.html rewrite must exist');
-    assert.strictEqual(
-      genericIndex,
-      dashboardRewrites.length - 1,
-      'the un-conditioned /dashboard rewrite must come last so host rules win'
+  it('middleware.ts keeps no variant host map', () => {
+    assert.ok(!middlewareSource.includes('VARIANT_HOST_MAP'), 'middleware VARIANT_HOST_MAP must stay removed');
+    assert.deepEqual(
+      [...middlewareSource.matchAll(/'([a-z]+)\.worldmonitor\.app': '([a-z]+)'/g)],
+      [],
+      'middleware.ts must not map variant subdomains'
     );
-    assert.strictEqual(dashboardRewrites.length, rewriteVariants.length + 1, 'exactly one un-conditioned /dashboard rewrite expected');
   });
 
-  it('vite build emits the variant dashboard files the rewrites point at (web full build only)', () => {
-    assert.match(
-      viteConfigSource,
-      /!isDesktopBuild && activeVariant === 'full' && variantDashboardHtmlPlugin\(\)/,
-      'variantDashboardHtmlPlugin must be registered for web full builds'
+  it('the variant dashboard HTML generator stays deleted (vite plugin + config module)', () => {
+    assert.ok(
+      !existsSync(resolve(__dirname, '../src/config/variant-dashboard-html.ts')),
+      'src/config/variant-dashboard-html.ts must stay deleted'
+    );
+    assert.ok(
+      !viteConfigSource.includes('variantDashboardHtmlPlugin'),
+      'vite.config.ts must not register the variant dashboard HTML plugin'
     );
   });
 });
 
 describe('docs host scoping — Mintlify proxy is www-only (#5345)', () => {
   // The /docs rewrite proxies worldmonitor.mintlify.dev with no host condition,
-  // so every variant subdomain served the full docs site and Googlebot crawled
-  // the duplicates. Redirects run before rewrites on Vercel, so a host-scoped
-  // redirect entry is what keeps subdomain /docs requests from reaching the
-  // proxy. The host list is derived from the /dashboard variant rewrites so a
-  // new variant subdomain cannot ship outside the docs redirect.
+  // so any other serving host would expose duplicate docs to crawlers.
+  // Redirects run before rewrites on Vercel, so a host-scoped redirect entry
+  // is what keeps api.worldmonitor.app /docs requests from reaching the proxy.
   const docsHostRedirect = vercelConfig.redirects.find(
     (r) => r.source === '/docs/:match*' && r.has
   );
-  const variantHosts = vercelConfig.rewrites
-    .filter((r) => r.source === '/dashboard' && r.has)
-    .map((r) => (r.has ?? []).find((h) => h.type === 'host')?.value ?? '');
 
   it('redirects subdomain /docs/* to www permanently', () => {
     assert.ok(docsHostRedirect, 'expected a host-conditioned redirect for /docs/:match*');
@@ -2546,13 +2500,10 @@ describe('docs host scoping — Mintlify proxy is www-only (#5345)', () => {
     assert.equal(docsHostRedirect.permanent, true);
   });
 
-  it('the host condition covers every variant subdomain plus api., and never www.', () => {
+  it('the host condition covers api., and never www.', () => {
     const hostValue = (docsHostRedirect?.has ?? []).find((h) => h.type === 'host')?.value ?? '';
     const hostRe = new RegExp(hostValue);
-    assert.ok(variantHosts.length > 0, 'variant host extraction from /dashboard rewrites found nothing');
-    for (const host of [...variantHosts, 'api.worldmonitor.app']) {
-      assert.match(host, hostRe, `${host} must be caught by the docs host redirect`);
-    }
+    assert.match('api.worldmonitor.app', hostRe, 'api.worldmonitor.app must be caught by the docs host redirect');
     assert.ok(!hostRe.test('www.worldmonitor.app'), 'www must keep serving the docs proxy');
   });
 

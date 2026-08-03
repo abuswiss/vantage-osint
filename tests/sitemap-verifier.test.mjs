@@ -45,11 +45,10 @@ describe('production sitemap verifier helpers', () => {
     );
   });
 
-  it('classifies every root, blog, docs, variant, and corpus family', () => {
+  it('classifies every root, blog, docs, and corpus family', () => {
     assert.equal(classifySitemapUrl('https://www.worldmonitor.app/'), 'landing');
     assert.equal(classifySitemapUrl('https://www.worldmonitor.app/dashboard'), 'dashboard');
     assert.equal(classifySitemapUrl('https://worldmonitor.app/mcp'), 'mcp');
-    assert.equal(classifySitemapUrl('https://tech.worldmonitor.app/dashboard'), 'dashboard-variant');
     assert.equal(classifySitemapUrl('https://www.worldmonitor.app/pro'), 'product');
     assert.equal(classifySitemapUrl('https://www.worldmonitor.app/pricing.md'), 'machine-readable');
     assert.equal(classifySitemapUrl('https://www.worldmonitor.app/countries/norway/'), 'countries');

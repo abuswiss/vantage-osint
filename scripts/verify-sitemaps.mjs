@@ -11,11 +11,6 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const EXPECTED_PAGE_HOSTS = new Set([
   'worldmonitor.app',
   'www.worldmonitor.app',
-  'tech.worldmonitor.app',
-  'finance.worldmonitor.app',
-  'commodity.worldmonitor.app',
-  'happy.worldmonitor.app',
-  'energy.worldmonitor.app',
 ]);
 
 const decodeXml = (value) => String(value)
@@ -52,9 +47,6 @@ export function classifySitemapUrl(value) {
   if (url.hostname === 'worldmonitor.app' && pathname === '/mcp') return 'mcp';
   if (pathname === '/blog' || pathname.startsWith('/blog/')) return 'blog';
   if (pathname === '/docs' || pathname.startsWith('/docs/')) return 'docs';
-  if (url.hostname !== 'www.worldmonitor.app' && pathname === '/dashboard') {
-    return 'dashboard-variant';
-  }
   if (pathname === '/') return 'landing';
   if (pathname === '/dashboard') return 'dashboard';
   if (pathname === '/pro') return 'product';
@@ -186,13 +178,6 @@ function validatePageLocation(value) {
   }
   if (url.hostname === 'worldmonitor.app' && url.pathname !== '/mcp') {
     return `apex sitemap URL must be the canonical MCP endpoint: ${value}`;
-  }
-  if (
-    url.hostname !== 'www.worldmonitor.app'
-    && url.hostname !== 'worldmonitor.app'
-    && url.pathname !== '/dashboard'
-  ) {
-    return `variant sitemap URL must be its canonical dashboard: ${value}`;
   }
   if (classifySitemapUrl(value) === 'other') {
     return `sitemap page URL is outside the declared discovery families: ${value}`;

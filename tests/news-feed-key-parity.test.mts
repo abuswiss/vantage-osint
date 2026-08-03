@@ -29,31 +29,16 @@ const CLIENT_FEEDS_PATH = resolve(__dirname, '../src/config/feeds.ts');
 const SERVER_FEEDS_PATH = resolve(__dirname, '../server/worldmonitor/news/v1/_feeds.ts');
 
 // Map client const names to the variant string used by the server.
-// The runtime selector in src/config/feeds.ts:927-937 routes
-// SITE_VARIANT === 'X' → X_FEEDS for each X in this list.
+// Single-variant product: only the geopolitical 'full' variant exists —
+// client FULL_FEEDS must match server VARIANT_FEEDS.full.
 //
 // `knownGapsClientOnly` is a documented allowlist of category keys
 // that exist client-side but have no server bucket today. Listed
 // keys still render empty / "UNAVAILABLE" on web — they're tracked
-// as deferred follow-ups (todos/257 item 9), not silent drift. Any
-// client key NOT in this allowlist must have a server match.
+// as deferred follow-ups, not silent drift. Any client key NOT in
+// this allowlist must have a server match.
 const VARIANTS: Array<{ clientConst: string; serverKey: string; knownGapsClientOnly: string[] }> = [
-  {
-    clientConst: 'TECH_FEEDS',
-    serverKey: 'tech',
-    knownGapsClientOnly: [
-      // No tech-variant server buckets for these. Either add them
-      // server-side with curated RSS sources, or drop the panels
-      // client-side. Tracked in todos/257 item 9.
-      'podcasts',
-      'thinktanks',
-    ],
-  },
-  { clientConst: 'FINANCE_FEEDS', serverKey: 'finance', knownGapsClientOnly: [] },
-  { clientConst: 'COMMODITY_FEEDS', serverKey: 'commodity', knownGapsClientOnly: [] },
-  // FULL_FEEDS / HAPPY_FEEDS / ENERGY_FEEDS aren't asserted yet —
-  // those variants don't have a fully-aligned server bucket map at the
-  // time this test was written. Add them as the server catches up.
+  { clientConst: 'FULL_FEEDS', serverKey: 'full', knownGapsClientOnly: [] },
 ];
 
 // Strip line + block comments so natural-language words in JSDoc/inline
@@ -228,14 +213,10 @@ describe('news panel ↔ feed coverage (panel-layout createNewsPanel ⇔ feeds.t
     'intel', // INTEL_SOURCES + bespoke branch in DataLoader.loadNews()
   ]);
 
-  // Every client-side variant feed map. CANONICAL_FEEDS is their union.
+  // Every client-side variant feed map. CANONICAL_FEEDS is their union —
+  // since the single-variant strip that union is just FULL_FEEDS.
   const ALL_FEED_CONSTS = [
     'FULL_FEEDS',
-    'TECH_FEEDS',
-    'FINANCE_FEEDS',
-    'COMMODITY_FEEDS',
-    'ENERGY_FEEDS',
-    'HAPPY_FEEDS',
   ];
 
   test('every createNewsPanel(...) key resolves to feeds in CANONICAL_FEEDS', () => {

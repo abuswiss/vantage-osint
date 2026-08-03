@@ -94,10 +94,6 @@ const WWW_URLS = uniqueSorted([
   ...getBlogUrls(),
 ]);
 
-function urlsForHost(host, extraUrls = []) {
-  return uniqueSorted([...getSitemapUrlsForHost(host), ...extraUrls]);
-}
-
 function batch(host, urls, key = INDEXNOW_KEY) {
   return {
     host,
@@ -110,9 +106,6 @@ function batch(host, urls, key = INDEXNOW_KEY) {
 export const INDEXNOW_BATCHES = Object.freeze([
   batch('worldmonitor.app', APEX_URLS, APEX_INDEXNOW_KEY),
   batch('www.worldmonitor.app', WWW_URLS),
-  batch('tech.worldmonitor.app', urlsForHost('tech.worldmonitor.app', ['https://tech.worldmonitor.app/'])),
-  batch('finance.worldmonitor.app', urlsForHost('finance.worldmonitor.app', ['https://finance.worldmonitor.app/'])),
-  batch('happy.worldmonitor.app', urlsForHost('happy.worldmonitor.app', ['https://happy.worldmonitor.app/'])),
 ]);
 
 export const INDEXNOW_ENDPOINTS = Object.freeze([

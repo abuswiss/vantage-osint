@@ -166,7 +166,12 @@ const WEB_CLERK_PRO_ONLY_PANELS = new Set([
  * tests/news-panel-key-reachability.test.mts fails if a SECOND feed-category panel
  * ever moves below the pass without being listed here.
  */
-const LATE_REGISTERED_PANEL_KEYS = new Set(['live-news']);
+// Empty since the variant strip: 'live-news' was the only member, and it was
+// only a hazard while CANONICAL_FEEDS carried a 'live-news' category (the
+// energy variant's headline sources, removed with that variant). The guard in
+// tests/live-news-panel-guard.test.mts now asserts the category stays absent;
+// list a key here again if a feed-category panel ever moves below the pass.
+const LATE_REGISTERED_PANEL_KEYS = new Set<string>([]);
 const CW_PRO_GATE_TAB_RECOVERY_KEY = 'worldmonitor-cw-pro-gate-tab-recovery-v1';
 
 const DASHBOARD_REFERENCE_LINKS = [
@@ -2042,20 +2047,6 @@ export class PanelLayoutManager implements AppModule {
     this.createNewsPanel('middleeast', 'panels.middleeast');
     this.createNewsPanel('layoffs', 'panels.layoffs');
     this.createNewsPanel('ai', 'panels.ai');
-    this.createNewsPanel('startups', 'panels.startups');
-    this.createNewsPanel('vcblogs', 'panels.vcblogs');
-    this.createNewsPanel('regionalStartups', 'panels.regionalStartups');
-    this.createNewsPanel('unicorns', 'panels.unicorns');
-    this.createNewsPanel('accelerators', 'panels.accelerators');
-    this.createNewsPanel('funding', 'panels.funding');
-    this.createNewsPanel('producthunt', 'panels.producthunt');
-    this.createNewsPanel('security', 'panels.security');
-    this.createNewsPanel('policy', 'panels.policy');
-    this.createNewsPanel('hardware', 'panels.hardware');
-    this.createNewsPanel('cloud', 'panels.cloud');
-    this.createNewsPanel('dev', 'panels.dev');
-    this.createNewsPanel('github', 'panels.github');
-    this.createNewsPanel('ipo', 'panels.ipo');
     this.createNewsPanel('thinktanks', 'panels.thinktanks');
     this.lazyDefaultPanel('economic', () => import('@/components/EconomicPanel'), 'EconomicPanel');
     this.lazyDefaultPanel('global-procurement', () => import('@/components/GlobalProcurementPanel'), 'GlobalProcurementPanel');

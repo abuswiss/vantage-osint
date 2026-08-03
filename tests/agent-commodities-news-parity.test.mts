@@ -9,17 +9,12 @@ import { INTEL_SOURCES, VARIANT_FEEDS } from '../server/worldmonitor/news/v1/_fe
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('commodities news agent parity (#5889)', () => {
-  it('exposes the finance dashboard commodities bucket in the full digest used by agents', () => {
-    const financeCommodities = VARIANT_FEEDS.finance?.commodities;
+  it('exposes a commodities bucket in the full digest used by agents', () => {
+    // The finance-dashboard mirror of this bucket left with the
+    // single-variant strip; agents still consume full.commodities via the
+    // MCP digest-backed tools, so the bucket itself must survive.
     const agentCommodities = VARIANT_FEEDS.full?.commodities;
-
-    assert.ok(financeCommodities?.length, 'finance dashboard commodities feeds must exist');
     assert.ok(agentCommodities?.length, 'full agent digest must expose a commodities category');
-    assert.deepEqual(
-      agentCommodities,
-      financeCommodities,
-      'agents and the finance dashboard must read the same commodities headline sources',
-    );
   });
 
   it('keeps the MCP full-digest category enum aligned with VARIANT_FEEDS.full keys', () => {

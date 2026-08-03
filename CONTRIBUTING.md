@@ -132,7 +132,7 @@ See the [API dependencies docs](https://www.worldmonitor.app/docs/getting-starte
 
 - **Bug fixes** — found something broken? Fix it!
 - **New data layers** — add new geospatial data sources to the map
-- **RSS feeds** — expand our 500+ feed collection with quality sources
+- **RSS feeds** — expand our 290+ feed collection with quality sources
 - **UI/UX improvements** — make the dashboard more intuitive
 - **Performance optimizations** — faster loading, better caching
 - **Documentation** — improve docs, add examples, fix typos

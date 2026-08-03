@@ -59,7 +59,7 @@ class MemoryStorage {
   }
 }
 
-const VARIANTS: MapVariant[] = ['full', 'tech', 'finance', 'commodity', 'energy', 'happy'];
+const VARIANTS: MapVariant[] = ['full'];
 
 let originalLocalStorage: PropertyDescriptor | undefined;
 let originalWindow: PropertyDescriptor | undefined;
@@ -627,8 +627,6 @@ describe('mission preset definitions', () => {
         'energy-security',
         'osint-newsroom',
         'macro-market-watch',
-        'tech-ai-watch',
-        'good-news-explorer',
       ],
     );
   });
@@ -638,10 +636,6 @@ describe('mission preset definitions', () => {
     assert.equal(getMissionPreset('osint-newsroom')?.shortLabel, 'News');
     assert.equal(getMissionPreset('macro-market-watch')?.label, 'Stock Geek');
     assert.equal(getMissionPreset('macro-market-watch')?.shortLabel, 'Stocks');
-    assert.equal(getMissionPreset('tech-ai-watch')?.label, 'Tech / AI Watcher');
-    assert.equal(getMissionPreset('tech-ai-watch')?.shortLabel, 'Tech');
-    assert.equal(getMissionPreset('good-news-explorer')?.label, 'Good News Explorer');
-    assert.equal(getMissionPreset('good-news-explorer')?.shortLabel, 'Good');
   });
 
   it('uses known panel and layer keys without duplicate ids', () => {
@@ -715,71 +709,6 @@ describe('applyMissionPresetToState', () => {
           );
         }
       }
-    }
-  });
-
-  it('falls back to variant defaults when a preset has too few matching panels', () => {
-    for (const preset of MISSION_PRESETS.filter((preset) => preset.id !== 'good-news-explorer')) {
-      const applied = applyMissionPresetToState(
-        preset.id,
-        makePanelSettings('happy'),
-        DEFAULT_MAP_LAYERS,
-        'happy',
-      );
-      assert.deepEqual(
-        enabledWorkspacePanelKeys(applied.panelSettings),
-        defaultWorkspacePanelKeys('happy'),
-        `happy/${preset.id} should fall back to happy defaults`,
-      );
-    }
-
-    const happyApplied = applyMissionPresetToState(
-      'good-news-explorer',
-      makePanelSettings('happy'),
-      DEFAULT_MAP_LAYERS,
-      'happy',
-    );
-    assert.deepEqual(happyApplied.panelOrder.slice(0, 4), [
-      'positive-feed',
-      'progress',
-      'counters',
-      'spotlight',
-    ]);
-    assert.equal(happyApplied.mapLayers.positiveEvents, true);
-    assert.equal(happyApplied.mapLayers.speciesRecovery, true);
-
-    const techApplied = applyMissionPresetToState(
-      'tech-ai-watch',
-      makePanelSettings('tech'),
-      DEFAULT_MAP_LAYERS,
-      'tech',
-    );
-    assert.deepEqual(techApplied.panelOrder.slice(0, 5), [
-      'live-news',
-      'insights',
-      'ai',
-      'tech',
-      'startups',
-    ]);
-    assert.equal(techApplied.mapLayers.datacenters, true);
-    assert.equal(techApplied.mapLayers.startupHubs, true);
-
-    for (const [variant, presetId] of [
-      ['tech', 'energy-security'],
-      ['commodity', 'osint-newsroom'],
-      ['energy', 'osint-newsroom'],
-    ] as const) {
-      const applied = applyMissionPresetToState(
-        presetId,
-        makePanelSettings(variant),
-        DEFAULT_MAP_LAYERS,
-        variant,
-      );
-      assert.deepEqual(
-        enabledWorkspacePanelKeys(applied.panelSettings),
-        defaultWorkspacePanelKeys(variant),
-        `${variant}/${presetId} should fall back to ${variant} defaults`,
-      );
     }
   });
 

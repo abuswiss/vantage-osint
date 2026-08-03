@@ -70,34 +70,29 @@ describe('reported landing-page SEO metadata', () => {
     assertDescription('Chinese sandbox', sandboxDescription);
   });
 
-  it('keeps full and variant dashboard descriptions bounded and synchronized', () => {
+  it('keeps the single full dashboard description bounded and synchronized', () => {
     const variantMetaSource = source('src/config/variant-meta.ts');
     const middlewareSource = source('middleware.ts');
     const indexHtml = source('index.html');
-    const variants = ['full', 'tech', 'finance', 'commodity', 'happy', 'energy'];
 
-    for (const variant of variants) {
-      const block = variantMetaSource.match(
-        new RegExp(`${variant}: \\{([\\s\\S]*?)\\n  \\},`),
-      )?.[1];
-      const description = block?.match(/^\s+description: '([^']+)'/m)?.[1];
-      assertDescription(`${variant} variant`, description);
+    const fullBlock = variantMetaSource.match(/full: \{([\s\S]*?)\n {2}\},/)?.[1];
+    const expectedFullDescription = fullBlock?.match(/^\s+description: '([^']+)'/m)?.[1];
+    assertDescription('full variant', expectedFullDescription);
 
-      if (variant === 'full') continue;
-      const middlewareBlock = middlewareSource.match(
-        new RegExp(`${variant}: \\{([\\s\\S]*?)\\n  \\},`),
-      )?.[1];
-      const middlewareDescription = middlewareBlock?.match(/^\s+description: '([^']+)'/m)?.[1];
-      assert.equal(
-        middlewareDescription,
-        description,
-        `${variant} crawler metadata must match src/config/variant-meta.ts`,
+    // Single-variant product: no other variant metadata entries and no
+    // variant crawler-stub metadata duplicated into the middleware.
+    for (const variant of ['tech', 'finance', 'commodity', 'happy', 'energy']) {
+      assert.ok(
+        !new RegExp(`^  ${variant}: \\{`, 'm').test(variantMetaSource),
+        `src/config/variant-meta.ts must not define a ${variant} entry`,
+      );
+      assert.ok(
+        !middlewareSource.includes(`${variant}.worldmonitor.app`),
+        `middleware.ts must not reference the removed ${variant} subdomain`,
       );
     }
 
     const fullDescription = indexHtml.match(/<meta name="description" content="([^"]+)"/)?.[1];
-    const fullBlock = variantMetaSource.match(/full: \{([\s\S]*?)\n {2}\},/)?.[1];
-    const expectedFullDescription = fullBlock?.match(/^\s+description: '([^']+)'/m)?.[1];
     assert.equal(fullDescription, expectedFullDescription, 'index.html must use the full variant description');
   });
 });

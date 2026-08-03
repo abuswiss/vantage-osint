@@ -624,11 +624,16 @@ describe('CI workflow coverage', () => {
       () => runReleasePreflight(releasePreflight, 'push', '', 'configured'),
       'populated tag releases must pass the client env preflight',
     );
-    for (const variant of ['full', 'tech', 'finance'] as const) {
-      assert.match(
-        packageScripts[`desktop:build:${variant}`] ?? '',
-        /npm run desktop:check-env/,
-        `desktop:build:${variant} must run the local desktop env gate`,
+    assert.match(
+      packageScripts['desktop:build:full'] ?? '',
+      /npm run desktop:check-env/,
+      'desktop:build:full must run the local desktop env gate',
+    );
+    for (const variant of ['tech', 'finance', 'happy', 'commodity', 'energy'] as const) {
+      assert.equal(
+        packageScripts[`desktop:build:${variant}`],
+        undefined,
+        `desktop:build:${variant} must stay removed (single-variant product)`,
       );
     }
     const releasePostProcess = workflowStepBlock(desktopBuildWorkflow, 'Strip GPU libraries from AppImage');

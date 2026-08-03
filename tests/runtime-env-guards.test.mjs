@@ -53,16 +53,14 @@ describe('runtime env guards', () => {
 });
 
 describe('variant env guards', () => {
-  it('computes the build variant through a guarded import.meta.env access', () => {
-    assert.match(
-      variantSrc,
-      /const buildVariant = \(\(\) => \{\s*try \{\s*return import\.meta\.env\.VITE_VARIANT \|\| 'full';\s*\} catch \{\s*return 'full';\s*\}\s*\}\)\(\);/s,
-    );
-  });
-
-  it('reuses buildVariant for SSR, Tauri, and localhost fallback paths', () => {
-    const buildVariantUses = variantSrc.match(/return buildVariant;/g) ?? [];
-    assert.equal(buildVariantUses.length, 3, `Expected three buildVariant fallbacks, got ${buildVariantUses.length}`);
-    assert.ok(variantSrc.includes("if (typeof window === 'undefined') return buildVariant;"), 'SSR should fall back to buildVariant');
+  // Single-variant fork: variant.ts no longer reads import.meta.env or the
+  // hostname — the old guarded-access subtests are obsolete. Guard the pin
+  // instead: SITE_VARIANT must stay a plain 'full' constant with no env or
+  // window access that could crash in SSR/node test contexts.
+  it("pins SITE_VARIANT to 'full' without env or window access", () => {
+    assert.match(variantSrc, /export const SITE_VARIANT: string = 'full';/);
+    assert.ok(!variantSrc.includes('import.meta.env'), 'variant.ts must not read import.meta.env');
+    assert.ok(!variantSrc.includes('location.hostname'), 'variant.ts must not sniff the hostname');
+    assert.ok(!variantSrc.includes('localStorage'), 'variant.ts must not read localStorage');
   });
 });

@@ -140,29 +140,23 @@ describe('selectTopStories drop stats (#4920b)', () => {
 describe('server catalog extraction (#4920a)', () => {
   it('extracts the digest feed catalog with rebuilt Google News URLs', () => {
     const feeds = extractServerFeeds();
-    assert.ok(feeds.length > 250, `expected 250+ server feeds, got ${feeds.length}`);
+    // Single-variant catalog: VARIANT_FEEDS.full + INTEL_SOURCES (~218 feeds
+    // at strip time). The floor guards against the extractor silently
+    // regressing, not against catalog curation.
+    assert.ok(feeds.length > 200, `expected 200+ server feeds, got ${feeds.length}`);
     const wrapper = feeds.find((f) => f.url.includes('news.google.com'));
     assert.ok(wrapper, 'gn() URLs must be rebuilt');
     assert.match(wrapper.url, /^https:\/\/news\.google\.com\/rss\/search\?q=.+&hl=/);
     assert.ok(feeds.every((f) => f.catalog === 'server'));
   });
 
-  it('extracts double-quoted names (Tom\'s Hardware class — #4927 cross-model)', () => {
-    const feeds = extractServerFeeds();
-    assert.ok(feeds.some((f) => f.name === "Tom's Hardware"), 'double-quoted names must not be skipped');
-  });
+  // The double-quoted-name subtest ("Tom's Hardware", #4927) and the Nature
+  // canonical-RSS subtest left with the single-variant strip: both feeds
+  // lived in removed variant catalogs (tech / happy) and no configured feed
+  // exercises those cases anymore. The extractor still supports
+  // double-quoted names; the redirect-budget contract stays asserted below.
 
-  it('uses Nature\'s canonical RSS endpoint with the runtime redirect budget', () => {
-    const canonicalNatureUrl = 'https://www.nature.com/nature.rss';
-    const natureFeed = extractServerFeeds().find((feed) => feed.name === 'Nature News');
-    assert.equal(natureFeed?.url, canonicalNatureUrl, 'server digest must use Nature\'s canonical RSS URL');
-
-    const clientFeeds = readSrc('src/config/feeds.ts');
-    assert.ok(
-      clientFeeds.includes(`{ name: 'Nature News', url: rss('${canonicalNatureUrl}') }`),
-      'client catalog must use the same canonical Nature RSS endpoint',
-    );
-
+  it('keeps the CI validator on the runtime redirect budget', () => {
     const validator = readSrc('scripts/validate-rss-feeds.mjs');
     assert.match(validator, /const MAX_REDIRECTS = 3;/);
     assert.match(

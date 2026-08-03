@@ -40,19 +40,19 @@ describe('getVariantPanelCategories', () => {
     assert.equal(result.length, 0);
   });
 
-  it('respects variant scoping (gulfMena is finance-only)', () => {
-    const enabled = settings({ 'gulf-economies': true });
-    assert.ok(PANEL_CATEGORY_MAP['gulfMena']!.variants?.includes('finance'), 'fixture assumption');
+  it('respects variant scoping (full-scoped categories hide from other variant ids)', () => {
+    const enabled = settings({ cii: true });
+    assert.ok(PANEL_CATEGORY_MAP['intelligence']!.variants?.includes('full'), 'fixture assumption');
     const forFull = getVariantPanelCategories(enabled, 'full');
-    const forFinance = getVariantPanelCategories(enabled, 'finance');
-    assert.ok(!forFull.some((c) => c.key === 'gulfMena'));
-    assert.ok(forFinance.some((c) => c.key === 'gulfMena'));
+    const forOther = getVariantPanelCategories(enabled, 'not-a-variant');
+    assert.ok(forFull.some((c) => c.key === 'intelligence'));
+    assert.ok(!forOther.some((c) => c.key === 'intelligence'));
   });
 
   it('unscoped categories (core) are available to every variant', () => {
     assert.equal(PANEL_CATEGORY_MAP['core']!.variants, undefined, 'core stays unscoped');
     const enabled = settings({ 'live-news': true });
-    for (const variant of ['full', 'tech', 'finance', 'commodity', 'energy', 'happy']) {
+    for (const variant of ['full', 'not-a-variant']) {
       const result = getVariantPanelCategories(enabled, variant);
       assert.ok(
         result.some((c) => c.key === 'core'),
@@ -68,11 +68,6 @@ describe('getVariantPanelCategories', () => {
   it('variant defaults yield the curated category set, free of duplicate labels', () => {
     const expected: Record<string, string[]> = {
       full: ['core', 'intelligence', 'correlation', 'regionalNews', 'marketsFinance', 'topical', 'dataTracking'],
-      tech: ['core', 'techAi', 'startupsVc', 'securityPolicy', 'techMarkets'],
-      finance: ['core', 'finMarkets', 'fixedIncomeFx', 'finCommodities', 'cryptoDigital', 'centralBanksEcon', 'dealsInstitutional', 'gulfMena'],
-      commodity: ['core', 'commodityPrices', 'miningIndustry', 'commodityEcon'],
-      energy: ['core', 'marketsFinance', 'topical', 'dataTracking'],
-      happy: ['core', 'happyNews', 'happyPlanet'],
     };
     for (const [variant, expectedKeys] of Object.entries(expected)) {
       const enabledDefaults = settings(

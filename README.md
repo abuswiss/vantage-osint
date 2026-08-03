@@ -50,7 +50,7 @@
 
 ## What It Does
 
-- **500+ curated news feeds** across 15 categories, AI-synthesized into briefs
+- **290+ curated news feeds** across 15 categories, AI-synthesized into briefs
 - **Dual map engine** — 3D globe (globe.gl) and WebGL flat map (deck.gl) with 56 map layer types
 - **Cross-stream correlation** — military, economic, disaster, and escalation signal convergence
 - **Country Instability Index (CII)** — server-authoritative CII v8 stress scoring for 31 Tier-1 countries

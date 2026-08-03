@@ -24,53 +24,21 @@ function src(relPath: string): string {
 }
 
 describe('variant panel config resolution', () => {
-  it('prefers the happy variant config over a duplicate full panel key', () => {
-    const giving = getEffectivePanelConfig('giving', 'happy');
+  // The cross-variant resolution subtests (happy/commodity/energy/finance
+  // labels, premium metadata isolation) were removed with the variant strip —
+  // only the full variant's panel configs remain.
 
-    assert.equal(giving.name, 'Global Giving');
-    assert.equal(giving.enabled, true);
-    assert.equal(giving.priority, 1);
+  it('resolves full-variant panel configs from FULL_PANELS', () => {
+    const map = getEffectivePanelConfig('map', 'full');
+    assert.equal(map.name, 'Global Map');
+    assert.equal(map.enabled, true);
+    assert.equal(map.priority, 1);
   });
 
-  it('preserves commodity and energy labels for shared supply-chain panels', () => {
-    assert.equal(
-      getEffectivePanelConfig('supply-chain', 'commodity').name,
-      'Supply Chain & Logistics',
-    );
-    assert.equal(
-      getEffectivePanelConfig('supply-chain', 'energy').name,
-      'Chokepoints & Routes',
-    );
-  });
-
-  it('does not inherit full desktop premium metadata for variant-specific supply-chain panels', () => {
-    const panels = src('src/config/panels.ts');
-    const definitionFor = (variant: string): string => {
-      const match = panels.match(new RegExp(`const ${variant}_PANELS[\\s\\S]*?'supply-chain': \\{([^}]*)\\}`));
-      assert.ok(match, `${variant}_PANELS must define supply-chain`);
-      return match[1] ?? '';
-    };
-
-    assert.match(definitionFor('FULL'), /premium:\s*'enhanced'/);
-    assert.doesNotMatch(definitionFor('COMMODITY'), /premium:/);
-    assert.doesNotMatch(definitionFor('ENERGY'), /premium:/);
-    assert.equal(getEffectivePanelConfig('supply-chain', 'commodity').premium, undefined);
-    assert.equal(getEffectivePanelConfig('supply-chain', 'energy').premium, undefined);
-  });
-
-  it('still falls back to the cross-variant registry for panels outside a variant default set', () => {
-    const forecast = getEffectivePanelConfig('forecast', 'happy');
-
+  it('falls back to the registry for an unknown variant string', () => {
+    const forecast = getEffectivePanelConfig('forecast', 'unknown-variant');
     assert.equal(forecast.name, 'AI Forecasts');
     assert.equal(forecast.enabled, true);
-  });
-
-  it('applies variant overrides on top of the variant-specific base config', () => {
-    const financeMap = getEffectivePanelConfig('map', 'finance');
-
-    assert.equal(financeMap.name, 'Global Markets Map');
-    assert.equal(financeMap.enabled, true);
-    assert.equal(financeMap.priority, 1);
   });
 
   it('keeps the global map available when free-tier defaults are clamped', () => {

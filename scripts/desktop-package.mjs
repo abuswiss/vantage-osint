@@ -20,20 +20,20 @@ const skipNodeRuntime = hasFlag('skip-node-runtime');
 const showHelp = hasFlag('help') || hasFlag('h');
 
 const validOs = new Set(['macos', 'windows', 'linux']);
-const validVariants = new Set(['full', 'tech']);
+const validVariants = new Set(['full']);
 
 if (showHelp) {
-  console.log('Usage: npm run desktop:package -- --os <macos|windows|linux> --variant <full|tech> [--sign] [--skip-node-runtime]');
+  console.log('Usage: npm run desktop:package -- --os <macos|windows|linux> [--variant full] [--sign] [--skip-node-runtime]');
   process.exit(0);
 }
 
 if (!validOs.has(os)) {
-  console.error('Usage: npm run desktop:package -- --os <macos|windows|linux> --variant <full|tech> [--sign] [--skip-node-runtime]');
+  console.error('Usage: npm run desktop:package -- --os <macos|windows|linux> [--variant full] [--sign] [--skip-node-runtime]');
   process.exit(1);
 }
 
 if (!validVariants.has(variant)) {
-  console.error('Invalid variant. Use --variant full or --variant tech.');
+  console.error('Invalid variant. Use --variant full (single-variant product).');
   process.exit(1);
 }
 
@@ -62,10 +62,6 @@ if (!existsSync(tauriBin)) {
     `Local Tauri CLI not found at ${tauriBin}. Run "npm ci" to install dependencies before desktop packaging.`
   );
   process.exit(1);
-}
-
-if (variant === 'tech') {
-  cliArgs.push('--config', 'src-tauri/tauri.tech.conf.json');
 }
 
 const resolveNodeTarget = () => {

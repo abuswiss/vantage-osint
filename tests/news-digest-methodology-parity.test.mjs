@@ -490,7 +490,7 @@ describe('news digest methodology parity', () => {
     const rows = extractFeedInventoryRows(feedsSrc);
     assert.equal(
       rows.length,
-      66,
+      17,
       'server news feed inventory row count changed; update _feeds.ts, docs/data-sources.mdx, and this assertion together',
     );
     for (const row of rows) {
@@ -555,7 +555,8 @@ describe('news digest methodology parity', () => {
 
   it('documents the accepted feed digest variants from VALID_VARIANTS', () => {
     const variants = extractSetLiteralValues(digestSrc, 'VALID_VARIANTS');
-    assert.deepEqual(variants, ['full', 'tech', 'finance', 'happy', 'commodity']);
+    // Single-variant product: only the geopolitical 'full' digest remains.
+    assert.deepEqual(variants, ['full']);
     for (const variant of variants) assertDocIncludes(`\`${variant}\``, `variant ${variant}`);
     for (const variant of variants) {
       assert.ok(
@@ -563,8 +564,8 @@ describe('news digest methodology parity', () => {
         `list_feed_digest.proto variant comment must mention ${variant}`,
       );
     }
-    assertDocIncludes('`energy` is a site and client-feed variant', 'energy site-variant distinction');
-    assertDocMatches(/variant=energy[\s\S]*to\s+`full`/, 'energy digest fallback');
+    assertDocIncludes('the only server digest variant', 'single-variant digest statement');
+    assertDocMatches(/variant=energy[\s\S]*to\s+`full`/, 'retired-variant digest fallback');
     assert.ok(
       protoText.includes('including energy') && protoText.includes('fall back to full'),
       'list_feed_digest.proto variant comment must document energy fallback',

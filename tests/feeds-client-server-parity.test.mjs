@@ -102,19 +102,16 @@ describe('feed parity: client vs server (PR #3715 follow-up)', () => {
   // Google News on one side because the direct URL recently broke). The test
   // fails for NEW drift, not historic drift. This set should SHRINK over time
   // as feeds get reconciled — not grow.
+  // (Former tech/commodity-variant entries — a16z Blog, Sequoia Blog,
+  // EU Startups, Tech in Asia, SemiAnalysis, EIA Reports, Northern Miner —
+  // were dropped with the single-variant strip: they no longer exist on
+  // either side, so their drift can't recur.)
   const KNOWN_DRIFTS = new Set([
     'The National',
     'White House',
     'Pentagon',
     'CSIS',
     'South China Morning Post',
-    'a16z Blog',
-    'Sequoia Blog',
-    'EU Startups',
-    'Tech in Asia',
-    'SemiAnalysis',
-    'EIA Reports',
-    'Northern Miner',
     // Mixed-locale routing: client uses direct rss() for en+de and a Google
     // News query for es; server uses pure direct for en. The classifier
     // treats any-locale-is-GoogleNews as Google News, so it flags this as a
@@ -180,18 +177,21 @@ describe('feed parity: client vs server (PR #3715 follow-up)', () => {
   // same category, shrinking the visible result set. Exactly the
   // Commodity-Trade-Mantra failure mode the #3717 reviewer caught.
   //
-  // Five existing server-only entries are grandfathered (KNOWN_SERVER_ONLY).
+  // The remaining server-only entries are grandfathered (KNOWN_SERVER_ONLY).
   // Each is its own per-feed judgment — they may be intentional enrichment
   // that's never user-visible, or they may be the same crowd-out bug latent
   // since before this test landed. They should be reviewed one-by-one (either
   // restore the client-side name OR drop the server entry); the set should
-  // SHRINK over time, not grow.
+  // SHRINK over time, not grow. (The tech-variant entries — First Round
+  // Review, YC News, YC Blog — left with the single-variant server strip.)
   const KNOWN_SERVER_ONLY = new Set([
     'Trump - Truth Social',
     'White House Actions',
-    'First Round Review',
-    'YC News',
-    'YC Blog',
+    // full.commodities is consumed by the MCP digest-backed agent tools, not
+    // by the client (FULL_FEEDS has no `commodities` category), so its items
+    // never compete with a client-rendered category. 'Oil & Gas' in the same
+    // bucket is mirrored client-side under `energy`; this one is not.
+    'Gold & Metals',
   ]);
 
   it('no NEW server-only feed entries (crowd-out risk via MAX_ITEMS_PER_CATEGORY)', () => {

@@ -22,18 +22,12 @@ The accepted digest variants are:
 | Variant | Purpose |
 | --- | --- |
 | `full` | Global geopolitical, regional, government, intelligence, climate, finance, and topical feeds. |
-| `tech` | Startup, AI, security, cloud, hardware, developer, funding, policy, and tech-market streams. |
-| `finance` | Market, policy, derivatives, forex, crypto, central-bank, and institutional streams. |
-| `happy` | Constructive-news streams for conservation, science, philanthropy, progress, events, and positive public action. |
-| `commodity` | Commodity, mining, energy, shipping, agriculture, metals, and policy streams. |
 
-`energy` is a site and client-feed variant (`energy.worldmonitor.app`), but it
-is not a separate server digest variant yet: `listFeedDigest` accepts only the
-variants above and normalises any other request, including `variant=energy`, to
-`full`. Energy panels still have client-side feed inventory for energy
-headlines, energy markets, and chokepoints/routes; categories absent from the
-server digest use the direct per-feed fallback path instead of a dedicated
-`news:digest:v1:energy:{lang}` cache key.
+`full` is the only server digest variant: `listFeedDigest` accepts only the
+variant above and normalises any other request, including the retired
+`variant=energy`, to `full`. Categories absent from the server digest use the
+direct per-feed fallback path instead of a dedicated
+`news:digest:v1:{variant}:{lang}` cache key.
 
 Each feed entry carries a display name, URL, and optional language tag.
 Language-scoped feeds are included only when the request language matches.
@@ -89,9 +83,7 @@ The classifier emits a threat level, event category, confidence, and source
 tag. Levels are `critical`, `high`, `medium`, `low`, and `info`. Event
 categories include conflict, protest, disaster, diplomatic, economic,
 terrorism, cyber, health, environmental, military, crime, infrastructure,
-tech, and general. The `tech` variant has additional tech-specific keyword
-sets so technology incidents are not forced through the geopolitical keyword
-profile.
+tech, and general.
 
 Critical and high keyword matches are checked for historical-retrospective
 markers. Examples include anchored "Science history", "Throwback", "Flashback",
@@ -391,11 +383,8 @@ readers can follow up to `3` countries; PRO readers can keep a larger followed
 set. If the followed-country relay is unavailable, the brief falls back to the
 unbiased ordering rather than treating the missing list as ground truth.
 
-The `happy` variant is intentionally different from intelligence briefs. It
-surfaces constructive and positive-news streams and should not be interpreted
-as a global risk brief with negative events removed. In the intelligence brief
-path, feel-good and lifestyle items are excluded because the brief is meant to
-be event-driven global intelligence.
+In the intelligence brief path, feel-good and lifestyle items are excluded
+because the brief is meant to be event-driven global intelligence.
 
 ## Source Files
 

@@ -164,32 +164,35 @@ describe('LiveNewsPanel instantiation guard', () => {
 // ---------------------------------------------------------------------------
 
 describe("live-news must not be shadowed by a generic NewsPanel (regression #4382)", () => {
-  it("CANONICAL_FEEDS defines a 'live-news' key (the latent landmine)", () => {
+  it("CANONICAL_FEEDS must NOT define a 'live-news' key (the latent landmine)", () => {
+    // The energy variant's headline sources used to ship under a 'live-news'
+    // feed category — the precondition that let the CANONICAL_FEEDS loop spawn
+    // a generic NewsPanel shadowing the video panel (#4382). The variant strip
+    // removed that category; keep it removed. Reintroducing a 'live-news' feed
+    // category requires restoring the LATE_REGISTERED_PANEL_KEYS exclusion in
+    // panel-layout.ts alongside it.
     const feeds = src('src/config/feeds.ts');
-    assert.match(
+    assert.doesNotMatch(
       feeds,
       /['"]live-news['"]\s*:/,
-      "expected a 'live-news' entry in feeds.ts (energy headlines) — this is what lets the CANONICAL_FEEDS loop spawn a NewsPanel that shadows the video panel",
+      "a 'live-news' feed category lets the CANONICAL_FEEDS loop spawn a NewsPanel that shadows " +
+        "the dedicated LiveNewsPanel video panel (regression #4382) — if it must come back, list " +
+        "'live-news' in LATE_REGISTERED_PANEL_KEYS in panel-layout.ts and update this guard",
     );
   });
 
-  it("CANONICAL_FEEDS loop in panel-layout.ts must NOT create a generic NewsPanel for 'live-news'", () => {
+  it('the CANONICAL_FEEDS loop consults the late-registration exclusion machinery', () => {
     const layout = src('src/app/panel-layout.ts');
     const loopStart = layout.indexOf('for (const key of Object.keys(CANONICAL_FEEDS))');
     assert.ok(loopStart !== -1, 'CANONICAL_FEEDS key loop not found in panel-layout.ts');
     const createCall = layout.indexOf('createNewsPanelWithLabel(panelKey', loopStart);
     assert.ok(createCall !== -1, 'createNewsPanelWithLabel call not found inside the loop');
-    const loopRegion = layout.slice(loopStart, createCall + 200);
-
-    const skipsLiveNews = /key\s*===\s*['"]live-news['"]/.test(loopRegion);
-    const collidesLiveNews = /COLLIDING_NEWS_PANEL_KEYS\s*=\s*new Set\(\[[^\]]*['"]live-news['"]/.test(layout);
-    const lateRegistersLiveNews = /LATE_REGISTERED_PANEL_KEYS\s*=\s*new Set\(\[[^\]]*['"]live-news['"]/.test(layout);
-
-    assert.ok(
-      skipsLiveNews || collidesLiveNews || lateRegistersLiveNews,
-      "panel-layout.ts must exclude 'live-news' from the CANONICAL_FEEDS NewsPanel loop " +
-        "(it is the dedicated LiveNewsPanel video key). Without this, the generic NewsPanel " +
-        "shadows the video panel and lazyPanel's dedup guard blocks the real one (regression #4382).",
+    assert.match(
+      layout,
+      /lateRegisteredPanelKeys:\s*LATE_REGISTERED_PANEL_KEYS/,
+      'panel-layout.ts must wire LATE_REGISTERED_PANEL_KEYS into newsPanelKeyLookupsFor — the ' +
+        'seam that keeps a below-the-loop panel registration from being shadowed by a generic ' +
+        'NewsPanel (regression #4382)',
     );
   });
 
