@@ -63,10 +63,17 @@ describe('default map mode', () => {
       /createDeckGLMap\(token: number\)[\s\S]*Initializing deck\.gl map \(desktop mode\)[\s\S]*await loadMapLibreCss\(\)[\s\S]*await import\('\.\/DeckGLMap'\)/,
       'DeckGL should be the primary non-globe desktop renderer and load its runtime on demand',
     );
+    // eagerRenderer (ops shell) may short-circuit the gate, but it defaults to
+    // false — the demand-gated deferral must stay the classic-dashboard default.
     assert.match(
       mapContainer,
-      /else if \(this\.useDeckGL\)\s*{\s*const shouldLoadDeck = await this\.waitForDeckRendererDemand\(token\);\s*if \(!shouldLoadDeck \|\| !this\.isCurrentRendererInit\(token\)\) return;\s*await this\.createDeckGLMap\(token\);/m,
+      /else if \(this\.useDeckGL\)\s*{\s*const shouldLoadDeck = this\.eagerRenderer \|\| await this\.waitForDeckRendererDemand\(token\);\s*if \(!shouldLoadDeck \|\| !this\.isCurrentRendererInit\(token\)\) return;\s*await this\.createDeckGLMap\(token\);/m,
       'flat desktop mode should route through the demand-gated deferred DeckGL initializer',
+    );
+    assert.match(
+      mapContainer,
+      /this\.eagerRenderer = options\.eagerRenderer \?\? false;/,
+      'eagerRenderer must default to false so the classic dashboard keeps the deferred boot',
     );
     assert.match(
       mapContainer,

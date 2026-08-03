@@ -796,6 +796,9 @@ export class EventHandlerManager implements AppModule {
 
     const shouldPrompt =
       !this.ctx.isMobile &&
+      // Workspace presets belong to the classic panel grid; the ops shell
+      // opens straight into the operating picture with no onboarding modal.
+      !this.ctx.opsMode &&
       !window.location.search &&
       !loadStoredMissionPreset() &&
       !isMissionPresetPromptDismissed();
@@ -1209,6 +1212,7 @@ export class EventHandlerManager implements AppModule {
     this.ctx.mapLayers[layer] = enabled;
     saveToStorage(STORAGE_KEYS.mapLayers, this.ctx.mapLayers);
     this.syncUrlState();
+    this.ctx.opsShell?.syncLayerChips();
 
     const sourceIds = LAYER_TO_SOURCE[layer];
     if (sourceIds) {

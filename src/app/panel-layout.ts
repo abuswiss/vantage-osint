@@ -2713,6 +2713,12 @@ export class PanelLayoutManager implements AppModule {
       timeRange: '7d',
     }, preferGlobe, {
       isFreeTierFallbackActive: this.callbacks.isFreeTierFallbackActive,
+      // Ops shell brings its own chip bar / time chips / controls — suppress
+      // the in-map chrome (layer toggles, time slider, legend, zoom widget) —
+      // and boot the WebGL renderer eagerly: the map IS the primary content,
+      // so the classic visible-idle demand deferral would just delay LCP.
+      chrome: !this.ctx.opsMode,
+      eagerRenderer: this.ctx.opsMode,
     });
 
     const eagerSupplyChainPanel = this.ctx.panels['supply-chain'] as SupplyChainPanel | undefined;

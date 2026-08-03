@@ -377,6 +377,10 @@ export class App {
   }
 
   private isPanelNearViewport(panelId: string, marginPx = 400): boolean {
+    // Ops shell: the legacy grid is docked off-screen, so IntersectionObserver
+    // gating would permanently starve panel-fed data (CII, intel, correlation).
+    // Treat every panel as visible — the shell surfaces their outputs.
+    if (this.state.opsMode) return true;
     const panel = this.state.panels[panelId] as { isNearViewport?: (marginPx?: number) => boolean } | undefined;
     return panel?.isNearViewport?.(marginPx) ?? false;
   }
@@ -1124,6 +1128,8 @@ export class App {
     // Build shared state object
     this.state = {
       map: null,
+      opsMode: !isMobile && !new URLSearchParams(window.location.search).has('classic'),
+      opsShell: null,
       isMobile,
       isDesktopApp,
       container: el,
@@ -1856,6 +1862,21 @@ export class App {
     markLcpDebug('wm:layout:init-start');
     await this.panelLayout.init();
     markLcpDebug('wm:layout:init-complete');
+    if (this.state.opsMode) {
+      const { OpsShell } = await import('@/app/ops-shell');
+      const shell = new OpsShell(this.state, {
+        onToggleLayer: (layer, enabled) => {
+          // Side-effect funnel first (mutates ctx.mapLayers, persists, loads
+          // data), then push the resulting layer set into the renderer — in the
+          // classic flow the map originates toggles itself, so the funnel alone
+          // never repaints it.
+          this.eventHandlers.applyMapLayerChange(layer, enabled, 'user');
+          this.state.map?.setLayers({ ...this.state.mapLayers });
+        },
+      });
+      shell.mount();
+      this.state.opsShell = shell;
+    }
     this.eventHandlers.setupSearchControls();
     showProBanner(this.state.container);
     this.updateConnectivityUi();

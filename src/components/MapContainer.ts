@@ -113,6 +113,13 @@ export interface MapContainerState {
 
 export interface MapContainerOptions {
   chrome?: boolean;
+  /**
+   * Skip the deck-renderer demand gate (visible-idle / interaction / 12s
+   * backstop) and construct the WebGL renderer right after first paint. Used
+   * by the ops shell, where the map is the primary content rather than one
+   * panel among many.
+   */
+  eagerRenderer?: boolean;
   isFreeTierFallbackActive?: () => boolean;
 }
 
@@ -148,6 +155,7 @@ export class MapContainer {
   private useDeckGL: boolean;
   private useGlobe: boolean;
   private readonly chrome: boolean;
+  private readonly eagerRenderer: boolean;
   private readonly svgLayerToggleGuard: NonNullable<MapComponentOptions['canToggleLayer']>;
   private readonly isFreeTierFallbackActive: (() => boolean) | null;
   private isResizingInternal = false;
@@ -228,6 +236,7 @@ export class MapContainer {
     this.container = container;
     this.initialState = initialState;
     this.chrome = options.chrome ?? true;
+    this.eagerRenderer = options.eagerRenderer ?? false;
     this.svgLayerToggleGuard = (layer, currentlyEnabled) => isLayerToggleAllowed(
       layer,
       currentlyEnabled === true,
@@ -585,7 +594,7 @@ export class MapContainer {
       console.log('[MapContainer] Initializing 3D globe (globe.gl mode)');
       await this.createGlobeMap(token);
     } else if (this.useDeckGL) {
-      const shouldLoadDeck = await this.waitForDeckRendererDemand(token);
+      const shouldLoadDeck = this.eagerRenderer || await this.waitForDeckRendererDemand(token);
       if (!shouldLoadDeck || !this.isCurrentRendererInit(token)) return;
       await this.createDeckGLMap(token);
     } else {

@@ -1945,7 +1945,8 @@ export class DataLoaderManager implements AppModule {
     const landed = digestCovered || anyItemsCollected || noCategoriesToLoad;
     if (landed) this.loadedNewsSignature = newsWorkListSignature(categories, disabledAtLoadStart);
     this.ctx.initialLoadComplete = true;
-    mountCommunityWidget();
+    // Upstream community CTA has no place over the ops shell's map.
+    if (!this.ctx.opsMode) mountCommunityWidget();
 
     this.ctx.map?.updateHotspotActivity(this.ctx.allNews);
 
@@ -1955,6 +1956,8 @@ export class DataLoaderManager implements AppModule {
       this.ctx.latestClusters = mlWorker.isAvailable
         ? await clusterNewsHybrid(this.ctx.allNews)
         : await analysisWorker.clusterNews(this.ctx.allNews);
+
+      this.ctx.opsShell?.onDataUpdated();
 
       const insightsPanel = this.ctx.panels['insights'] as InsightsPanel | undefined;
       insightsPanel?.updateInsights(this.ctx.latestClusters);
@@ -4024,6 +4027,7 @@ export class DataLoaderManager implements AppModule {
       }
 
       if (this.ctx.latestClusters.length > 0) {
+        this.ctx.opsShell?.onDataUpdated();
         ingestNewsForCII(this.ctx.latestClusters);
         dataFreshness.recordUpdate('gdelt', this.ctx.latestClusters.length);
         this.refreshCiiAndBrief();

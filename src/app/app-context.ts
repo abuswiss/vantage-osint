@@ -61,6 +61,10 @@ export interface IntelligenceCache {
 
 export interface AppContext {
   map: import('@/components').MapContainer | null;
+  /** True when the map-first ops shell replaces the classic panel grid (default on desktop; ?classic=1 opts out). */
+  readonly opsMode: boolean;
+  /** Live handle to the mounted ops shell, if any — data loaders notify it on store updates. */
+  opsShell: { onDataUpdated(): void; syncLayerChips(): void } | null;
   readonly isMobile: boolean;
   readonly isDesktopApp: boolean;
   readonly container: HTMLElement;
