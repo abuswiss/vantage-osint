@@ -483,7 +483,8 @@ describe('deploy/cache configuration guardrails', () => {
 
   it('contains variant-specific metadata fields used by html replacement and manifest', () => {
     const variantMetaSource = readFileSync(resolve(__dirname, '../src/config/variant-meta.ts'), 'utf-8');
-    assert.match(variantMetaSource, /shortName:\s*'/);
+    // shortName derives from the central brand module since the rebrand.
+    assert.match(variantMetaSource, /shortName:\s*(?:'|BRAND\.)/);
     assert.match(variantMetaSource, /subject:\s*'/);
     assert.match(variantMetaSource, /classification:\s*'/);
     assert.match(variantMetaSource, /categories:\s*\[/);
@@ -2745,14 +2746,25 @@ describe('section-scoped llms.txt files', () => {
 
 describe('skeleton brand text extraction (#5541)', () => {
   const indexHtml = readFileSync(resolve(__dirname, '../index.html'), 'utf-8');
+  // Brand name comes from src/config/brand.ts so the skeleton assertions track
+  // renames (the original #5541 bug was the mark letter concatenating with the
+  // brand text into "WWorld Monitor" for screen readers).
+  const brandSource = readFileSync(resolve(__dirname, '../src/config/brand.ts'), 'utf-8');
+  const brandName = brandSource.match(/name:\s*'([^']+)'/)?.[1];
+  const brandInitial = brandName?.[0];
 
-  it('.skeleton-brand raw textContent does not contain "WWorld"', () => {
+  it('.skeleton-brand raw textContent does not duplicate the mark initial', () => {
+    assert.ok(brandName, 'src/config/brand.ts must declare a brand name');
     const match = indexHtml.match(/<div class="skeleton-brand">([\s\S]*?)<\/div>/);
     assert.ok(match, 'index.html must contain .skeleton-brand element');
     // Simulate raw textContent: strip all HTML tags
     const rawText = match[1].replace(/<[^>]+>/g, '');
-    assert.doesNotMatch(rawText, /WWorld/, 'skeleton-brand raw text must not concatenate as "WWorld Monitor"');
-    assert.match(rawText, /World Monitor/, 'skeleton-brand raw text must contain "World Monitor"');
+    assert.doesNotMatch(
+      rawText,
+      new RegExp(`${brandInitial}${brandName}`),
+      `skeleton-brand raw text must not concatenate as "${brandInitial}${brandName}"`,
+    );
+    assert.match(rawText, new RegExp(brandName), `skeleton-brand raw text must contain "${brandName}"`);
   });
 
   it('.skeleton-brand-mark is aria-hidden and has no text content', () => {
@@ -2763,7 +2775,11 @@ describe('skeleton brand text extraction (#5541)', () => {
     assert.equal(markText, '', 'skeleton-brand-mark must have no text content (use CSS ::after instead)');
   });
 
-  it('.skeleton-brand-mark renders "W" via CSS content pseudo-element', () => {
-    assert.match(indexHtml, /\.skeleton-brand-mark::after\s*\{\s*content:\s*"W"\s*\}/, 'skeleton-brand-mark must render W via CSS ::after content');
+  it('.skeleton-brand-mark renders the brand initial via CSS content pseudo-element', () => {
+    assert.match(
+      indexHtml,
+      new RegExp(`\\.skeleton-brand-mark::after\\s*\\{\\s*content:\\s*"${brandInitial}"\\s*\\}`),
+      'skeleton-brand-mark must render the brand initial via CSS ::after content',
+    );
   });
 });

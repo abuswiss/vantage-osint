@@ -1,3 +1,5 @@
+import { BRAND } from './brand';
+
 export interface VariantMeta {
   title: string;
   description: string;
@@ -13,12 +15,12 @@ export interface VariantMeta {
 
 export const VARIANT_META: { full: VariantMeta; [k: string]: VariantMeta } = {
   full: {
-    title: 'World Monitor - Real-Time Global Intelligence Dashboard',
+    title: `${BRAND.name} - ${BRAND.tagline}`,
     description: 'Real-time global intelligence platform tracking conflicts, markets, military activity, and OSINT signals across 190+ countries, with live context in one view.',
     keywords: 'AI intelligence, AI-powered dashboard, global intelligence, geopolitical dashboard, world news, market data, military bases, nuclear facilities, undersea cables, conflict zones, real-time monitoring, situation awareness, OSINT, flight tracking, AIS ships, earthquake monitor, protest tracker, power outages, oil prices, government spending, polymarket predictions',
     url: 'https://www.worldmonitor.app/dashboard',
-    siteName: 'World Monitor',
-    shortName: 'World Monitor',
+    siteName: BRAND.name,
+    shortName: BRAND.shortName,
     subject: 'AI-Powered Global Intelligence and Situation Awareness',
     classification: 'AI Intelligence Dashboard, OSINT Tool, News Aggregator',
     categories: ['news', 'productivity'],
