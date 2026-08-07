@@ -39,10 +39,10 @@ async function feedAction(panel: unknown, action: unknown): Promise<HTMLElement>
       bubble: HTMLElement,
       body: HTMLElement,
       onToken: (text: string) => void,
-    ) => Promise<string>;
+    ) => Promise<{ status: string; sources: unknown }>;
   };
   const { bubble, body } = panelAny.appendStreamingBubble();
-  const status = await panelAny.readStream(
+  const { status } = await panelAny.readStream(
     sseReader([{ action }, { delta: 'Answer continues.' }, { done: true }]),
     bubble,
     body,

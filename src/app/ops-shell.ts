@@ -170,8 +170,6 @@ export class OpsShell {
   private selection: InspectorSelection | null = null;
   private hudScore: HTMLElement | null = null;
   private hudLevel: HTMLElement | null = null;
-  private hudBar: HTMLElement | null = null;
-  private hudStats: HTMLElement | null = null;
   private countAir: HTMLElement | null = null;
   private countShips: HTMLElement | null = null;
   private countEvents: HTMLElement | null = null;
@@ -206,7 +204,6 @@ export class OpsShell {
     const shell = el('div', 'ops-shell');
     shell.append(
       this.buildTopBar(),
-      this.buildFilterRail(),
       this.buildBody(),
       this.buildBottomBar(),
       this.buildShortcutsOverlay(),
@@ -352,6 +349,20 @@ export class OpsShell {
     this.layerPopover.setAttribute('role', 'dialog');
     this.layerPopover.setAttribute('aria-label', 'Map layers');
 
+    const divider = el('span', 'ops-top-divider');
+    divider.setAttribute('aria-hidden', 'true');
+
+    const timeSeg = el('div', 'ops-seg');
+    for (const range of TIME_RANGES) {
+      const button = el('button', 'ops-seg-btn') as HTMLButtonElement;
+      button.type = 'button';
+      button.textContent = range === 'all' ? 'All' : range.toUpperCase();
+      button.setAttribute('aria-label', `Show ${range === 'all' ? 'all available' : `the last ${range}`} activity`);
+      button.addEventListener('click', () => this.ctx.map?.setTimeRange(range));
+      timeSeg.appendChild(button);
+      this.timeButtons.set(range, button);
+    }
+
     const right = el('div', 'ops-top-right');
     this.briefButton = el('button', 'ops-brief-button') as HTMLButtonElement;
     this.briefButton.type = 'button';
@@ -367,7 +378,7 @@ export class OpsShell {
     right.appendChild(counts);
     right.id = 'opsTopRight';
 
-    top.append(brand, chips, this.moreLayersButton, right, this.layerPopover);
+    top.append(brand, chips, this.moreLayersButton, divider, timeSeg, right, this.layerPopover);
     return top;
   }
 
@@ -387,29 +398,6 @@ export class OpsShell {
     button.addEventListener('click', () => this.toggleLayer(definition.key));
     this.registerLayerButton(definition.key, button);
     return button;
-  }
-
-  private buildFilterRail(): HTMLElement {
-    const rail = el('div', 'ops-filter');
-    const label = el('span', 'ops-filter-label');
-    label.textContent = 'Time';
-
-    const timeSeg = el('div', 'ops-seg');
-    for (const range of TIME_RANGES) {
-      const button = el('button', 'ops-seg-btn') as HTMLButtonElement;
-      button.type = 'button';
-      button.textContent = range === 'all' ? 'All' : range.toUpperCase();
-      button.setAttribute('aria-label', `Show ${range === 'all' ? 'all available' : `the last ${range}`} activity`);
-      button.addEventListener('click', () => this.ctx.map?.setTimeRange(range));
-      timeSeg.appendChild(button);
-      this.timeButtons.set(range, button);
-    }
-
-    const spacer = el('div', 'ops-filter-spacer');
-    const hint = el('span', 'ops-filter-hint');
-    hint.textContent = 'J/K navigate · / search · ? shortcuts';
-    rail.append(label, timeSeg, spacer, hint);
-    return rail;
   }
 
   private buildBody(): HTMLElement {
@@ -456,25 +444,19 @@ export class OpsShell {
   }
 
   private buildHud(): HTMLElement {
-    const hud = el('div', 'ops-hud');
-    const label = el('div', 'ops-hud-label');
-    label.textContent = 'Escalation index';
-
-    const score = el('button', 'ops-hud-score') as HTMLButtonElement;
-    score.type = 'button';
-    score.setAttribute('aria-label', 'Escalation index breakdown');
-    score.addEventListener('click', () => this.inspectEscalation());
-    this.hudScore = el('b');
+    // Compact escalation chip: "Escalation {score} · {level}". Clicking it
+    // opens the full breakdown inspector (contributors, regions, trend).
+    const hud = el('button', 'ops-hud') as HTMLButtonElement;
+    hud.type = 'button';
+    hud.setAttribute('aria-label', 'Escalation index breakdown');
+    hud.addEventListener('click', () => this.inspectEscalation());
+    const label = el('span', 'ops-hud-label');
+    label.textContent = 'Escalation';
+    this.hudScore = el('b', 'ops-hud-score');
     this.hudScore.textContent = '--';
     this.hudLevel = el('span', 'ops-hud-level');
     this.hudLevel.textContent = 'Pending';
-    score.append(this.hudScore, this.hudLevel);
-
-    const bar = el('div', 'ops-hud-bar');
-    this.hudBar = el('i');
-    bar.appendChild(this.hudBar);
-    this.hudStats = el('div', 'ops-hud-stats');
-    hud.append(label, score, bar, this.hudStats);
+    hud.append(label, this.hudScore, document.createTextNode('·'), this.hudLevel);
     return hud;
   }
 
@@ -1056,7 +1038,7 @@ export class OpsShell {
     const selection: InspectorSelection = { kind: 'country', code: iso, name };
     this.selection = selection;
     this.setFocus(null);
-    const content = this.beginInspector('COUNTRY', `${name} ${toFlagEmoji(iso)}`, iso);
+    const content = this.beginInspector('Country', `${name} ${toFlagEmoji(iso)}`, iso);
 
     const status = el('p', 'ops-inspector-copy ops-country-status ops-skeleton');
     status.textContent = 'Compiling live signals for this country…';
@@ -1677,7 +1659,7 @@ export class OpsShell {
     const risk = scores && scores.cii.length > 0 ? scores.strategicRisk : null;
 
     if (!scores || !risk) {
-      const content = this.beginInspector('SIGNAL', 'Escalation index', 'Provenance');
+      const content = this.beginInspector('Signal', 'Escalation index', 'Provenance');
       const empty = el('p', 'ops-inspector-copy');
       empty.textContent = 'No cached risk snapshot yet. The breakdown appears once the intelligence backend returns its first scored snapshot.';
       content.appendChild(empty);
@@ -1687,7 +1669,7 @@ export class OpsShell {
     }
 
     const content = this.beginInspector(
-      'SIGNAL',
+      'Signal',
       'Escalation index',
       scores.computedAt ? `Computed ${formatAbsoluteTime(new Date(scores.computedAt))}` : 'Computation time unavailable',
     );
@@ -1929,10 +1911,6 @@ export class OpsShell {
       this.hudLevel.textContent = risk ? sentence(level) : 'Pending';
       this.hudLevel.dataset.level = level;
     }
-    if (this.hudBar) {
-      const fraction = risk ? Math.max(0, Math.min(1, risk.score / 100)) : 0;
-      this.hudBar.style.transform = `scaleX(${fraction})`;
-    }
     if (risk && scores && scores.cii.length > 0) {
       this.recordEscalationHistory(Math.round(risk.score));
     }
@@ -1941,14 +1919,6 @@ export class OpsShell {
     const ais = safeAisStatus();
     const events = this.ctx.latestClusters.length || this.ctx.allNews.length;
 
-    if (this.hudStats) {
-      this.hudStats.replaceChildren(
-        hudStat(VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : militaryFlights, 'Mil air'),
-        hudStat(VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : ais.vessels, 'Vessels'),
-        hudStat(events, 'Events'),
-        hudStat(scores?.cii?.filter((score) => score.level === 'high' || score.level === 'critical').length ?? 0, 'High CII'),
-      );
-    }
     if (this.countAir) setCount(this.countAir, VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : militaryFlights, 'air');
     if (this.countShips) setCount(this.countShips, VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : ais.vessels, 'ships');
     if (this.countEvents) setCount(this.countEvents, events, 'events');
@@ -2010,14 +1980,6 @@ function fact(label: string, value: string): HTMLElement {
   const valueEl = el('b');
   valueEl.textContent = value;
   wrap.append(labelEl, valueEl);
-  return wrap;
-}
-
-function hudStat(value: number | string, label: string): HTMLElement {
-  const wrap = el('span');
-  const number = el('b');
-  number.textContent = String(value);
-  wrap.append(number, document.createTextNode(label));
   return wrap;
 }
 

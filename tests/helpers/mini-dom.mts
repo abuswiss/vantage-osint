@@ -235,6 +235,19 @@ export class MiniElement extends MiniNode {
     this.childNodes = [];
   }
 
+  // Raw innerHTML assignments store a string without parsing (no HTML parser
+  // here); reflect it in textContent (tags stripped) so panels that render
+  // via sanitized-markdown innerHTML stay observable to assertions.
+  override get textContent(): string {
+    if (this.innerHtml) return this.innerHtml.replace(/<[^>]*>/g, '');
+    return super.textContent;
+  }
+
+  override set textContent(value: string | null) {
+    this.innerHtml = '';
+    super.textContent = value;
+  }
+
   override appendChild<T extends MiniElement | MiniText | MiniDocumentFragment>(child: T): T {
     this.innerHtml = '';
     return super.appendChild(child);

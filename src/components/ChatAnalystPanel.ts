@@ -16,6 +16,7 @@ import { classifyDenialResponse, type ClientEntitlementBelief } from '@/services
 import { reportEntitlementDesync } from '@/services/entitlement-desync-telemetry';
 import { trackAnalystControlAction } from '@/services/analytics';
 import { h, replaceChildren, setTrustedHtml, trustedHtml, type TrustedHtml } from '@/utils/dom-utils';
+import { createConfidenceBadge, extractConfidenceLevel } from '@/utils/confidence';
 import {
   isDashboardControlAction,
   parseAgentBusAction,
@@ -58,6 +59,55 @@ interface MetaEvent {
   sources: string[];
   degraded: boolean;
 }
+
+/** One entry from the terminal SSE sources event ({sources: [...]}) . */
+interface CitationSource {
+  index: number;
+  source: string;
+  title: string;
+  url?: string;
+}
+
+interface StreamOutcome {
+  status: 'done' | 'error' | 'incomplete';
+  sources: CitationSource[] | null;
+}
+
+/**
+ * Defensive parse of the terminal sources event payload. The event is new and
+ * optional — if it never arrives (or arrives malformed), we return null and
+ * [n] citation markers stay as plain text. Nothing breaks.
+ */
+function parseSourcesPayload(raw: unknown): CitationSource[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: CitationSource[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const rec = entry as Record<string, unknown>;
+    if (typeof rec.index !== 'number' || !Number.isInteger(rec.index)) continue;
+    out.push({
+      index: rec.index,
+      source: typeof rec.source === 'string' ? rec.source : `Source ${rec.index}`,
+      title: typeof rec.title === 'string' ? rec.title : '',
+      ...(typeof rec.url === 'string' ? { url: rec.url } : {}),
+    });
+  }
+  return out.length > 0 ? out : null;
+}
+
+/** Only http(s) URLs may become footer links; anything else renders as text. */
+function sanitizeExternalUrl(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Matches [n] citation markers emitted by the analyst markdown envelope. */
+const CITATION_MARKER_RE = /\[(\d{1,3})\]/g;
 
 type DashboardControlStatus = 'applied' | 'denied' | 'invalid' | 'skipped';
 
@@ -107,10 +157,13 @@ interface DashboardControlResult {
 
 type DashboardActionHandler = (action: DashboardControlAction) => DashboardControlResult;
 
-// Narrow allowlist: text formatting + tables only. No img/a/iframe so
-// prompt-injected or hallucinated URLs cannot trigger third-party requests.
+// Narrow allowlist: text formatting, headings + tables only. No img/a/iframe
+// so prompt-injected or hallucinated URLs cannot trigger third-party requests.
+// h2–h4 admit the markdown envelope's '### Key points' / '### Confidence' /
+// '### Watch' section headings (styled like .chat-section-header in main.css).
 const ANALYST_PURIFY_CONFIG = {
   ALLOWED_TAGS: ['p', 'strong', 'em', 'b', 'i', 'br', 'hr',
+    'h2', 'h3', 'h4',
     'ul', 'ol', 'li', 'code', 'pre',
     'table', 'thead', 'tbody', 'tr', 'th', 'td',
     'div', 'span'],
@@ -270,6 +323,12 @@ export class ChatAnalystPanel extends Panel {
       const chip = target.closest('[data-domain]') as HTMLElement | null;
       if (chip) {
         this.setDomain(chip.dataset.domain ?? 'all');
+        return;
+      }
+
+      const citation = target.closest('.chat-citation') as HTMLElement | null;
+      if (citation) {
+        this.handleCitationClick(citation);
         return;
       }
 
@@ -501,6 +560,16 @@ export class ChatAnalystPanel extends Panel {
     });
   }
 
+  /**
+   * Whether the user is currently reading the bottom of the transcript.
+   * Progressive stream renders only keep the view pinned when this is true —
+   * a user who scrolled up to re-read is never yanked back down.
+   */
+  private isPinnedToBottom(): boolean {
+    const el = this.messagesEl;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  }
+
   private setSendDisabled(disabled: boolean): void {
     const btn = this.content.querySelector('[data-action="send"]') as HTMLButtonElement | null;
     if (btn) btn.disabled = disabled;
@@ -564,17 +633,17 @@ export class ChatAnalystPanel extends Panel {
         return;
       }
 
-      const finished = await this.readStream(reader, bubble, streamingBody, (text) => { accumulatedText = text; });
-      if (finished === 'error') return;
-      if (finished === 'done') {
-        this.finalizeStreamingBubble(streamingBody, accumulatedText, true);
+      const outcome = await this.readStream(reader, bubble, streamingBody, (text) => { accumulatedText = text; });
+      if (outcome.status === 'error') return;
+      if (outcome.status === 'done') {
+        this.finalizeStreamingBubble(streamingBody, accumulatedText, true, outcome.sources);
         this.pushHistory(trimmedQuery, accumulatedText);
         return;
       }
 
       // Stream ended without a done event — response was truncated mid-stream
       if (accumulatedText) {
-        this.finalizeStreamingBubble(streamingBody, `${accumulatedText}\n\n⚠ *Response may be incomplete.*`, false);
+        this.finalizeStreamingBubble(streamingBody, `${accumulatedText}\n\n⚠ *Response may be incomplete.*`, false, outcome.sources);
         // Do not push to history — a truncated answer would corrupt the conversation context
       } else {
         this.finalizeStreamingBubble(streamingBody, '⚠ Response cut off. Try again.', false);
@@ -616,69 +685,248 @@ export class ChatAnalystPanel extends Panel {
     bubble: HTMLElement,
     bodyEl: HTMLElement,
     onToken: (text: string) => void,
-  ): Promise<'done' | 'error' | 'incomplete'> {
+  ): Promise<StreamOutcome> {
     const decoder = new TextDecoder();
     let buf = '';
     let accumulated = '';
+    let sources: CitationSource[] | null = null;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop() ?? '';
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const payload = JSON.parse(line.slice(6)) as {
-            delta?: string;
-            done?: boolean;
-            error?: string;
-            meta?: MetaEvent;
-            action?: unknown;
-          };
-          if (payload.error) {
-            this.finalizeStreamingBubble(bodyEl, '⚠ Analyst unavailable. Try again shortly.', false);
-            return 'error';
-          }
-          if (payload.meta) {
-            this.renderSourceChips(bubble, payload.meta);
-          }
-          if (payload.action) {
-            this.renderActionChip(bubble, payload.action);
-          }
-          if (payload.delta) {
-            accumulated += payload.delta;
-            bodyEl.appendChild(document.createTextNode(payload.delta));
-            onToken(accumulated);
-            this.scrollToBottom();
-          }
-          if (payload.done) return 'done';
-        } catch { /* malformed SSE chunk */ }
+    // Progressive markdown: re-render the in-progress bubble through the same
+    // sanitized marked+DOMPurify pipeline as the final message, throttled to
+    // ~10Hz on requestAnimationFrame so per-token chunks never trigger full
+    // reflows. `closed` (set in the finally) stops a queued frame from firing
+    // after finalizeStreamingBubble() has written the decorated final DOM.
+    const RENDER_INTERVAL_MS = 100;
+    let closed = false;
+    let renderQueued = false;
+    let lastRenderAt = 0;
+    const renderProgress = () => {
+      renderQueued = false;
+      if (closed || !bodyEl.isConnected) return;
+      lastRenderAt = performance.now();
+      const pinned = this.isPinnedToBottom();
+      setTrustedHtml(bodyEl, renderMarkdown(accumulated));
+      if (pinned) this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+    };
+    const queueRender = () => {
+      if (renderQueued || closed) return;
+      renderQueued = true;
+      const wait = Math.max(0, RENDER_INTERVAL_MS - (performance.now() - lastRenderAt));
+      if (wait === 0) requestAnimationFrame(renderProgress);
+      else setTimeout(() => requestAnimationFrame(renderProgress), wait);
+    };
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const payload = JSON.parse(line.slice(6)) as {
+              delta?: string;
+              done?: boolean;
+              error?: string;
+              meta?: MetaEvent;
+              action?: unknown;
+              sources?: unknown;
+            };
+            if (payload.error) {
+              this.finalizeStreamingBubble(bodyEl, '⚠ Analyst unavailable. Try again shortly.', false);
+              return { status: 'error', sources: null };
+            }
+            if (payload.meta) {
+              this.renderSourceChips(bubble, payload.meta);
+            }
+            if (payload.action) {
+              this.renderActionChip(bubble, payload.action);
+            }
+            if (payload.sources !== undefined) {
+              // Terminal citation-metadata event; absent or malformed → null,
+              // and [n] markers simply stay plain text.
+              sources = parseSourcesPayload(payload.sources) ?? sources;
+            }
+            if (payload.delta) {
+              accumulated += payload.delta;
+              onToken(accumulated);
+              queueRender();
+            }
+            if (payload.done) {
+              flushFinal();
+              return { status: 'done', sources };
+            }
+          } catch { /* malformed SSE chunk */ }
+        }
       }
+      flushFinal();
+      return { status: 'incomplete', sources };
+    } finally {
+      closed = true;
     }
-    return 'incomplete';
+
+    // Leave the bubble textually complete even before finalizeStreamingBubble()
+    // decorates it — callers (and tests) may observe the body right after
+    // readStream resolves, between throttled progressive frames.
+    function flushFinal(): void {
+      if (closed || !accumulated) return;
+      closed = true;
+      setTrustedHtml(bodyEl, renderMarkdown(accumulated));
+    }
   }
 
   // Defer the synchronous DOMPurify+marked sanitize off the current task so the
   // interaction/stream paint lands first — cuts INP processing time (#4537).
   // Fire-and-forget (no async ripple through the sync streaming call sites);
   // guarded so a detached bubble (panel closed mid-flight) is skipped.
-  private renderMarkdownDeferred(el: HTMLElement, content: string): void {
+  private renderMarkdownDeferred(el: HTMLElement, content: string, sources?: CitationSource[] | null): void {
     void yieldToMain().then(() => {
       if (!el.isConnected) return;
+      const pinned = this.isPinnedToBottom();
       setTrustedHtml(el, renderMarkdown(content));
+      if (sources?.length) {
+        this.decorateCitations(el, sources);
+        const bubble = el.closest('.chat-msg') as HTMLElement | null;
+        if (bubble) this.buildSourcesFooter(bubble, sources);
+      }
+      this.applyConfidenceBadge(el, content);
       // Scroll AFTER the markdown DOM lands — rendered markdown (headers, code
       // fences, lists) is taller than the raw streaming text, so scrolling before
       // this undershoots the true bottom on every completion (#4537 follow-up).
-      this.scrollToBottom();
+      // Only when the user was already at the bottom — never yank a reader back.
+      if (pinned) this.scrollToBottom();
     });
   }
 
-  private finalizeStreamingBubble(bodyEl: HTMLElement, text: string, success: boolean): void {
+  /**
+   * Replace [n] markers in the rendered message with inline citation chips —
+   * but only for indices present in the sources metadata. Without metadata
+   * this is never called and markers remain plain text.
+   */
+  private decorateCitations(bodyEl: HTMLElement, sources: CitationSource[]): void {
+    const byIndex = new Map(sources.map((s) => [s.index, s]));
+    const walker = document.createTreeWalker(bodyEl, NodeFilter.SHOW_TEXT);
+    const textNodes: Text[] = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if ((n.parentElement)?.closest('code, pre')) continue;
+      textNodes.push(n as Text);
+    }
+    for (const node of textNodes) {
+      const text = node.nodeValue ?? '';
+      CITATION_MARKER_RE.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      let last = 0;
+      let frag: DocumentFragment | null = null;
+      while ((match = CITATION_MARKER_RE.exec(text))) {
+        const idx = Number(match[1]);
+        const src = byIndex.get(idx);
+        if (!src) continue;
+        frag ??= document.createDocumentFragment();
+        frag.appendChild(document.createTextNode(text.slice(last, match.index)));
+        frag.appendChild(this.createCitationChip(idx, src));
+        last = match.index + match[0].length;
+      }
+      if (!frag) continue;
+      frag.appendChild(document.createTextNode(text.slice(last)));
+      node.replaceWith(frag);
+    }
+  }
+
+  private createCitationChip(idx: number, src: CitationSource): HTMLButtonElement {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chat-citation';
+    chip.dataset.citation = String(idx);
+    chip.textContent = `[${idx}]`;
+    const label = src.title ? `${src.source} — ${src.title}` : src.source;
+    chip.title = label;
+    chip.setAttribute('aria-label', `Source ${idx}: ${label}`);
+    return chip;
+  }
+
+  private buildSourcesFooter(bubble: HTMLElement, sources: CitationSource[]): void {
+    if (bubble.querySelector('.chat-sources-footer')) return;
+    const footer = document.createElement('div');
+    footer.className = 'chat-sources-footer';
+    footer.hidden = true;
+    for (const src of sources) {
+      const entry = document.createElement('div');
+      entry.className = 'chat-source-entry';
+      entry.dataset.sourceIndex = String(src.index);
+
+      const marker = document.createElement('span');
+      marker.className = 'chat-source-entry-index';
+      marker.textContent = `[${src.index}]`;
+      entry.appendChild(marker);
+
+      const safeUrl = sanitizeExternalUrl(src.url);
+      const label = document.createElement(safeUrl ? 'a' : 'span');
+      label.className = 'chat-source-entry-label';
+      if (safeUrl && label instanceof HTMLAnchorElement) {
+        label.href = safeUrl;
+        label.target = '_blank';
+        label.rel = 'noopener noreferrer';
+      }
+      const name = document.createElement('span');
+      name.className = 'chat-source-entry-name';
+      name.textContent = src.source;
+      label.appendChild(name);
+      if (src.title) label.appendChild(document.createTextNode(` — ${src.title}`));
+      entry.appendChild(label);
+
+      footer.appendChild(entry);
+    }
+    bubble.appendChild(footer);
+  }
+
+  private handleCitationClick(chip: HTMLElement): void {
+    const bubble = chip.closest('.chat-msg');
+    const footer = bubble?.querySelector('.chat-sources-footer') as HTMLElement | null;
+    if (!footer) return; // sources metadata never arrived — chip is decorative only
+    const idx = chip.dataset.citation ?? '';
+    const entry = footer.querySelector(`[data-source-index="${idx}"]`) as HTMLElement | null;
+    if (footer.hidden) {
+      footer.hidden = false;
+      footer.dataset.openFor = idx;
+      this.flashSourceEntry(entry);
+    } else if (footer.dataset.openFor === idx) {
+      footer.hidden = true;
+      delete footer.dataset.openFor;
+    } else {
+      footer.dataset.openFor = idx;
+      this.flashSourceEntry(entry);
+    }
+  }
+
+  private flashSourceEntry(entry: HTMLElement | null): void {
+    if (!entry) return;
+    entry.classList.remove('chat-source-flash');
+    void entry.offsetWidth; // restart the flash animation
+    entry.classList.add('chat-source-flash');
+    entry.scrollIntoView({ block: 'nearest' });
+  }
+
+  /** Mirror a '### Confidence' section as a tinted badge in the bubble corner. */
+  private applyConfidenceBadge(bodyEl: HTMLElement, content: string): void {
+    const level = extractConfidenceLevel(content);
+    if (!level) return;
+    const bubble = bodyEl.closest('.chat-msg') as HTMLElement | null;
+    if (!bubble) return;
+    bubble.querySelector(':scope > .wm-confidence-badge')?.remove();
+    bubble.appendChild(createConfidenceBadge(level));
+  }
+
+  private finalizeStreamingBubble(
+    bodyEl: HTMLElement,
+    text: string,
+    success: boolean,
+    sources?: CitationSource[] | null,
+  ): void {
     if (!success) bodyEl.classList.add('chat-msg-error');
     // renderMarkdownDeferred scrolls to bottom after the markdown DOM is written.
-    this.renderMarkdownDeferred(bodyEl, text);
+    this.renderMarkdownDeferred(bodyEl, text, sources);
   }
 
   clear(): void {

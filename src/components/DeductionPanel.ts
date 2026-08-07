@@ -11,6 +11,7 @@ import { getActiveFrameworkForPanel } from '@/services/analysis-framework-store'
 import { hasPremiumAccess } from '@/services/panel-gating';
 import { FrameworkSelector } from './FrameworkSelector';
 import { extractDeductionProbability } from './deduction-probability';
+import { createConfidenceBadge, matchConfidenceWord } from '@/utils/confidence';
 import { IntelligenceServiceClient } from '@/services/generated-rpc-clients';
 
 // deduct-situation + list-market-implications are premium-gated.
@@ -176,6 +177,12 @@ export class DeductionPanel extends Panel {
                 }
             } else {
                 labelEl.textContent = group.label;
+                // Surface the confidence level as a tinted badge on the section
+                // label (same visual as the chat analyst's confidence badge).
+                if (group.cls === 'ds-confidence') {
+                    const level = matchConfidenceWord(group.nodes.map(n => n.textContent ?? '').join(' '));
+                    if (level) labelEl.appendChild(createConfidenceBadge(level));
+                }
             }
             section.appendChild(labelEl);
 

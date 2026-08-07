@@ -39,6 +39,14 @@ import {
 // When multi-language digests are available, fan out to news:digest:v1:full:<lang>
 // and merge results before scoring.
 
+/** One numbered citation source, as presented to the model and to the client. */
+export interface AnalystSourceRef {
+  index: number;
+  source: string;
+  title: string;
+  url?: string;
+}
+
 export interface AnalystContext {
   timestamp: string;
   worldBrief: string;
@@ -51,6 +59,12 @@ export interface AnalystContext {
   countryBrief: string;
   liveHeadlines: string;
   relevantArticles: string;
+  /**
+   * Numbered citation sources ([1]..[n]) in the exact order their lines appear
+   * in the context blocks (matched articles first, then live headlines).
+   * Stable within the turn; the SSE `sources` event mirrors this array.
+   */
+  sources: AnalystSourceRef[];
   energyExposure: string;
   coalSpotPrice: string;
   gasSpotTtf: string;
@@ -73,6 +87,16 @@ function safeStr(v: unknown): string {
 
 function safeNum(v: unknown): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
+
+/**
+ * Feed-derived URLs reach both the system prompt and the client `sources`
+ * event — accept only a plain absolute http(s) URL with no whitespace (a
+ * newline or space fails \S+, so a URL can never forge a prompt line).
+ */
+function normalizeSourceUrl(v: unknown): string | undefined {
+  const url = safeStr(v).trim();
+  return url.length <= 300 && /^https?:\/\/\S+$/.test(url) ? url : undefined;
 }
 
 function formatPct(n: number): string {
@@ -699,6 +723,17 @@ interface SeededGdeltArticle {
   title?: unknown;
   source?: unknown;
   date?: unknown;
+  url?: unknown;
+}
+
+/** A selected live headline, before formatting/numbering. */
+interface GdeltHeadlineItem {
+  title: string;
+  source: string;
+  url?: string;
+  topic: string;
+  at: number;
+  score: number;
 }
 
 interface SeededGdeltTopic {
@@ -722,24 +757,24 @@ function formatHeadlineAge(timestampMs: number, nowMs: number): string {
 }
 
 /**
- * Pure selection + formatting over a materialized `intelligence:gdelt-intel:v1`
- * payload. Kept separate from the Redis read so the selection rules are
- * testable without a cache stub.
+ * Pure selection over a materialized `intelligence:gdelt-intel:v1` payload.
+ * Kept separate from the Redis read so the selection rules are testable
+ * without a cache stub, and separate from formatting so the assembler can
+ * number the selected items into the turn-stable citation source list.
  */
-export function buildHeadlinesFromGdeltIntel(
+function selectHeadlinesFromGdeltIntel(
   payload: unknown,
   domainFocus: string,
   keywords: string[],
-  nowMs: number,
-): string {
-  if (!payload || typeof payload !== 'object') return '';
+): GdeltHeadlineItem[] {
+  if (!payload || typeof payload !== 'object') return [];
   const rawTopics = (payload as { topics?: unknown }).topics;
-  if (!Array.isArray(rawTopics)) return '';
+  if (!Array.isArray(rawTopics)) return [];
 
   const snapshotFetchedAt = Date.parse(safeStr((payload as { fetchedAt?: unknown }).fetchedAt));
   const inScope = new Set<string>(DOMAIN_TOPIC_IDS[domainFocus] ?? ALL_TOPIC_IDS);
 
-  const candidates: Array<{ title: string; source: string; topic: string; at: number; score: number }> = [];
+  const candidates: GdeltHeadlineItem[] = [];
   for (const rawTopic of rawTopics as SeededGdeltTopic[]) {
     if (!rawTopic || typeof rawTopic !== 'object') continue;
     const topicId = safeStr(rawTopic.id);
@@ -766,6 +801,7 @@ export function buildHeadlinesFromGdeltIntel(
         // and the source domain is feed-derived. (`topic` is not — it can only
         // be one of the ids in the allowlist above.)
         source: sanitizeForPromptLine(safeStr(rawArticle.source)).slice(0, 40),
+        url: normalizeSourceUrl(rawArticle.url),
         topic: topicId,
         at,
         score: keywords.length > 0 ? scoreArticle(title, keywords) : 0,
@@ -773,7 +809,7 @@ export function buildHeadlinesFromGdeltIntel(
     }
   }
 
-  if (candidates.length === 0) return '';
+  if (candidates.length === 0) return [];
 
   // Syndicated wire stories appear as N identical titles across source domains
   // (live payload at review time: 4-6 copies per topic); dedup on normalized
@@ -800,19 +836,30 @@ export function buildHeadlinesFromGdeltIntel(
   const matched = deduped.filter((c) => c.score > 0);
   const pool = matched.length > 0 ? matched : deduped;
 
-  const selected = pool
+  return pool
     .sort((a, b) => (b.score - a.score) || (b.at - a.at))
     .slice(0, MAX_LIVE_HEADLINES);
+}
 
-  const lines = selected.map((c) => {
+/**
+ * Legacy string formatter over the pure selection above. The exported surface
+ * (and its bullet-line output) is pinned by tests; production now numbers the
+ * selected items in assembleAnalystContext instead.
+ */
+export function buildHeadlinesFromGdeltIntel(
+  payload: unknown,
+  domainFocus: string,
+  keywords: string[],
+  nowMs: number,
+): string {
+  const lines = selectHeadlinesFromGdeltIntel(payload, domainFocus, keywords).map((c) => {
     const meta = [c.source, c.topic, formatHeadlineAge(c.at, nowMs)].filter(Boolean).join(', ');
     return `- ${c.title}${meta ? ` (${meta})` : ''}`;
   });
-
   return lines.length ? `Latest Headlines:\n${lines.join('\n')}` : '';
 }
 
-async function buildLiveHeadlines(domainFocus: string, keywords: string[]): Promise<string> {
+async function buildLiveHeadlines(domainFocus: string, keywords: string[]): Promise<GdeltHeadlineItem[]> {
   // readCachedJson, not getCachedJson: a Redis failure must not be
   // indistinguishable from an absent key here. Silently swallowing the failure
   // is precisely what kept the dead GDELT fetch invisible for weeks.
@@ -833,12 +880,12 @@ async function buildLiveHeadlines(domainFocus: string, keywords: string[]): Prom
     void captureSilentError(read.error, {
       tags: { route: 'intelligence/chat-analyst-context', step: 'gdelt-intel-seed-read' },
     });
-    return '';
+    return [];
   }
-  if (read.status === 'miss') return '';
+  if (read.status === 'miss') return [];
 
   try {
-    return buildHeadlinesFromGdeltIntel(read.value, domainFocus, keywords, Date.now());
+    return selectHeadlinesFromGdeltIntel(read.value, domainFocus, keywords);
   } catch (err) {
     console.warn(
       `[chat-analyst] ${GDELT_INTEL_KEY} payload unusable, dropping live headlines: `,
@@ -847,7 +894,7 @@ async function buildLiveHeadlines(domainFocus: string, keywords: string[]): Prom
     void captureSilentError(err, {
       tags: { route: 'intelligence/chat-analyst-context', step: 'gdelt-intel-format' },
     });
-    return '';
+    return [];
   }
 }
 
@@ -855,6 +902,8 @@ async function buildLiveHeadlines(domainFocus: string, keywords: string[]): Prom
 
 const DIGEST_KEY_EN = 'news:digest:v1:full:en';
 const MAX_RELEVANT_ARTICLES = 8;
+/** Hard cap on the numbered citation list (articles + headlines combined). */
+const MAX_NUMBERED_SOURCES = 20;
 
 interface DigestItem {
   title: string;
@@ -897,19 +946,27 @@ function scoreArticle(title: string, keywords: string[]): number {
   return (hasAdjacentPair ? 3 : 1) * hits;
 }
 
-async function searchDigestByKeywords(keywords: string[]): Promise<string> {
-  if (keywords.length === 0) return '';
+/** A matched digest article, before formatting/numbering. */
+interface DigestSourceItem {
+  title: string;
+  source: string;
+  url?: string;
+  publishedAt?: number;
+}
+
+async function searchDigestByKeywords(keywords: string[]): Promise<DigestSourceItem[]> {
+  if (keywords.length === 0) return [];
 
   let digest: unknown;
   try {
     digest = await getCachedJson(DIGEST_KEY_EN, true);
   } catch {
-    return '';
+    return [];
   }
-  if (!digest) return '';
+  if (!digest) return [];
 
   const items = flattenDigest(digest);
-  if (items.length === 0) return '';
+  if (items.length === 0) return [];
 
   const scored = items
     .map((item) => {
@@ -924,22 +981,19 @@ async function searchDigestByKeywords(keywords: string[]): Promise<string> {
     .sort((a, b) => b.total - a.total)
     .slice(0, MAX_RELEVANT_ARTICLES);
 
-  if (scored.length === 0) return '';
-
-  const lines = scored.map(({ item }) => {
-    const title = sanitizeForPromptLine(safeStr(item.title));
-    const source = sanitizeForPromptLine(safeStr(item.source)).slice(0, 40);
-    const ts = item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
-    const meta = [source, ts].filter(Boolean).join(', ');
-    return `- ${title}${meta ? ` (${meta})` : ''}`;
-  });
-
-  return lines.join('\n');
+  return scored
+    .map(({ item }) => ({
+      title: sanitizeForPromptLine(safeStr(item.title)),
+      source: sanitizeForPromptLine(safeStr(item.source)).slice(0, 40),
+      url: normalizeSourceUrl(item.link),
+      publishedAt: typeof item.publishedAt === 'number' ? item.publishedAt : undefined,
+    }))
+    .filter((i) => i.title.length > 0);
 }
 
 // ── Source labels ─────────────────────────────────────────────────────────────
 
-const SOURCE_LABELS: Array<[keyof Omit<AnalystContext, 'timestamp' | 'degraded' | 'activeSources'>, string]> = [
+const SOURCE_LABELS: Array<[keyof Omit<AnalystContext, 'timestamp' | 'degraded' | 'activeSources' | 'sources'>, string]> = [
   ['relevantArticles', 'Articles'],
   ['worldBrief', 'Brief'],
   ['riskScores', 'Risk'],
@@ -1040,7 +1094,7 @@ export async function assembleAnalystContext(
     needsEnergyExposure ? getCachedJson(keys.energyExposure, true) : Promise.resolve(null),
     countryKey ? getCachedJson(countryKey, true) : Promise.resolve(null),
     buildLiveHeadlines(resolvedDomain, keywords),
-    keywords.length > 0 ? searchDigestByKeywords(keywords) : Promise.resolve(''),
+    keywords.length > 0 ? searchDigestByKeywords(keywords) : Promise.resolve([]),
     needsGasStorage ? buildGasStorage() : Promise.resolve(undefined),
     needsElectricity ? buildElectricityPrices() : Promise.resolve(undefined),
     needsEnergyIntel ? buildEnergyIntelligence() : Promise.resolve(undefined),
@@ -1055,8 +1109,8 @@ export async function assembleAnalystContext(
   const get = (r: PromiseSettledResult<unknown>) =>
     r.status === 'fulfilled' ? r.value : null;
 
-  const getStr = (r: PromiseSettledResult<unknown>): string =>
-    r.status === 'fulfilled' && typeof r.value === 'string' ? r.value : '';
+  const getItems = <T>(r: PromiseSettledResult<unknown>): T[] =>
+    r.status === 'fulfilled' && Array.isArray(r.value) ? (r.value as T[]) : [];
 
   const getOptStr = (r: PromiseSettledResult<unknown>): string | undefined => {
     if (r.status !== 'fulfilled') return undefined;
@@ -1072,6 +1126,38 @@ export async function assembleAnalystContext(
 
   const commoditiesData = get(commoditiesResult);
 
+  // Number the evidence items into one turn-stable citation list, in the exact
+  // order their lines appear in the context blocks: matched articles first
+  // (the prompt's primary factual basis), then live headlines. The [n] on each
+  // line is what the model cites; the same array ships to the client as the
+  // SSE `sources` event.
+  const digestItems = getItems<DigestSourceItem>(relevantArticlesResult);
+  const headlineItems = getItems<GdeltHeadlineItem>(headlinesResult);
+  const nowMs = Date.now();
+  const sources: AnalystSourceRef[] = [];
+  const numberSource = (source: string, title: string, url?: string): number => {
+    const index = sources.length + 1;
+    sources.push(url ? { index, source, title, url } : { index, source, title });
+    return index;
+  };
+
+  const articleLines: string[] = [];
+  for (const item of digestItems.slice(0, MAX_NUMBERED_SOURCES)) {
+    const n = numberSource(item.source, item.title, item.url);
+    const date = item.publishedAt
+      ? new Date(item.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : '';
+    const meta = [item.url, date].filter(Boolean).join(', ');
+    articleLines.push(`[${n}] ${item.source ? `${item.source} — ` : ''}${item.title}${meta ? ` (${meta})` : ''}`);
+  }
+
+  const headlineLines: string[] = [];
+  for (const item of headlineItems.slice(0, Math.max(0, MAX_NUMBERED_SOURCES - sources.length))) {
+    const n = numberSource(item.source, item.title, item.url);
+    const meta = [item.url, item.topic, formatHeadlineAge(item.at, nowMs)].filter(Boolean).join(', ');
+    headlineLines.push(`[${n}] ${item.source ? `${item.source} — ` : ''}${item.title}${meta ? ` (${meta})` : ''}`);
+  }
+
   const ctx: AnalystContext = {
     timestamp: new Date().toUTCString(),
     worldBrief: buildWorldBrief(get(insightsResult)),
@@ -1085,8 +1171,9 @@ export async function assembleAnalystContext(
     gasSpotTtf:    needsSpotEnergy ? buildSpotCommodityLine(get(commoditiesResult), 'TTF=F', 'TTF gas', '€')            : '',
     predictionMarkets: buildPredictionMarkets(get(predResult)),
     countryBrief: buildCountryBrief(get(countryResult)),
-    liveHeadlines: getStr(headlinesResult),
-    relevantArticles: getStr(relevantArticlesResult),
+    liveHeadlines: headlineLines.length ? `Latest Headlines:\n${headlineLines.join('\n')}` : '',
+    relevantArticles: articleLines.join('\n'),
+    sources,
     activeSources: [],
     degraded: failCount > 4,
     gasStorage: getOptStr(gasStorageResult),

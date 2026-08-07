@@ -52,6 +52,7 @@ function emptyCtx(): AnalystContext {
     countryBrief: '',
     liveHeadlines: '',
     relevantArticles: '',
+    sources: [],
     energyExposure: '',
     activeSources: [],
     degraded: false,
@@ -69,8 +70,9 @@ function fullCtx(): AnalystContext {
     macroSignals: 'Macro Signals:\nRegime: RISK-OFF',
     predictionMarkets: 'Prediction Markets:\n- "Taiwan invasion" Yes: 12%',
     countryBrief: 'Country Focus — UA:\nAnalysis of Ukraine situation.',
-    liveHeadlines: 'Latest Headlines:\n- Missile strikes reported',
+    liveHeadlines: 'Latest Headlines:\n[1] reuters.com — Missile strikes reported',
     relevantArticles: '',
+    sources: [{ index: 1, source: 'reuters.com', title: 'Missile strikes reported' }],
     energyExposure: 'Energy Generation Mix — 2023 data:\nGas-dependent (% electricity from gas): Italy 46%, Netherlands 39%\nCoal-dependent: South Africa 88%, Poland 65%\n(Gas figures are total gas mix; LNG vs. pipeline split not in this dataset.)',
     activeSources: ['Brief', 'Risk', 'Signals', 'Forecasts', 'Markets', 'EnergyMix', 'Macro', 'Prediction', 'Country', 'Live'],
     degraded: false,
@@ -161,29 +163,33 @@ describe('buildAnalystSystemPrompt — formatting instructions', () => {
     assert.ok(prompt.includes('350 words'), 'should include 350-word limit');
   });
 
-  it('includes bold headers instruction', () => {
+  it('includes the structured answer envelope (lead / Key points / Confidence / Watch)', () => {
     const prompt = buildAnalystSystemPrompt(fullCtx(), 'all');
-    assert.ok(prompt.includes('bold'), 'should include bold headers instruction');
+    assert.ok(prompt.includes('One-paragraph lead'), 'should require a cited one-paragraph lead');
+    assert.ok(prompt.includes('### Key points'), 'should include Key points section header');
+    assert.ok(prompt.includes('### Confidence'), 'should include Confidence section header');
+    assert.ok(prompt.includes('### Watch'), 'should include Watch section header');
+    assert.ok(prompt.includes('High/Moderate/Low'), 'Confidence line must carry the rating scale');
+    assert.ok(/follow-ups[^\n]*skip the sections/.test(prompt),
+      'short factual follow-ups must be allowed to skip the envelope');
   });
 
-  it('includes SITUATION / ANALYSIS / WATCH format instruction', () => {
+  it('requires inline [n] citations and forbids fabricated ones (citation flip)', () => {
     const prompt = buildAnalystSystemPrompt(fullCtx(), 'all');
-    assert.ok(prompt.includes('SITUATION'), 'should include SITUATION format');
-    assert.ok(prompt.includes('ANALYSIS'), 'should include ANALYSIS format');
-    assert.ok(prompt.includes('WATCH'), 'should include WATCH format');
-  });
-
-  it('includes SIGNAL / THESIS / RISK format instruction', () => {
-    const prompt = buildAnalystSystemPrompt(fullCtx(), 'all');
-    assert.ok(prompt.includes('SIGNAL'), 'should include SIGNAL format');
-    assert.ok(prompt.includes('THESIS'), 'should include THESIS format');
-    assert.ok(prompt.includes('RISK'), 'should include RISK format');
+    assert.ok(!prompt.includes('Do not cite data sources by name'),
+      'the anti-attribution instruction must be gone');
+    assert.ok(prompt.includes('inline [n] citation'),
+      'every factual claim from a numbered item must carry an inline [n] citation');
+    assert.ok(prompt.includes('Never fabricate a citation'),
+      'fabricated citations must be forbidden');
+    assert.ok(prompt.includes('"Assessment:"'),
+      'unsupported claims must be labeled with the Assessment: prefix');
   });
 
   it('"market" domain includes market emphasis instruction', () => {
     const prompt = buildAnalystSystemPrompt(fullCtx(), 'market');
     assert.ok(
-      prompt.toLowerCase().includes('market') && prompt.includes('SIGNAL'),
+      prompt.includes('Emphasise market signals'),
       'should include market-specific emphasis',
     );
   });
@@ -910,6 +916,52 @@ describe('assembleAnalystContext — liveHeadlines source of truth', { concurren
   });
 });
 
+describe('assembleAnalystContext — numbered citation sources', { concurrency: 1 }, () => {
+  it('numbers matched articles before live headlines and mirrors them in ctx.sources', async () => {
+    const harness = withStubbedRedis({
+      [GDELT_INTEL_KEY]: gdeltIntelFixture(),
+      'news:digest:v1:full:en': {
+        items: [{
+          title: 'Taiwan chip toolmakers brace for export controls',
+          source: 'reuters.com',
+          link: 'https://reuters.com/a',
+          publishedAt: NOW_MS,
+          importanceScore: 5,
+        }],
+      },
+    });
+    try {
+      const ctx = await assembleAnalystContext(undefined, 'all', 'taiwan chip export controls');
+
+      assert.ok(ctx.sources.length >= 2, 'digest and GDELT items must both be numbered');
+      assert.deepEqual(
+        ctx.sources.map((s) => s.index),
+        ctx.sources.map((_, i) => i + 1),
+        'indices must be contiguous 1..n in context-block order',
+      );
+      assert.equal(ctx.sources[0]!.title, 'Taiwan chip toolmakers brace for export controls',
+        'matched articles must be numbered first');
+      assert.equal(ctx.sources[0]!.url, 'https://reuters.com/a');
+      assert.match(ctx.relevantArticles, /^\[1\] reuters\.com — Taiwan chip toolmakers brace for export controls \(https:\/\/reuters\.com\/a/,
+        'the context line must render as [n] SOURCE — title (url…)');
+      assert.match(ctx.liveHeadlines, /\[2\] ft\.com — New export controls target Taiwan chip toolmakers \(https:\/\/ft\.com\/story, sanctions/,
+        'headline numbering must continue after the article numbers and carry the url');
+      assert.equal(ctx.sources[1]!.source, 'ft.com');
+      assert.ok(ctx.sources.length <= 20, 'numbered list must stay capped at 20');
+    } finally {
+      harness.restore();
+    }
+  });
+
+  it('the SSE endpoint emits the numbered source list as its own event', () => {
+    // Source-shape guard, matching the error-boundary guard above: the client
+    // renders citation chips from this event without re-parsing the context.
+    const src = readFileSync(new URL('../api/chat-analyst.ts', import.meta.url), 'utf-8');
+    assert.match(src, /\{\s*sources:\s*context\.sources\s*\}/,
+      'handler must prepend a { sources: context.sources } SSE event');
+  });
+});
+
 describe('buildHeadlinesFromGdeltIntel — selection, cap and age qualification', () => {
   it('caps at 5 headlines even when more articles match', () => {
     const payload = {
@@ -1219,6 +1271,15 @@ function bulletLines(block: string): string[] {
   return block.split('\n').filter((l) => l.startsWith('- '));
 }
 
+/** Assert `block` renders exactly `expected` numbered [n] citation lines and none is forged. */
+function assertNoForgedNumberedLine(block: string, expected: number, what: string): void {
+  const lines = block.split('\n');
+  assert.equal(lines.filter((l) => /^\[\d{1,2}\] /.test(l)).length, expected,
+    `${what}: expected exactly ${expected} numbered line(s); got:\n${block}`);
+  assert.ok(!lines.some((l) => l.startsWith('- FORGED') || l.startsWith('FORGED')),
+    `${what}: no feed text may start its own line; got:\n${block}`);
+}
+
 /** Assert `block` renders exactly `expected` bullets and none of them is forged. */
 function assertNoForgedBullet(block: string, expected: number, what: string): void {
   const bullets = bulletLines(block);
@@ -1466,7 +1527,7 @@ describe('#5857 — no feed field may forge a line in the assembled system promp
       assertNoForgedBullet(ctx.forecasts, 1, 'forecasts');
       assertNoForgedBullet(ctx.macroSignals, 1, 'macroSignals');
       assertNoForgedBullet(ctx.predictionMarkets, 1, 'predictionMarkets');
-      assertNoForgedBullet(ctx.relevantArticles, 1, 'relevantArticles');
+      assertNoForgedNumberedLine(ctx.relevantArticles, 1, 'relevantArticles');
       assertNoForgedBullet(ctx.marketData, 0, 'marketData');
       assertNoForgedBullet(ctx.countryBrief, 0, 'countryBrief');
       assertNoForgedBullet(ctx.energyExposure, 0, 'energyExposure');

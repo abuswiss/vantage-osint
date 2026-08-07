@@ -198,18 +198,14 @@ test.describe('Vantage operations shell', () => {
     await expect(alert).toBeVisible();
     const layout = await page.evaluate(() => {
       const banner = document.querySelector<HTMLElement>('.breaking-news-container');
-      const filter = document.querySelector<HTMLElement>('.ops-filter');
       const body = document.querySelector<HTMLElement>('.ops-body');
-      if (!banner || !filter || !body) throw new Error('missing alert-aware shell layout');
+      if (!banner || !body) throw new Error('missing alert-aware shell layout');
       return {
         bannerBottom: banner.getBoundingClientRect().bottom,
-        filterTop: filter.getBoundingClientRect().top,
-        filterBottom: filter.getBoundingClientRect().bottom,
         bodyTop: body.getBoundingClientRect().top,
       };
     });
-    expect(layout.filterTop).toBeGreaterThanOrEqual(layout.bannerBottom - 1);
-    expect(layout.bodyTop).toBeGreaterThanOrEqual(layout.filterBottom - 1);
+    expect(layout.bodyTop).toBeGreaterThanOrEqual(layout.bannerBottom - 1);
 
     await alert.click();
     await expect(page.locator('#opsInspector')).toBeVisible();

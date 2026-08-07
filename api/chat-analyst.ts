@@ -6,6 +6,7 @@
  *
  * Returns text/event-stream SSE:
  *   data: {"meta":{"sources":["Brief","Risk",...],"degraded":false}}  — always first event
+ *   data: {"sources":[{"index":1,"source":"reuters.com","title":"...","url":"..."}]}  — always second event; numbered citation sources matching the [n] markers in the response (old clients ignore it)
  *   data: {"action":{"type":"open_panel"|"set_view"|"...","label":"..."}}  — optional, schema-validated in-app actions
  *   data: {"delta":"..."}    — one per content token
  *   data: {"done":true}      — terminal event
@@ -225,11 +226,15 @@ export default async function handler(req: Request): Promise<Response> {
     });
 
     // Always prepend a meta event so the client knows which sources are live
-    // and whether context is degraded — before the first token arrives.
-    // Optionally follows with an action event for visual/chart queries.
+    // and whether context is degraded — before the first token arrives. The
+    // sources event carries the numbered citation list matching the [n]
+    // markers in the streamed answer, so the client can render citation chips
+    // without re-parsing the context. Optionally follows with an action event
+    // for visual/chart queries.
     const stream = prependSseEvents(
       [
         { meta: { sources: context.activeSources, degraded: context.degraded } },
+        { sources: context.sources },
         ...buildActionEvents(query).map((a) => ({ action: a })),
       ],
       llmStream,

@@ -77,12 +77,25 @@ export function getCurrentTheme(): Theme {
   return DEFAULT_THEME;
 }
 
+let themeTransitionTimer: ReturnType<typeof setTimeout> | null = null;
+
 /**
  * Set the active theme: update DOM attribute, invalidate color cache,
  * persist to localStorage, update meta theme-color, and dispatch event.
+ *
+ * Wraps the attribute flip in a short-lived `theme-transition` class on
+ * <html> so the (scoped) CSS transition rule animates the switch without
+ * a permanent universal `*` transition taxing the whole app.
  */
 export function setTheme(theme: Theme): void {
-  document.documentElement.dataset.theme = theme;
+  const root = document.documentElement;
+  root.classList.add('theme-transition');
+  if (themeTransitionTimer !== null) clearTimeout(themeTransitionTimer);
+  themeTransitionTimer = setTimeout(() => {
+    root.classList.remove('theme-transition');
+    themeTransitionTimer = null;
+  }, 250);
+  root.dataset.theme = theme;
   invalidateColorCache();
   try {
     localStorage.setItem(STORAGE_KEY, theme);
