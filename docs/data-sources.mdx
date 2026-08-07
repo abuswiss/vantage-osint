@@ -447,12 +447,12 @@ Client (1 RPC call) → listFeedDigest → Redis check (digest:v1:{variant}:{lan
                                     ▼
                            ┌─────────────────────────┐
                            │  Categorized digest      │
-                           │  Cached 900s (15 min)    │
+                           │  Cached 1800s (30 min)   │
                            │  Per-item keyword class.  │
                            └─────────────────────────┘
 ```
 
-The digest cache key is `news:digest:v1:{variant}:{lang}` with a 120-second TTL. Individual feed results are separately cached per URL: healthy parsed feeds use 600 seconds, while empty or failed zero-item parses use 300 seconds so transient blocks are retried sooner. Items per feed are capped at 5, categories at 20 items each. XML parsing is edge-runtime-compatible (regex-based, no DOM parser), handling both RSS item and Atom entry formats. Each item is keyword-classified at aggregation time. An in-memory fallback cache (capped at 50 entries) provides last-known-good data if Redis fails.
+The digest cache key is `news:digest:v1:{variant}:{lang}` and retains a successful last-known-good digest for 1800 seconds (30 minutes). Vantage's authenticated scheduler forces a fresh rebuild every 5 minutes; the longer TTL protects continuity if one scheduled run fails rather than setting the normal refresh cadence. An empty cold build uses a 120-second negative cache so a degraded origin does not cause a request storm. Individual feed results are separately cached per URL: healthy parsed feeds use 600 seconds, while empty or failed zero-item parses use 300 seconds so transient blocks are retried sooner. Items per feed are capped at 5, categories at 20 items each. XML parsing is edge-runtime-compatible (regex-based, no DOM parser), handling both RSS item and Atom entry formats. Each item is keyword-classified at aggregation time. An in-memory fallback cache (capped at 50 entries) provides last-known-good data if Redis fails.
 
 This eliminates per-client feed fan-out — 1,000 concurrent users each polling 25 feed categories would have generated 25,000 edge invocations per poll cycle. With server-side aggregation, they generate exactly 1 (or 0 if the digest is cached).
 

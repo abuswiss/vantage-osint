@@ -267,6 +267,16 @@ function extractNumericConst(src, constName) {
     : Number(match[1].replace(/_/g, ''));
 }
 
+function extractNumericProductConst(src, constName) {
+  const re = new RegExp(`const\\s+${constName}\\s*=\\s*([0-9_]+(?:\\s*\\*\\s*[0-9_]+)*)\\s*;`);
+  const match = src.match(re);
+  assert.ok(match, `failed to locate ${constName}`);
+  return match[1]
+    .split('*')
+    .map((part) => Number(part.trim().replace(/_/g, '')))
+    .reduce((product, value) => product * value, 1);
+}
+
 function extractStringUnionValues(src, propertyName) {
   const re = new RegExp(`${propertyName}\\s*:\\s*([^;]+);`);
   const match = src.match(re);
@@ -523,7 +533,8 @@ describe('news digest methodology parity', () => {
   it('documents news digest cache TTLs from the implementation', () => {
     const healthyTtl = extractNumericConst(digestSrc, 'CACHE_TTL_HEALTHY_S');
     const emptyTtl = extractNumericConst(digestSrc, 'CACHE_TTL_EMPTY_S');
-    const digestTtl = digestSrc.match(/cachedFetchJson<ListFeedDigestResponse>\(\s*digestCacheKey,\s*([0-9_]+)/s);
+    const digestTtl = extractNumericProductConst(digestSrc, 'DIGEST_CACHE_TTL_S');
+    const digestNegativeTtl = extractNumericConst(digestSrc, 'DIGEST_NEGATIVE_TTL_S');
 
     assert.equal(
       healthyTtl,
@@ -536,16 +547,27 @@ describe('news digest methodology parity', () => {
       'empty or failed feed TTL changed; update data-sources and methodology docs plus this disclosure guard together',
     );
     assert.equal(
-      Number(digestTtl?.[1]?.replace(/_/g, '')),
+      digestTtl,
+      1800,
+      'last-known-good digest TTL changed; update docs/data-sources.mdx and this disclosure guard together',
+    );
+    assert.equal(
+      digestNegativeTtl,
       120,
-      'digest cache TTL changed; update docs/data-sources.mdx and this disclosure guard together',
+      'negative digest TTL changed; update docs/data-sources.mdx and this disclosure guard together',
+    );
+    assert.match(
+      digestSrc,
+      /cachedFetchJson<ListFeedDigestResponse>\(\s*digestCacheKey,\s*DIGEST_CACHE_TTL_S,[\s\S]*?DIGEST_NEGATIVE_TTL_S,/,
+      'digest cache call must use the documented positive and negative TTL constants',
     );
 
     for (const text of [docText, dataSourcesText]) {
       assert.ok(text.includes(`${healthyTtl} seconds`), 'docs must mention healthy feed TTL');
       assert.ok(text.includes(`${emptyTtl} seconds`), 'docs must mention empty or failed feed TTL');
     }
-    assert.ok(dataSourcesText.includes('120-second TTL'), 'data sources page must mention digest TTL');
+    assert.ok(dataSourcesText.includes(`${digestTtl} seconds (30 minutes)`), 'data sources page must mention last-known-good digest TTL');
+    assert.ok(dataSourcesText.includes(`${digestNegativeTtl}-second negative cache`), 'data sources page must mention negative digest TTL');
     assert.doesNotMatch(
       dataSourcesText,
       /cached\s+600s\s+per URL|per URL for 600 seconds/i,
