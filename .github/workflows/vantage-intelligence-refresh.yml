@@ -2,7 +2,7 @@ name: Vantage intelligence refresh
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -32,7 +32,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
-          node-version: '22'
+          node-version: "22"
 
       - name: Warm public news digest
         run: |
@@ -58,7 +58,21 @@ jobs:
           node -e "const d=require('/tmp/vantage-risk.json'); if (!Array.isArray(d.ciiScores)) process.exit(1)"
 
       - name: Generate cited AI brief
-        run: node scripts/seed-insights.mjs
+        run: |
+          for attempt in 1 2 3; do
+            echo "Cited brief attempt ${attempt}/3"
+            node scripts/seed-insights.mjs
+            if curl --silent --show-error --max-time 20 \
+              --user-agent 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Safari/537.36' \
+              --output /tmp/vantage-insights-health.json \
+              'https://vantage-osint.vercel.app/api/vantage-health' \
+              && node -e "const h=require('/tmp/vantage-insights-health.json'); const s=h.services?.insights; if ((s?.status || s) !== 'ready') process.exit(1)"; then
+              exit 0
+            fi
+            echo "Cited brief is not fresh yet; retrying through the strict grounding gate"
+          done
+          echo "Cited brief remained stale after three grounded attempts" >&2
+          exit 1
 
       - name: Verify public data plane
         run: |
