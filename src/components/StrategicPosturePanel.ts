@@ -7,6 +7,7 @@ import { isDesktopRuntime } from '@/services/runtime';
 import { t } from '../services/i18n';
 import type { NewsItem, DeductContextDetail } from '@/types';
 import { buildNewsContext } from '@/utils/news-context';
+import { VANTAGE_PUBLIC_MODE, VANTAGE_RELAY_ENABLED } from '@/config/product-policy';
 
 export class StrategicPosturePanel extends Panel {
   private postures: TheaterPostureSummary[] = [];
@@ -30,6 +31,11 @@ export class StrategicPosturePanel extends Panel {
   }
 
   private init(): void {
+    if (this.isRelayPending()) {
+      this.showRelayPending();
+      return;
+    }
+
     this.showLoading();
     void this.fetchAndRender();
     // Re-augment with vessels after stream has had time to populate
@@ -42,6 +48,35 @@ export class StrategicPosturePanel extends Panel {
 
   private isPanelVisible(): boolean {
     return !this.element.classList.contains('hidden');
+  }
+
+  private isRelayPending(): boolean {
+    return VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED;
+  }
+
+  private showRelayPending(): void {
+    this.stopLoadingTimer();
+    this.setSafeContent(unsafeRawHtml(`
+      <div class="posture-panel">
+        <div class="posture-no-data">
+          <div class="posture-no-data-icon">◎</div>
+          <div class="posture-no-data-title">AIR/SHIPS relay pending</div>
+          <div class="posture-no-data-desc">
+            Live aircraft and vessel tracks will appear after the external relay is provisioned.
+          </div>
+          <div class="posture-data-sources">
+            <div class="posture-source">
+              <span class="posture-source-icon waiting">✈️</span>
+              <span>AIR pending</span>
+            </div>
+            <div class="posture-source">
+              <span class="posture-source-icon waiting">🚢</span>
+              <span>SHIPS pending</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `, 'legacy Panel.setContent() migration'));
   }
 
   private async reaugmentVessels(): Promise<void> {
@@ -271,6 +306,11 @@ export class StrategicPosturePanel extends Panel {
   }
 
   public updatePostures(data: CachedTheaterPosture): void {
+    if (this.isRelayPending()) {
+      this.showRelayPending();
+      return;
+    }
+
     if (!data || !data.postures?.length) {
       this.showNoData();
       return;
@@ -302,10 +342,20 @@ export class StrategicPosturePanel extends Panel {
   }
 
   public async refresh(): Promise<void> {
+    if (this.isRelayPending()) {
+      this.showRelayPending();
+      return;
+    }
+
     return this.fetchAndRender();
   }
 
   private showNoData(): void {
+    if (this.isRelayPending()) {
+      this.showRelayPending();
+      return;
+    }
+
     this.stopLoadingTimer();
     this.setSafeContent(unsafeRawHtml(`
       <div class="posture-panel">

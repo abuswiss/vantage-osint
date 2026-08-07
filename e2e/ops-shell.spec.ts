@@ -222,3 +222,34 @@ test.describe('Vantage operations shell', () => {
     expect(new URL(page.url()).searchParams.get('focus')).toBe(focus);
   });
 });
+
+test.describe('Vantage public mobile shell', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test.beforeEach(async ({ page }) => {
+    await installDeterministicNews(page);
+  });
+
+  test('labels AIR and SHIPS as pending without starting relay-backed requests', async ({ page }) => {
+    const relayBackedRequests: string[] = [];
+    page.on('request', (request) => {
+      const pathname = new URL(request.url()).pathname;
+      if (/\/(?:get-theater-posture|list-military-flights|list-military-vessels)$/.test(pathname)) {
+        relayBackedRequests.push(pathname);
+      }
+    });
+
+    await page.goto('/');
+    await expect(page).toHaveURL(/(?:\?|&)classic=1(?:&|$)/);
+    await page.getByText('AI Strategic Posture', { exact: true }).first().scrollIntoViewIfNeeded();
+    await expect(page.getByText('AIR/SHIPS relay pending', { exact: true })).toBeVisible();
+    await expect(page.getByText('AIR pending', { exact: true })).toBeVisible();
+    await expect(page.getByText('SHIPS pending', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Retry Now/i })).toHaveCount(0);
+    await page.waitForTimeout(1_000);
+
+    expect(relayBackedRequests).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expect(page.locator('body')).not.toContainText(/sign in|upgrade|pricing/i);
+  });
+});
