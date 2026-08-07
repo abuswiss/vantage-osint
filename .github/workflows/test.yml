@@ -167,13 +167,18 @@ jobs:
       - run: npm run test:data
       - name: Edge function bundle check
         run: |
-          # JS edge entries (existing loop, unchanged).
-          find api/ -name "*.js" -not -name "_*" -not -name "*.test.*" | while read f; do
+          # JS Edge entries. The Vantage refresh is an explicitly configured
+          # Node function because its seeder uses Node builtins.
+          find api/ -name "*.js" -not -name "_*" -not -name "*.test.*" -not -path "api/vantage-refresh.js" | while read f; do
             npx esbuild "$f" --bundle --format=esm --platform=browser --outfile=/dev/null || {
               echo "ERROR: esbuild failed to bundle $f"
               exit 1
             }
           done
+          npx esbuild api/vantage-refresh.js --bundle --format=esm --platform=node --outfile=/dev/null || {
+            echo "ERROR: esbuild failed to bundle api/vantage-refresh.js for Node"
+            exit 1
+          }
           # TS edge entries — opt-in allowlist. Most TS endpoints pull in
           # loaders esbuild doesn't ship by default (e.g. @vercel/og WASM
           # imports under api/brief/carousel/...), so we don't auto-include

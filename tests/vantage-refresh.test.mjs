@@ -71,11 +71,17 @@ function validInsights(overrides = {}, seedOverrides = {}) {
 describe('Vantage native cron contract', () => {
   it('pins a five-minute production cron and a bounded Node duration', () => {
     const vercel = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
+    const testWorkflow = readFileSync(new URL('../.github/workflows/test.yml', import.meta.url), 'utf8');
     assert.deepEqual(vercel.crons, [{ path: '/api/vantage-refresh', schedule: '*/5 * * * *' }]);
     assert.equal(functionConfig.maxDuration, 300);
     assert.equal(functionConfig.runtime, undefined);
     assert.ok(VANTAGE_REFRESH_LIMITS.lockTtlMs > VANTAGE_REFRESH_LIMITS.maxDurationMs);
     assert.ok(VANTAGE_REFRESH_LIMITS.deadlineMs < VANTAGE_REFRESH_LIMITS.maxDurationMs);
+    assert.match(testWorkflow, /-not -path "api\/vantage-refresh\.js"/);
+    assert.match(
+      testWorkflow,
+      /esbuild api\/vantage-refresh\.js --bundle --format=esm --platform=node/,
+    );
   });
 
   it('rejects non-GET and unauthenticated requests before orchestration', async () => {
