@@ -67,8 +67,8 @@ jobs:
             echo "Cited brief attempt ${attempt}/3"
             node scripts/seed-insights.mjs
             if BRIEF_STARTED_AT="$brief_started_at" node --input-type=module <<'NODE'
-              const response = await fetch(\`${process.env.UPSTASH_REDIS_REST_URL}/get/${encodeURIComponent('news:insights:v1')}\`, {
-                headers: { Authorization: \`Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}\` },
+              const response = await fetch(`${process.env.UPSTASH_REDIS_REST_URL}/get/${encodeURIComponent('news:insights:v1')}`, {
+                headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` },
                 signal: AbortSignal.timeout(10_000),
               });
               if (!response.ok) process.exit(1);

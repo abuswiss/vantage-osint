@@ -26,6 +26,7 @@ describe('Vantage intelligence refresh workflow', () => {
   });
 
   it('retries until this run publishes a citation-valid AI brief', () => {
+    assert.doesNotMatch(workflow, /\\`/);
     assert.match(workflow, /brief_started_at=/);
     assert.match(workflow, /get\/\$\{encodeURIComponent\('news:insights:v1'\)\}/);
     assert.match(workflow, /stored\?\.data \?\? stored/);
