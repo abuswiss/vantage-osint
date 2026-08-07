@@ -8,9 +8,15 @@ import {
   withRetry,
   httpRetryError,
   createLlmBudgetError,
+  acquireLockSafely,
+  atomicPublish,
   extendExistingTtl,
   isLlmBudgetError,
+  readCanonicalEnvelopeMeta,
   readExistingSeedMeta,
+  releaseLock,
+  verifySeedKey,
+  writeFreshnessMetadataSafely,
   writeExtraKey,
 } from './_seed-utils.mjs';
 import {
@@ -56,7 +62,12 @@ const BRIEF_VALIDATOR_MODE =
 // True only when run directly as a cron entry (node seed-insights.mjs), false
 // when imported by tests — so importing the module doesn't load .env or fire a
 // live seed. Mirrors seed-forecasts.mjs.
-const _isDirectRun = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'));
+const _directRunArg = process.argv[1]?.replace(/\\/g, '/');
+const _isDirectRun = Boolean(
+  _directRunArg
+  && _directRunArg.split('/').at(-1) === 'seed-insights.mjs'
+  && import.meta.url.endsWith(_directRunArg),
+);
 
 if (_isDirectRun) loadEnvFile(import.meta.url);
 
@@ -738,7 +749,7 @@ export function preserveChinaNewsCoverageInLkg(existing, chinaNewsCoverage) {
   return chinaNewsCoverage ? { ...existing, chinaNewsCoverage } : existing;
 }
 
-async function fetchInsights() {
+export async function fetchInsights() {
   const digest = await readOrWarmDigest('en');
   if (!digest) {
     // LKG fallback: reuse existing insights if digest is unavailable
@@ -1083,6 +1094,140 @@ async function finalizeInsightsRun(data, outcome, { previousMeta } = {}) {
       insightsFreshnessPatchArgs(data, outcome, resolvedPreviousMeta, Date.now()),
     ),
   };
+}
+
+/**
+ * Run the canonical insights publisher inside a long-lived Node process.
+ *
+ * The historical CLI entry point delegates to runSeed(), whose deliberate
+ * process.exit() contract is correct for Railway/GitHub cron processes but is
+ * unsafe inside a Vercel Function. This adapter reuses the exact same fetch,
+ * grounding, LKG, envelope, freshness, and lock primitives without terminating
+ * the host process. Dependencies are injectable so the serverless seam can be
+ * exercised without network or Redis access.
+ */
+export async function seedInsightsOnce(dependencies = {}) {
+  const acquire = dependencies.acquireLock || acquireLockSafely;
+  const publish = dependencies.atomicPublish || atomicPublish;
+  const fetchData = dependencies.fetchInsights || fetchInsights;
+  const finalize = dependencies.finalizeInsightsRun || finalizeInsightsRun;
+  const preserve = dependencies.extendExistingTtl || extendExistingTtl;
+  const readCanonicalMeta = dependencies.readCanonicalEnvelopeMeta || readCanonicalEnvelopeMeta;
+  const readMeta = dependencies.readExistingSeedMeta || readExistingSeedMeta;
+  const release = dependencies.releaseLock || releaseLock;
+  const verify = dependencies.verifySeedKey || verifySeedKey;
+  const writeFreshness = dependencies.writeFreshnessMetadataSafely || writeFreshnessMetadataSafely;
+  const flushTelemetry = dependencies.flushPendingLlmEvents || flushPendingLlmEvents;
+  const now = dependencies.now || Date.now;
+  const retry = dependencies.withRetry || withRetry;
+  const flushTelemetrySafely = async () => {
+    try { await flushTelemetry(); } catch { /* telemetry never changes publish outcome */ }
+  };
+  const runId = `${now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const lockDomain = 'news:insights';
+  const preservationKeys = [CANONICAL_KEY, 'seed-meta:news:insights', CHINA_COVERAGE_KEY];
+
+  const lock = await acquire(lockDomain, runId, 180_000, { label: lockDomain });
+  if (lock.skipped) {
+    throw new Error('Insights refresh could not acquire its Redis lock');
+  }
+  if (!lock.locked) {
+    return { status: 'skipped', reason: 'already_running' };
+  }
+
+  try {
+    const data = await retry(fetchData);
+    const runMeta = insightsRunMeta(data);
+    const recordCount = declareRecords(data);
+
+    if (!validateInsightsPayload(data)) {
+      const previousMeta = await readMeta('news', 'insights');
+      await preserve(preservationKeys, CACHE_TTL);
+      const canonicalMeta = await readCanonicalMeta(CANONICAL_KEY);
+      const finalized = await finalize(data, INSIGHTS_RUN_OUTCOMES.LKG_PRESERVED, { previousMeta });
+
+      if (canonicalMeta) {
+        const metadata = await writeFreshness(
+          'news',
+          'insights',
+          canonicalMeta.recordCount,
+          canonicalMeta.sourceVersion || INSIGHTS_SOURCE_VERSION,
+          CACHE_TTL,
+          canonicalMeta.fetchedAt,
+          canonicalMeta.contentAge,
+          finalized?.freshnessMetaPatch,
+        );
+        if (metadata == null) throw new Error('Insights LKG freshness metadata write failed');
+      } else {
+        await writeFreshness(
+          'news',
+          'insights',
+          0,
+          INSIGHTS_SOURCE_VERSION,
+          CACHE_TTL,
+        );
+        throw new Error('Insights LKG canonical envelope is missing');
+      }
+
+      await flushTelemetrySafely();
+      return {
+        status: 'preserved',
+        reason: runMeta?.failureCode || INSIGHTS_SYNTHESIS_FAILURE_CODES.PROVIDER,
+        recordCount,
+        generatedAt: data?.generatedAt || null,
+      };
+    }
+
+    const publishedAt = now();
+    const publishData = publishInsightsPayload(data);
+    const publishResult = await publish(
+      CANONICAL_KEY,
+      publishData,
+      validateInsightsPayload,
+      CACHE_TTL,
+      {
+        envelopeMeta: {
+          fetchedAt: publishedAt,
+          recordCount,
+          sourceVersion: INSIGHTS_SOURCE_VERSION,
+          schemaVersion: 1,
+          state: recordCount > 0 ? 'OK' : 'RETRY',
+        },
+      },
+    );
+    if (publishResult?.skipped) throw new Error('Insights payload failed validation');
+
+    const outcome = runMeta?.outcome === INSIGHTS_RUN_OUTCOMES.PUBLISHED
+      ? INSIGHTS_RUN_OUTCOMES.PUBLISHED
+      : INSIGHTS_RUN_OUTCOMES.DEGRADED;
+    const finalized = await finalize(data, outcome);
+    const metadata = await writeFreshness(
+      'news',
+      'insights',
+      recordCount,
+      INSIGHTS_SOURCE_VERSION,
+      CACHE_TTL,
+      undefined,
+      undefined,
+      finalized?.freshnessMetaPatch,
+    );
+    if (metadata == null) throw new Error('Insights freshness metadata write failed');
+
+    const verified = Boolean(await verify(CANONICAL_KEY));
+    await flushTelemetrySafely();
+    return {
+      status: outcome === INSIGHTS_RUN_OUTCOMES.PUBLISHED ? 'published' : 'degraded',
+      recordCount,
+      generatedAt: publishData.generatedAt || null,
+      verified,
+    };
+  } catch (error) {
+    await preserve(preservationKeys, CACHE_TTL).catch(() => false);
+    await flushTelemetrySafely();
+    throw error;
+  } finally {
+    await release(lockDomain, runId);
+  }
 }
 
 export { callLLM, __setInsightsLlmTransportForTests };

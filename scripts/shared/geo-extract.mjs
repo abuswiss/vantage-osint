@@ -4,14 +4,7 @@
  * and short-form geopolitical names that appear frequently in news headlines.
  */
 
-import { createRequire } from 'module';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-const require = createRequire(import.meta.url);
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-const countryNames = require(join(__dirname, 'country-names.json'));
+import countryNames from './country-names.json' with { type: 'json' };
 
 // City/region/capital aliases → ISO2 not covered by country-names.json
 const ALIAS_MAP = {

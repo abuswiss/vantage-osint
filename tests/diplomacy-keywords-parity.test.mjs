@@ -80,8 +80,8 @@ test('scripts/_clustering.mjs sources keywords from canonical JSON', async () =>
   // byte-identical by tests/edge-functions.test.mjs.
   assert.match(
     src,
-    /require\(\s*['"]\.{1,2}\/shared\/diplomacy-keywords\.json['"]\s*\)/,
-    '_clustering.mjs must require the canonical JSON',
+    /(?:require\(\s*|from\s*)['"]\.{1,2}\/shared\/diplomacy-keywords\.json['"]/,
+    '_clustering.mjs must load the canonical JSON',
   );
   assert.doesNotMatch(
     src,

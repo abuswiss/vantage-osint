@@ -192,6 +192,7 @@ describe('middleware PUBLIC_API_PATHS — secret-authed internal endpoints bypas
     '/api/internal/brief-why-matters',
     '/api/llms.txt',
     '/api/product-catalog',
+    '/api/vantage-refresh',
   ];
 
   for (const path of ALLOWED_PATHS) {
@@ -212,6 +213,7 @@ describe('middleware PUBLIC_API_PATHS — secret-authed internal endpoints bypas
     '/api/internal/brief-why-matters-v2',     // near-miss suffix
     '/api/internal/',                          // directory only
     '/api/internal/other',                     // different leaf
+    '/api/vantage-refresh-extra',              // cron allowlist must be exact
   ];
 
   for (const path of SIBLING_PATHS) {

@@ -30,6 +30,9 @@ const LEGACY_DASHBOARD_ROOT_QUERY_KEYS = ['lat', 'lon', 'zoom', 'view', 'timeRan
 //   keyless, advertised as service-meta in /.well-known/api-catalog). Agents
 //   evaluating the product are a primary audience; an agent-journey run (#4854)
 //   got 403 here and concluded the endpoint didn't exist.
+// - /api/vantage-refresh: Vercel Cron orchestration endpoint. It requires the
+//   platform-supplied CRON_SECRET bearer token and must bypass the short/bot UA
+//   gate before its own timing-safe authentication can run.
 const PUBLIC_API_PATHS = new Set([
   '/api/version',
   '/api/health',
@@ -37,6 +40,7 @@ const PUBLIC_API_PATHS = new Set([
   '/api/internal/brief-why-matters',
   '/api/llms.txt',
   '/api/product-catalog',
+  '/api/vantage-refresh',
 ]);
 
 const SOCIAL_IMAGE_UA =

@@ -1,6 +1,17 @@
 {
   "ignoreCommand": "bash scripts/vercel-ignore.sh",
-  "crons": [],
+  "functions": {
+    "api/vantage-refresh.js": {
+      "maxDuration": 300,
+      "includeFiles": "scripts/{_proxy-utils.cjs,shared/*.json}"
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/vantage-refresh",
+      "schedule": "*/5 * * * *"
+    }
+  ],
   "redirects": [
     { "source": "/docs/:match*", "has": [{ "type": "host", "value": "^api\\.worldmonitor\\.app$" }], "destination": "https://www.worldmonitor.app/docs/:match*", "permanent": true },
     { "source": "/api-reference/:match*", "destination": "https://www.worldmonitor.app/docs/api-reference/:match*", "permanent": true },

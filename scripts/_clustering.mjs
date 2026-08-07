@@ -1,19 +1,17 @@
 #!/usr/bin/env node
 
-import { createRequire } from 'node:module';
 // #4919: story similarity is delegated to the shared story-identity
 // module (scripts/shared mirror — same rootDirectory=scripts reason as
 // the JSON requires below). The local Jaccard-0.5 matcher this file
 // carried was one of three inconsistent "same story?" answers in the
 // codebase; all three now share ONE definition and threshold.
 import { clusterTexts } from './shared/story-identity.js';
+import SOURCE_TIERS from './shared/source-tiers.json' with { type: 'json' };
+import DIPLOMACY_KEYWORDS_DATA from './shared/diplomacy-keywords.json' with { type: 'json' };
 
-const require = createRequire(import.meta.url);
-const SOURCE_TIERS = require('./shared/source-tiers.json');
 // scripts/shared/ mirror (NOT ../shared/): seed-insights.mjs deploys via
 // nixpacks with rootDirectory=scripts, so the repo-root shared/ folder
 // is not in the container. Matches the SOURCE_TIERS pattern above.
-const DIPLOMACY_KEYWORDS_DATA = require('./shared/diplomacy-keywords.json');
 
 const ENTITY_CORROBORATION_WINDOW_MS = 24 * 60 * 60 * 1000;
 

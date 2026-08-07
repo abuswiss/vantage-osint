@@ -503,6 +503,13 @@
       "removal_issue": null
     },
     {
+      "path": "api/vantage-refresh.js",
+      "category": "ops-admin",
+      "reason": "CRON_SECRET-protected Vercel Cron orchestrator for the Vantage news, escalation score, and citation-backed insights refresh. It is deployment plumbing rather than a product data API.",
+      "owner": "@abuswiss",
+      "removal_issue": null
+    },
+    {
       "path": "api/analytics-health.js",
       "category": "ops-admin",
       "reason": "Anonymous, bounded analytics collector health counter ingress. It accepts no event or identity payload and aggregates operator telemetry in Redis; not a product API.",

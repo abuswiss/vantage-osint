@@ -238,6 +238,33 @@ describe('crawlable content corpus deployment contracts', () => {
     assert.ok(vercelIgnoreSource.includes("'docs/snapshots/'"));
   });
 
+  it('builds Vercel when any serverless insights dependency changes', () => {
+    const serverlessInsightsDependencies = [
+      'scripts/seed-insights.mjs',
+      'scripts/_seed-utils.mjs',
+      'scripts/_clustering.mjs',
+      'scripts/_china-news-coverage.mjs',
+      'scripts/_seed-envelope-source.mjs',
+      'scripts/_seed-contract.mjs',
+      'scripts/_insights-brief.mjs',
+      'scripts/_proxy-utils.cjs',
+      'scripts/shared/geo-extract.mjs',
+      'scripts/shared/story-identity.js',
+      'scripts/shared/brief-llm-core.js',
+      'scripts/shared/source-tiers.json',
+      'scripts/shared/diplomacy-keywords.json',
+      'scripts/shared/country-names.json',
+      'scripts/lib/llm-telemetry.cjs',
+    ];
+    for (const path of serverlessInsightsDependencies) {
+      assert.equal(
+        vercelIgnoreSource.split(`'${path}'`).length - 1,
+        2,
+        `${path} must be watched in both main and branch Vercel diffs`,
+      );
+    }
+  });
+
   it('keeps corpus inputs available in Docker build contexts', () => {
     const markdownIgnore = dockerignoreSource.indexOf('*.md');
     const changelogInclude = dockerignoreSource.indexOf('!CHANGELOG.md');
@@ -2021,30 +2048,17 @@ describe('agent readiness: auth.md walkthrough', () => {
   });
 });
 
-// PR history: #3204 / #3206 forced the resvg linux-x64-gnu native
-// binding into the carousel function via vercel.json
-// `functions.includeFiles`. That entire workaround became unnecessary
-// once the route moved to @vercel/og on Edge runtime (see
-// api/brief/carousel/...), which bundles satori + resvg-wasm with
-// Vercel-native support. The `functions` block was removed.
-//
-// If any future route ever needs a Vercel `functions` config, keep
-// in mind: the keys are micromatch globs, NOT literal paths.
+// Vercel `functions` keys are micromatch globs, NOT literal paths.
 // `[userId]` is a character class (match one of u/s/e/r/I/d), not a
-// dynamic segment placeholder. Use `api/foo/**` for routes with
-// dynamic brackets. See skill `vercel-native-binding-peer-dep-missing`
-// for the full story.
-describe('vercel.json functions config (none expected after carousel moved to edge)', () => {
-  it('does not define any `functions` block (carousel now uses @vercel/og on edge)', () => {
-    assert.equal(
-      vercelConfig.functions,
-      undefined,
-      'No routes currently require a functions config. If adding one, ' +
-        'remember Vercel treats the key as a micromatch glob — ' +
-        '`[userId]` will silently match one of {u,s,e,r,I,d} and your ' +
-        'rule will apply to nothing. See skill ' +
-        'vercel-native-binding-peer-dep-missing for the gotcha.',
-    );
+// dynamic segment placeholder. The Vantage cron is a fixed leaf, so its
+// duration and createRequire-resolved assets stay pinned to one exact key.
+describe('vercel.json functions config', () => {
+  it('scopes the Vantage cron duration and runtime-resolved assets to one exact route', () => {
+    assert.deepEqual(Object.keys(vercelConfig.functions || {}), ['api/vantage-refresh.js']);
+    assert.deepEqual(vercelConfig.functions['api/vantage-refresh.js'], {
+      maxDuration: 300,
+      includeFiles: 'scripts/{_proxy-utils.cjs,shared/*.json}',
+    });
   });
 });
 

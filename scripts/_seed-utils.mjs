@@ -5,8 +5,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
 import { flushPendingLlmEvents } from './lib/llm-telemetry.cjs';
+import proxyUtils from './_proxy-utils.cjs';
 
 import { buildEnvelope, unwrapEnvelope } from './_seed-envelope-source.mjs';
 import { resolveRecordCount } from './_seed-contract.mjs';
@@ -1071,7 +1071,12 @@ export function sleep(ms) {
 }
 
 // ─── Proxy helpers for sources that block Railway container IPs ───
-const { resolveProxyString, resolveProxyStringConnect } = createRequire(import.meta.url)('./_proxy-utils.cjs');
+const {
+  resolveProxyString,
+  resolveProxyStringConnect,
+  proxyFetch,
+  parseProxyConfig,
+} = proxyUtils;
 
 export function resolveProxy(raw = process.env.PROXY_URL || '') {
   return resolveProxyString(raw);
@@ -1155,7 +1160,6 @@ async function httpsProxyFetchJson(url, proxyAuth) {
 }
 
 export async function httpsProxyFetchRaw(url, proxyAuth, { accept = '*/*', timeoutMs = 20_000, signal } = {}) {
-  const { proxyFetch, parseProxyConfig } = createRequire(import.meta.url)('./_proxy-utils.cjs');
   const proxyConfig = parseProxyConfig(proxyAuth);
   if (!proxyConfig) throw new Error('Invalid proxy auth string');
   const result = await proxyFetch(url, proxyConfig, { accept, timeoutMs, signal, headers: { 'User-Agent': CHROME_UA } });
