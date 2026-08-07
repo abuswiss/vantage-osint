@@ -8,8 +8,10 @@ const workflow = readFileSync(
 );
 
 describe('Vantage intelligence refresh workflow', () => {
-  it('refreshes more often than the ten-minute news freshness window', () => {
-    assert.match(workflow, /cron: "\*\/5 \* \* \* \*"/);
+  it('stays available as manual recovery after native Vercel Cron cutover', () => {
+    assert.match(workflow, /workflow_dispatch:/);
+    assert.doesNotMatch(workflow, /\bschedule:/);
+    assert.doesNotMatch(workflow, /cron:/);
   });
 
   it('bypasses the public CDN and proves the origin recomputed the digest', () => {
@@ -25,7 +27,7 @@ describe('Vantage intelligence refresh workflow', () => {
     assert.match(workflow, /age > 300000/);
   });
 
-  it('retries until this run publishes a citation-valid AI brief', () => {
+  it('retries until this run publishes a fresh citation-backed brief', () => {
     assert.doesNotMatch(workflow, /\\`/);
     assert.match(workflow, /brief_started_at=/);
     assert.match(workflow, /get\/\$\{encodeURIComponent\('news:insights:v1'\)\}/);
