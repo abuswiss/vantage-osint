@@ -792,7 +792,7 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   color: var(--ops-text-faint);
 }
 .ops-status-item {
-  width: 150px;
+  min-width: 150px;
   flex: 0 0 auto;
   white-space: nowrap;
 }

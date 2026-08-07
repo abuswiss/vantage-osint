@@ -116,6 +116,19 @@ test.describe('Vantage operations shell', () => {
     await expect(page.getByRole('button', { name: 'Air layer pending relay provisioning' })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Ships layer pending relay provisioning' })).toBeDisabled();
     await expect(page.locator('.ops-status-item')).toContainText('AIR/SHIPS PENDING');
+    const bottomLabelLayout = await page.evaluate(() => {
+      const status = document.querySelector<HTMLElement>('.ops-status-item');
+      const activity = document.querySelector<HTMLElement>('.ops-timeline-label');
+      const text = status?.firstChild;
+      if (!status || !activity || !text) throw new Error('missing operations-shell bottom labels');
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      return {
+        statusTextRight: range.getBoundingClientRect().right,
+        activityLeft: activity.getBoundingClientRect().left,
+      };
+    });
+    expect(bottomLabelLayout.statusTextRight).toBeLessThan(bottomLabelLayout.activityLeft);
     expect(unprovisionedRequests).toEqual([]);
 
     await page.getByRole('button', { name: 'Open cited AI situation brief' }).click();
