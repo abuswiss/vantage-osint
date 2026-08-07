@@ -428,7 +428,7 @@ describe('entitlement hint helpers', () => {
   });
 });
 
-describe('pre-paint reservation honors entitlement hint', () => {
+describe('public Vantage pre-paint omits the paid banner reservation', () => {
   function runPrepaint(storageSeed: Record<string, string>): Set<string> {
     const html = readFileSync(resolve(root, 'index.html'), 'utf-8');
     const script = html.match(/<script data-wm-prepaint>([\s\S]*?)<\/script>/);
@@ -456,26 +456,26 @@ describe('pre-paint reservation honors entitlement hint', () => {
         setItem: (key: string, value: string) => { storage.set(key, value); },
         removeItem: (key: string) => { storage.delete(key); },
       },
-      location: { hostname: 'www.worldmonitor.app' },
+      location: { hostname: 'vantage-osint.vercel.app' },
       window: windowObj,
       Date,
     });
     return classes;
   }
 
-  it('reserves the banner strip for free visitors without a dismiss or hint', () => {
+  it('does not reserve a paid banner strip for an anonymous visitor', () => {
     const classes = runPrepaint({});
-    assert.ok(classes.has('wm-pro-banner-reserved'));
+    assert.equal(classes.has('wm-pro-banner-reserved'), false);
   });
 
-  it('does not reserve when the entitlement hint says pro', () => {
+  it('does not depend on a legacy entitlement hint', () => {
     const classes = runPrepaint({
       [PRO_BANNER_ENTITLEMENT_HINT_KEY]: PRO_BANNER_ENTITLEMENT_HINT_VALUE,
     });
     assert.equal(classes.has('wm-pro-banner-reserved'), false);
   });
 
-  it('still skips reservation when dismissed (even without a pro hint)', () => {
+  it('does not depend on a legacy banner dismissal', () => {
     const classes = runPrepaint({
       'wm-pro-banner-launched-dismissed': String(Date.now()),
     });
@@ -544,14 +544,11 @@ describe('wiring contracts (#5728)', () => {
     assert.match(ret, /applyProBannerEntitlementHint\(localStorage, true\)/);
   });
 
-  it('pre-paint script and policy share the same hint key/value', () => {
+  it('pre-paint script never reads account entitlement state', () => {
     const html = readFileSync(resolve(root, 'index.html'), 'utf-8');
     const script = html.match(/<script data-wm-prepaint>([\s\S]*?)<\/script>/)?.[1] ?? '';
-    assert.match(
-      script,
-      new RegExp(`localStorage\\.getItem\\('${PRO_BANNER_ENTITLEMENT_HINT_KEY}'\\)==='${PRO_BANNER_ENTITLEMENT_HINT_VALUE}'`),
-    );
-    assert.match(script, /!entitledHint\)document\.documentElement\.classList\.add\('wm-pro-banner-reserved'\)/);
+    assert.doesNotMatch(script, new RegExp(PRO_BANNER_ENTITLEMENT_HINT_KEY));
+    assert.match(script, /document\.documentElement\.classList\.remove\('wm-pro-banner-reserved'\)/);
   });
 
   it('CSP script-src still pins the updated pre-paint script hash', () => {

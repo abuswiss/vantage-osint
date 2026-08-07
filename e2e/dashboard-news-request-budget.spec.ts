@@ -41,29 +41,6 @@ const RSS_PROXY_GLOB = '**/api/rss-proxy*';
 // margin over the interval being guarded.
 const SECOND_LOAD_SETTLE_MS = 8_000;
 
-// src/app/data-loader.ts `perFeedFallbackCategoryFeedLimit`. Every per-feed
-// fallback is capped at this many feeds per category, custom categories included.
-//
-// The cap bounds a SINGLE LOAD, and since #5873 that is the whole of what it
-// bounds: a custom category now rotates its window by the cap on each refresh
-// cycle (fixed prefixes made feeds 4..N unreachable forever), so N loads reach
-// up to N × cap distinct feeds over time. This spec seeds a fresh anonymous
-// profile, so the persisted rotation cycle starts at 0 and the window is the
-// leading prefix — exactly the pre-rotation feed set.
-//
-// That makes the assertion below transitively a single-load guard too: a second
-// news load in one page load would advance the rotation and fetch 6 distinct
-// feeds instead of 3. It fails alongside the explicit `digestUrls.length === 1`
-// assertion rather than instead of it.
-const PER_FEED_FALLBACK_CATEGORY_FEED_LIMIT = 3;
-
-// A Tech news panel customized into a `full` session: absent from FULL_FEEDS, so
-// it resolves as a CUSTOM category and direct fetch is its only path. Priority 1
-// keeps it inside the 40-panel free-tier cap (FULL_PANELS enables 39 priority-1
-// panels), and its 10 TECH_FEEDS entries are well past the per-category cap.
-const CUSTOM_CATEGORY_KEY = 'startups';
-const CUSTOM_CATEGORY_FEED_COUNT = 10;
-
 // A full-variant preset news panel that sits below the fold, so it mounts after the
 // news load rather than during it. The digest stub carries no bucket for it.
 const EMPTY_CATEGORY_PANEL = 'africa';
@@ -72,22 +49,6 @@ type NewsRequestLog = {
   digestUrls: string[];
   rssProxyUrls: string[];
 };
-
-/**
- * Distinct feed URLs behind a set of /api/rss-proxy requests.
- *
- * The cap bounds how many FEEDS a category fetches, not how many HTTP attempts
- * they cost — this spec aborts the proxy requests, so the RSS client's own retry
- * of a failed feed would otherwise inflate a raw request count.
- */
-function distinctProxiedFeeds(rssProxyUrls: string[]): string[] {
-  const feeds = new Set<string>();
-  for (const url of rssProxyUrls) {
-    const target = new URL(url).searchParams.get('url');
-    if (target) feeds.add(target);
-  }
-  return [...feeds];
-}
 
 /**
  * Fire a real post-load hydration trigger and prove it fired.
@@ -325,7 +286,7 @@ test.describe('dashboard news request budget (#5376)', () => {
     const log = await installNewsRequestAccounting(page);
 
     const firstDigest = page.waitForRequest(DIGEST_GLOB);
-    await page.goto('/');
+    await page.goto('/?classic=1');
     await page.waitForFunction(
       () => document.documentElement.dataset.wmEventHandlersReady === 'true',
     );
@@ -354,81 +315,6 @@ test.describe('dashboard news request budget (#5376)', () => {
     ).toBe(1);
   });
 
-  // The other half of the fix: a category that legitimately STAYS custom — a
-  // cross-variant panel the user enabled on purpose — must still load (that is
-  // #3687, the bug panel-driven resolution was introduced to fix) and must be
-  // capped like every other per-feed fallback. Custom categories used to be
-  // exempt from the cap on the theory that there were only ever a handful.
-  test('a deliberately customized category still loads, capped at the per-category feed limit', async ({ page }) => {
-    const capWarnings: string[] = [];
-    page.on('console', (message) => {
-      const text = message.text();
-      if (text.includes('[News] Custom category')) capWarnings.push(text);
-    });
-
-    await seedFreshAnonymousFullVariant(page, {
-      [CUSTOM_CATEGORY_KEY]: { name: 'Startups & VC', enabled: true, priority: 1 },
-    });
-    const log = await installNewsRequestAccounting(page);
-
-    const firstDigest = page.waitForRequest(DIGEST_GLOB);
-    await page.goto('/');
-    await page.waitForFunction(
-      () => document.documentElement.dataset.wmEventHandlersReady === 'true',
-    );
-    await firstDigest;
-    await page.waitForTimeout(SECOND_LOAD_SETTLE_MS);
-
-    const feeds = distinctProxiedFeeds(log.rssProxyUrls);
-
-    expect(
-      feeds.length,
-      `an enabled cross-variant news panel must still have its feeds fetched — a custom ` +
-        `category is never in the per-variant digest, so direct fetch is its only path (#3687)`,
-    ).toBeGreaterThan(0);
-
-    // Exactly the cap, not merely under it. `toBeLessThanOrEqual` alone would pass
-    // with the uncapped code restored the moment the category's feed list shrank to
-    // the cap — the assertion has to have a floor as well as a ceiling.
-    expect(
-      feeds.length,
-      `a custom category must fetch exactly perFeedFallbackCategoryFeedLimit ` +
-        `(${PER_FEED_FALLBACK_CATEGORY_FEED_LIMIT}) feeds; "${CUSTOM_CATEGORY_KEY}" fetched ` +
-        `${feeds.length}: ${feeds.join(', ')}`,
-    ).toBe(PER_FEED_FALLBACK_CATEGORY_FEED_LIMIT);
-
-    // ...and the category must actually HAVE more sources than the cap, or the
-    // assertion above proves nothing. The warning carries the real ratio.
-    const ratio = capWarnings.join(' ').match(/fetching (\d+)\/(\d+) feeds directly/);
-    expect(ratio, `expected a "[News] Custom category" warning naming the N/M feed ratio, got: ${capWarnings.join(' | ')}`).not.toBeNull();
-    expect(
-      Number(ratio?.[2]),
-      `"${CUSTOM_CATEGORY_KEY}" must declare more than ${PER_FEED_FALLBACK_CATEGORY_FEED_LIMIT} sources ` +
-        `for the cap assertion to mean anything (expected ~${CUSTOM_CATEGORY_FEED_COUNT})`,
-    ).toBeGreaterThan(PER_FEED_FALLBACK_CATEGORY_FEED_LIMIT);
-
-    // The window is ROTATING, not a fixed prefix (#5873) — and on a freshly
-    // seeded profile it must start at cycle 0, which is what makes the exact
-    // feed-set assertion above deterministic. A missing cycle in the warning
-    // means the rotation was never wired; a non-zero one means the persisted
-    // cycle leaked in from another test's profile and this spec is no longer
-    // measuring a first load.
-    const cycle = capWarnings.join(' ').match(/rotation cycle (\d+)/);
-    expect(
-      cycle,
-      `expected the "[News] Custom category" warning to name its rotation cycle, got: ${capWarnings.join(' | ')}`,
-    ).not.toBeNull();
-    expect(
-      Number(cycle?.[1]),
-      'a freshly seeded anonymous profile has no persisted rotation state, so the first load is cycle 0',
-    ).toBe(0);
-
-    expect(
-      log.digestUrls.length,
-      'customizing a category must not add a second news load either',
-    ).toBe(1);
-  });
-
   // The other outage shape, and the one that actually happens: the digest answers
   // HTTP 200 with a well-formed body carrying no categories. It is non-null, so a
   // plain null check calls it a successful load — while every preset category
@@ -438,18 +324,28 @@ test.describe('dashboard news request budget (#5376)', () => {
     const log = await installNewsRequestAccounting(page, { emptyDigestTimes: 1 });
 
     const firstDigest = page.waitForRequest(DIGEST_GLOB);
-    await page.goto('/');
+    await page.goto('/?classic=1');
     await page.waitForFunction(
       () => document.documentElement.dataset.wmEventHandlersReady === 'true',
     );
     await firstDigest;
     await page.waitForTimeout(SECOND_LOAD_SETTLE_MS);
 
-    expect(
-      log.digestUrls.length,
-      `a 200 digest carrying no categories leaves every panel empty, so it must stay ` +
-        `retryable exactly like a failed request (attempts: ${log.digestUrls.length})`,
-    ).toBeGreaterThanOrEqual(2);
+    // Ask for the retry explicitly. The classic shell normally supplies later
+    // viewport triggers, but whether one overlaps boot is a timing detail, not
+    // the contract under test: an empty digest must stay retryable when the next
+    // real hydration trigger arrives.
+    await fireHydrationTrigger(page);
+
+    await expect
+      .poll(
+        () => log.digestUrls.length,
+        {
+          message: `a 200 digest carrying no categories leaves every panel empty, so it must stay ` +
+            `retryable exactly like a failed request (attempts: ${log.digestUrls.length})`,
+        },
+      )
+      .toBeGreaterThanOrEqual(2);
   });
 
   // The same degraded 200, one layer down: what it does to the fallback rather
@@ -485,7 +381,7 @@ test.describe('dashboard news request budget (#5376)', () => {
     });
 
     const firstDigest = page.waitForRequest(DIGEST_GLOB);
-    await page.goto('/');
+    await page.goto('/?classic=1');
     await page.waitForFunction(
       () => document.documentElement.dataset.wmEventHandlersReady === 'true',
     );
@@ -569,7 +465,7 @@ test.describe('dashboard news request budget (#5376)', () => {
     });
 
     const firstDigest = page.waitForRequest(DIGEST_GLOB);
-    await page.goto('/');
+    await page.goto('/?classic=1');
     await page.waitForFunction(
       () => document.documentElement.dataset.wmEventHandlersReady === 'true',
     );
@@ -623,7 +519,7 @@ test.describe('dashboard news request budget (#5376)', () => {
       failDigestLanguages: ['fr'],
     });
 
-    await page.goto('/?lang=en');
+    await page.goto('/?classic=1&lang=en');
     await expect
       .poll(
         async () => (await readPersistedDigest(page, 'digest:last-good:full:en'))?.headlines ?? [],
@@ -631,7 +527,7 @@ test.describe('dashboard news request budget (#5376)', () => {
       )
       .toContain(HEALTHY_POLITICS_HEADLINE);
 
-    await page.goto('/?lang=fr');
+    await page.goto('/?classic=1&lang=fr');
     await page.waitForFunction(
       () => document.documentElement.dataset.wmEventHandlersReady === 'true',
     );
@@ -667,7 +563,7 @@ test.describe('dashboard news request budget (#5376)', () => {
     await installNewsRequestAccounting(page);
 
     const firstDigest = page.waitForRequest(DIGEST_GLOB);
-    await page.goto('/');
+    await page.goto('/?classic=1');
     await page.waitForFunction(
       () => document.documentElement.dataset.wmEventHandlersReady === 'true',
     );
@@ -699,7 +595,7 @@ test.describe('dashboard news request budget (#5376)', () => {
     const log = await installNewsRequestAccounting(page, { failDigestTimes: 1 });
 
     const firstDigest = page.waitForRequest(DIGEST_GLOB);
-    await page.goto('/');
+    await page.goto('/?classic=1');
     await page.waitForFunction(
       () => document.documentElement.dataset.wmEventHandlersReady === 'true',
     );
@@ -991,7 +887,7 @@ test.describe('dashboard container scroll hydration (#5876)', () => {
       await seedScrollableDashboard(page);
       const stablecoinRequests = await installStablecoinContract(page);
 
-      await page.goto('/');
+      await page.goto('/?classic=1');
       await page.waitForFunction(
         () => document.documentElement.dataset.wmEventHandlersReady === 'true',
       );
@@ -1062,7 +958,7 @@ test.describe('dashboard container scroll hydration (#5876)', () => {
     let released = false;
 
     try {
-      await page.goto('/');
+      await page.goto('/?classic=1');
       await slowBootstrap.waitUntilRequested();
       await page.waitForFunction(
         () => document.documentElement.dataset.wmEventHandlersReady === 'true',

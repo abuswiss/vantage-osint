@@ -27,9 +27,11 @@ const DEFERRED_SENTRY_CHUNKS = ['sentry-init', 'sentry'];
 const DEFERRED_AGENT_BUS_CHUNKS = ['agent-bus-actions'];
 // npm libs only needed by opt-in/non-boot features, lazy-loaded off the eager entry:
 //   satellite.es  — satellite.js, loaded by the satellite layer (ensureSatelliteLib)
-//   confetti.module — canvas-confetti, loaded on the first milestone celebration
-// Re-adding a static `import` of either would re-eagerise it into main and fail this.
-const DEFERRED_NPM_LIB_CHUNKS = ['satellite.es', 'confetti.module'];
+//   confetti.module — canvas-confetti, loaded on the first milestone celebration.
+// The public Vantage build can tree-shake the entire celebration feature, so
+// confetti is allowed to be absent; if its feature is present, the source-level
+// dynamic-import guard below still keeps it off the eager entry.
+const DEFERRED_NPM_LIB_CHUNKS = ['satellite.es'];
 // Checkout catalog and widget HTML sanitization are needed only after an
 // upgrade/custom-widget action. Keep them out of the dashboard's static graph;
 // otherwise their shared dependencies rejoin the post-hydration long-task wave.
@@ -288,6 +290,20 @@ describe('eager chunk budget: opt-in npm libs stay off the entry', { skip: !exis
   registerDeferredChunkAssertions(DEFERRED_NPM_LIB_CHUNKS, {
     missingMessage: (chunk) => `${chunk}-*.js chunk should exist — if missing, the lib was inlined into another chunk by a static import`,
     preloadMessage: (chunk) => `${chunk} must not be eagerly modulepreloaded — it loads on demand`,
+  });
+
+  it('keeps canvas-confetti dynamically imported or tree-shaken from the public build', () => {
+    const source = readFileSync(resolve(repoRoot, 'src/services/celebration.ts'), 'utf-8');
+    assert.match(source, /import\(['"]canvas-confetti['"]\)/);
+    assert.doesNotMatch(source, /^import\s+[^;]*['"]canvas-confetti['"]/m);
+
+    const { assets, mainFile, mainJs, modulepreloadHrefs } = loadDashboardBuild();
+    assert.ok(mainFile, 'main-*.js entry chunk should exist in dist/assets');
+    assert.equal(hasModulepreloadForChunk(modulepreloadHrefs, 'confetti.module'), false);
+    const emitted = assets.some((file) => file.startsWith('confetti.module-') && file.endsWith('.js'));
+    if (emitted) {
+      assert.doesNotMatch(mainJs, /(?:from|import)"\.\/confetti\.module-[A-Za-z0-9_-]+\.js"/);
+    }
   });
 });
 

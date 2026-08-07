@@ -70,7 +70,7 @@ describe('reported landing-page SEO metadata', () => {
     assertDescription('Chinese sandbox', sandboxDescription);
   });
 
-  it('keeps the single full dashboard description bounded and synchronized', () => {
+  it('keeps the public Vantage dashboard description bounded and synchronized', () => {
     const variantMetaSource = source('src/config/variant-meta.ts');
     const middlewareSource = source('middleware.ts');
     const indexHtml = source('index.html');
@@ -78,6 +78,9 @@ describe('reported landing-page SEO metadata', () => {
     const fullBlock = variantMetaSource.match(/full: \{([\s\S]*?)\n {2}\},/)?.[1];
     const expectedFullDescription = fullBlock?.match(/^\s+description: '([^']+)'/m)?.[1];
     assertDescription('full variant', expectedFullDescription);
+    const publicBlock = variantMetaSource.match(/export const VANTAGE_PUBLIC_META[\s\S]*?= \{([\s\S]*?)\n\};/)?.[1];
+    const expectedPublicDescription = publicBlock?.match(/^\s+description: '([^']+)'/m)?.[1];
+    assertDescription('public Vantage', expectedPublicDescription);
 
     // Single-variant product: no other variant metadata entries and no
     // variant crawler-stub metadata duplicated into the middleware.
@@ -92,7 +95,7 @@ describe('reported landing-page SEO metadata', () => {
       );
     }
 
-    const fullDescription = indexHtml.match(/<meta name="description" content="([^"]+)"/)?.[1];
-    assert.equal(fullDescription, expectedFullDescription, 'index.html must use the full variant description');
+    const publicDescription = indexHtml.match(/<meta name="description" content="([^"]+)"/)?.[1];
+    assert.equal(publicDescription, expectedPublicDescription, 'index.html must use the public Vantage description');
   });
 });

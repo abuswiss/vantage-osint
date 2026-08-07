@@ -113,6 +113,9 @@ const CLIENT_ENV_ALLOWLIST = new Set([
   'VITE_TAURI_API_BASE_URL',
   'VITE_TAURI_REMOTE_API_BASE_URL',
   'VITE_TELEGRAM_BOT_USERNAME',
+  // Public product switches only; neither value carries provider authority.
+  'VITE_VANTAGE_PUBLIC_MODE',
+  'VITE_VANTAGE_RELAY_ENABLED',
   'VITE_VAPID_PUBLIC_KEY',
   'VITE_VARIANT',
   'VITE_WS_API_URL',

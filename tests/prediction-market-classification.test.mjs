@@ -234,8 +234,10 @@ describe('classifyMarket', () => {
 
 describe('partitionMarkets / published pools', () => {
   const pools = buildPools(RAW);
+  const uncappedPools = buildBootstrapPools(RAW, { limit: Number.MAX_SAFE_INTEGER }).pools;
+  const publishableCount = CATEGORIES.reduce((n, category) => n + uncappedPools[category].length, 0);
 
-  it('publishes every market exactly once across the three pools', () => {
+  it('publishes every eligible market exactly once across the three pools', () => {
     const seen = new Map();
     for (const category of CATEGORIES) {
       for (const m of pools[category]) {
@@ -244,12 +246,12 @@ describe('partitionMarkets / published pools', () => {
         seen.set(id, category);
       }
     }
-    assert.equal(seen.size, RAW.length, 'no market may be dropped by the partition');
+    assert.equal(seen.size, publishableCount, 'no eligible market may be dropped by the published partition');
   });
 
   it('no longer inflates the record count with cross-pool copies', () => {
     const total = CATEGORIES.reduce((n, c) => n + pools[c].length, 0);
-    assert.equal(total, RAW.length, 'declared record count must equal the distinct market count');
+    assert.equal(total, publishableCount, 'declared record count must equal the eligible distinct market count');
   });
 
   it('every geopolitical pool entry meets the geo criteria (keyword OR venue category)', () => {

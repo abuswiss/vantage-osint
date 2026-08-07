@@ -5,11 +5,11 @@
  * Vantage exposes a curated, credentials-free surface and simply omits
  * capabilities that still require a paid/user-bound provider contract.
  */
-const publicModeValue = import.meta.env?.VITE_VANTAGE_PUBLIC_MODE?.trim().toLowerCase();
+const publicModeValue = import.meta.env.VITE_VANTAGE_PUBLIC_MODE?.trim().toLowerCase();
 
 export const VANTAGE_PUBLIC_MODE = publicModeValue === '1' || publicModeValue === 'true';
 
-const relayEnabledValue = import.meta.env?.VITE_VANTAGE_RELAY_ENABLED?.trim().toLowerCase();
+const relayEnabledValue = import.meta.env.VITE_VANTAGE_RELAY_ENABLED?.trim().toLowerCase();
 
 /** Enable only after the always-on AIR/AIS relay is deployed and healthy. */
 export const VANTAGE_RELAY_ENABLED = relayEnabledValue === '1' || relayEnabledValue === 'true';

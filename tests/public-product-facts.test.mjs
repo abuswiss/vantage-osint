@@ -219,8 +219,18 @@ describe('public product facts generation contract', () => {
     const facts = readJson('shared/product-facts.generated.json');
     const pricingUrl = facts.product.pricingUrl;
     const plansByName = new Map(facts.plans.map((plan) => [plan.name, plan]));
+    const vantageApplication = applicationJsonLd('index.html');
+    assert.deepEqual(vantageApplication.offers, [{
+      '@type': 'Offer',
+      name: 'Free',
+      price: '0',
+      priceCurrency: 'USD',
+      availability: 'https://schema.org/InStock',
+      url: 'https://vantage-osint.vercel.app/',
+      description: 'The public Vantage dashboard, comprehensive news feed, map signals, risk context, and citation-backed AI brief without an account.',
+    }]);
+
     for (const path of [
-      'index.html',
       'pro-test/index.html',
       'pro-test/welcome.html',
       'public/pro/index.html',

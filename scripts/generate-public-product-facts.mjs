@@ -226,7 +226,17 @@ function offerFor(plan) {
   return offer;
 }
 
-function rewriteApplicationJsonLd(source, includedGroups) {
+const VANTAGE_PUBLIC_OFFERS = [{
+  '@type': 'Offer',
+  name: 'Free',
+  price: '0',
+  priceCurrency: 'USD',
+  availability: 'https://schema.org/InStock',
+  url: 'https://vantage-osint.vercel.app/',
+  description: 'The public Vantage dashboard, comprehensive news feed, map signals, risk context, and citation-backed AI brief without an account.',
+}];
+
+function rewriteApplicationJsonLd(source, includedGroups, offersOverride = null) {
   return source.replace(
     /(<script\b(?=[^>]*\btype="application\/ld\+json")[^>]*>)([\s\S]*?)(<\/script>)/g,
     (whole, open, body, close) => {
@@ -241,7 +251,7 @@ function rewriteApplicationJsonLd(source, includedGroups) {
       const selectedPlans = plans.filter((plan) => (
         plan.price != null && (!includedGroups || includedGroups.includes(plan.tierGroup))
       ));
-      block.offers = selectedPlans.map(offerFor);
+      block.offers = offersOverride ?? selectedPlans.map(offerFor);
       block = rewriteStrings(block, (text) => replaceMcpToolCounts(text, mcpToolCount));
       const indented = JSON.stringify(block, null, 2)
         .split('\n')
@@ -252,12 +262,12 @@ function rewriteApplicationJsonLd(source, includedGroups) {
   );
 }
 
-for (const [path, groups] of [
-  ['index.html', ['free', 'pro']],
-  ['pro-test/welcome.html', ['free', 'pro']],
-  ['pro-test/index.html', null],
+for (const [path, groups, offersOverride] of [
+  ['index.html', null, VANTAGE_PUBLIC_OFFERS],
+  ['pro-test/welcome.html', ['free', 'pro'], null],
+  ['pro-test/index.html', null, null],
 ]) {
-  transform(path, (source) => rewriteApplicationJsonLd(source, groups));
+  transform(path, (source) => rewriteApplicationJsonLd(source, groups, offersOverride));
 }
 
 // Every pro-test locale publishes the MCP tool count (guarded by

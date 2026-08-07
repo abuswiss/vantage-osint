@@ -49,7 +49,7 @@ export const VARIANT_META: { full: VariantMeta; [k: string]: VariantMeta } = {
 export const VANTAGE_PUBLIC_META: VariantMeta = {
   ...VARIANT_META.full,
   title: 'Vantage - Real-Time Global Intelligence Dashboard',
-  description: 'Open-source global intelligence with live news, map signals, risk context, and citation-backed AI synthesis in one public view.',
+  description: 'Open-source global intelligence combining live news, map signals, risk context, and citation-backed AI synthesis across worldwide events in one public view.',
   url: 'https://vantage-osint.vercel.app/',
   siteName: 'Vantage',
   shortName: 'Vantage',
