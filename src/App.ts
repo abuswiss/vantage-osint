@@ -504,6 +504,11 @@ export class App {
   }
 
   private async primeVisiblePanelData(forceAll = false): Promise<void> {
+    // OpsShell owns the complete Vantage surface. Its legacy panel dock is
+    // intentionally off-canvas and must not trigger provider-specific panel
+    // fetches simply because those hidden panels are technically in the DOM.
+    if (VANTAGE_PUBLIC_MODE) return;
+
     const tasks: Promise<unknown>[] = [];
     const primeTask = (key: string, task: () => Promise<unknown>): void => {
       if (this.visiblePanelPrimed.has(key) || this.state.inFlight.has(key)) return;

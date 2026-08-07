@@ -94,6 +94,14 @@ test.describe('Vantage operations shell', () => {
   });
 
   test('supports the complete map-first investigation workflow', async ({ page }) => {
+    const unprovisionedRequests: string[] = [];
+    page.on('request', (request) => {
+      const pathname = new URL(request.url()).pathname;
+      if (/\/(?:telegram-feed|gpsjam|oref-alerts)$/.test(pathname)
+        || /\/(?:list-military-flights|list-military-vessels)$/.test(pathname)) {
+        unprovisionedRequests.push(pathname);
+      }
+    });
     await openOpsShell(page);
 
     await expect(page).toHaveTitle('Vantage — Real-Time Global Intelligence Dashboard');
@@ -105,6 +113,10 @@ test.describe('Vantage operations shell', () => {
     await expect(page.locator('#mobileAuthFallback')).toHaveCount(0);
     await expect(page.locator('.mobile-menu-account')).toHaveCount(0);
     await expect(page.locator('.mobile-menu-variant')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Air layer pending relay provisioning' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Ships layer pending relay provisioning' })).toBeDisabled();
+    await expect(page.locator('.ops-status-item')).toContainText('AIR/SHIPS PENDING');
+    expect(unprovisionedRequests).toEqual([]);
 
     await page.getByRole('button', { name: 'Open cited AI situation brief' }).click();
     await expect(page.locator('#opsInspector')).toBeVisible();

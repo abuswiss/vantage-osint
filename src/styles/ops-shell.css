@@ -179,6 +179,11 @@ body.ops-mode .ops-panel-dock {
   box-shadow: 0 0 6px var(--chip-color, var(--ops-accent));
 }
 
+.ops-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .ops-top-right {
   display: flex;
   align-items: center;

@@ -21,6 +21,7 @@ import {
   STORAGE_KEYS,
   isPanelInVariantDefaults,
 } from '@/config';
+import { VANTAGE_PUBLIC_MODE, VANTAGE_RELAY_ENABLED } from '@/config/product-policy';
 import { resolveNewsCategories, enabledNewsCategoryKeys, type ResolvedCategory } from '@/config/feed-resolution';
 import {
   countRepresentedSources,
@@ -915,7 +916,7 @@ export class DataLoaderManager implements AppModule {
     }
 
     // Happy variant only loads news data -- skip all geopolitical/financial/military data
-    if (SITE_VARIANT !== 'happy') {
+    if (!VANTAGE_PUBLIC_MODE && SITE_VARIANT !== 'happy') {
       if (shouldLoadAny(['markets', 'heatmap', 'commodities', 'crypto', 'energy-complex', 'crypto-heatmap', 'defi-tokens', 'ai-tokens', 'other-tokens'])) {
         tasks.push({ name: 'markets', task: () => runGuarded('markets', () => this.loadMarkets()) });
       }
@@ -1046,11 +1047,11 @@ export class DataLoaderManager implements AppModule {
     if (shouldLoad('social-velocity')) tasks.push({ name: 'socialVelocity', task: () => runGuarded('socialVelocity', () => this.loadSocialVelocity()) });
     if (hasPremiumAccess() && shouldLoad('wsb-ticker-scanner')) tasks.push({ name: 'wsbTickers', task: () => runGuarded('wsbTickers', () => this.loadWsbTickers()) });
     if (shouldLoad('economic')) tasks.push({ name: 'economicStress', task: () => runGuarded('economicStress', () => this.loadEconomicStress()) });
-    if (SITE_VARIANT !== 'happy' && this.ctx.mapLayers.weather) tasks.push({ name: 'weather', task: () => runGuarded('weather', () => this.loadWeatherAlerts()) });
-    if (SITE_VARIANT !== 'happy' && !isDesktopRuntime() && this.ctx.mapLayers.ais) tasks.push({ name: 'ais', task: () => runGuarded('ais', () => this.loadAisSignals()) });
+    if (!VANTAGE_PUBLIC_MODE && SITE_VARIANT !== 'happy' && this.ctx.mapLayers.weather) tasks.push({ name: 'weather', task: () => runGuarded('weather', () => this.loadWeatherAlerts()) });
+    if ((!VANTAGE_PUBLIC_MODE || VANTAGE_RELAY_ENABLED) && SITE_VARIANT !== 'happy' && !isDesktopRuntime() && this.ctx.mapLayers.ais) tasks.push({ name: 'ais', task: () => runGuarded('ais', () => this.loadAisSignals()) });
     if (SITE_VARIANT !== 'happy' && this.ctx.mapLayers.cables) tasks.push({ name: 'cables', task: () => runGuarded('cables', () => this.loadCableActivity()) });
     if (SITE_VARIANT !== 'happy' && this.ctx.mapLayers.cables) tasks.push({ name: 'cableHealth', task: () => runGuarded('cableHealth', () => this.loadCableHealth()) });
-    if (SITE_VARIANT !== 'happy' && this.ctx.mapLayers.flights) tasks.push({ name: 'flights', task: () => runGuarded('flights', () => this.loadFlightDelays()) });
+    if (!VANTAGE_PUBLIC_MODE && SITE_VARIANT !== 'happy' && this.ctx.mapLayers.flights) tasks.push({ name: 'flights', task: () => runGuarded('flights', () => this.loadFlightDelays()) });
     if (SITE_VARIANT !== 'happy' && CYBER_LAYER_ENABLED && this.ctx.mapLayers.cyberThreats) tasks.push({ name: 'cyberThreats', task: () => runGuarded('cyberThreats', () => this.loadCyberThreats()) });
     if (IRAN_ATTACKS_ENABLED && SITE_VARIANT !== 'happy' && !isDesktopRuntime() && (this.ctx.mapLayers.iranAttacks || shouldLoadAny(['cii', 'strategic-risk', 'strategic-posture']))) tasks.push({ name: 'iranAttacks', task: () => runGuarded('iranAttacks', () => this.loadIranEvents()) });
     if (SITE_VARIANT !== 'happy' && (this.ctx.mapLayers.techEvents || SITE_VARIANT === 'tech')) tasks.push({ name: 'techEvents', task: () => runGuarded('techEvents', () => this.loadTechEvents()) });
@@ -2961,7 +2962,7 @@ export class DataLoaderManager implements AppModule {
       }
     })());
 
-    tasks.push((async () => {
+    if (!VANTAGE_PUBLIC_MODE || VANTAGE_RELAY_ENABLED) tasks.push((async () => {
       try {
         const militaryVessels = await getMilitaryVesselsModule();
         if (militaryVessels.isMilitaryVesselTrackingConfigured()) {
@@ -3106,12 +3107,12 @@ export class DataLoaderManager implements AppModule {
     tasks.push(this.loadSecurityAdvisories());
 
     // Telegram Intel (premium-locked on desktop without API key)
-    if (!_desktopLocked) {
+    if (!VANTAGE_PUBLIC_MODE && !_desktopLocked) {
       tasks.push(this.loadTelegramIntel());
     }
 
     // OREF sirens (premium-locked on desktop without API key)
-    if (!_desktopLocked) {
+    if (!VANTAGE_PUBLIC_MODE && !_desktopLocked) {
       tasks.push((async () => {
         try {
           const data = await fetchOrefAlerts();
@@ -3138,7 +3139,7 @@ export class DataLoaderManager implements AppModule {
     }
 
     // GPS/GNSS jamming (cloud-only — seeded by Wingbits API via fetch-gpsjam.mjs)
-    if (!isDesktopRuntime()) {
+    if (!VANTAGE_PUBLIC_MODE && !isDesktopRuntime()) {
       tasks.push((async () => {
         try {
           const data = await fetchGpsInterference();

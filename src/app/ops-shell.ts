@@ -24,7 +24,11 @@ import {
   isLayerCommandAllowed,
   isLayerExecutable,
 } from '@/config/map-layer-definitions';
-import { VANTAGE_PUBLIC_MODE, isPublicVantageCapability } from '@/config/product-policy';
+import {
+  VANTAGE_PUBLIC_MODE,
+  VANTAGE_RELAY_ENABLED,
+  isPublicVantageCapability,
+} from '@/config/product-policy';
 import { getCachedScores } from '@/services/cached-risk-scores';
 import { getAisStatus } from '@/services/maritime';
 import { getAuthState, subscribeAuthState } from '@/services/auth-state';
@@ -304,7 +308,13 @@ export class OpsShell {
     const button = el('button', 'ops-chip') as HTMLButtonElement;
     button.type = 'button';
     button.style.setProperty('--chip-color', `var(${definition.cssVar})`);
-    button.setAttribute('aria-label', `Toggle ${definition.label} layer`);
+    const relayPending = VANTAGE_PUBLIC_MODE
+      && !VANTAGE_RELAY_ENABLED
+      && (definition.key === 'military' || definition.key === 'ais');
+    button.setAttribute('aria-label', relayPending
+      ? `${definition.label} layer pending relay provisioning`
+      : `Toggle ${definition.label} layer`);
+    if (relayPending) button.title = 'Available after the always-on relay is provisioned';
     const dot = el('span', 'dot');
     button.append(dot, document.createTextNode(definition.label));
     button.addEventListener('click', () => this.toggleLayer(definition.key));
@@ -575,6 +585,9 @@ export class OpsShell {
   }
 
   private canToggleLayer(key: keyof MapLayers): boolean {
+    if (VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED && (key === 'military' || key === 'ais')) {
+      return false;
+    }
     return isLayerCommandAllowed(
       key,
       this.ctx.mapLayers[key],
@@ -1058,6 +1071,10 @@ export class OpsShell {
   private updateStatusLine(): void {
     if (!this.statusLine) return;
     const range = (this.ctx.map?.getTimeRange() ?? this.ctx.currentTimeRange).toUpperCase();
+    if (VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED) {
+      this.statusLine.textContent = `WINDOW ${range} · AIR/SHIPS PENDING`;
+      return;
+    }
     const ais = safeAisStatus();
     this.statusLine.textContent = `WINDOW ${range} · AIS ${ais.connected ? 'LIVE' : 'IDLE'}`;
   }
@@ -1082,14 +1099,14 @@ export class OpsShell {
 
     if (this.hudStats) {
       this.hudStats.replaceChildren(
-        hudStat(militaryFlights, 'MIL AIR'),
-        hudStat(ais.vessels, 'VESSELS'),
+        hudStat(VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : militaryFlights, 'MIL AIR'),
+        hudStat(VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : ais.vessels, 'VESSELS'),
         hudStat(events, 'EVENTS'),
         hudStat(scores?.cii?.filter((score) => score.level === 'high' || score.level === 'critical').length ?? 0, 'HIGH CII'),
       );
     }
-    if (this.countAir) setCount(this.countAir, militaryFlights, 'AIR');
-    if (this.countShips) setCount(this.countShips, ais.vessels, 'SHIPS');
+    if (this.countAir) setCount(this.countAir, VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : militaryFlights, 'AIR');
+    if (this.countShips) setCount(this.countShips, VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : ais.vessels, 'SHIPS');
     if (this.countEvents) setCount(this.countEvents, events, 'EVENTS');
     this.updateStatusLine();
   }
@@ -1146,7 +1163,7 @@ function fact(label: string, value: string): HTMLElement {
   return wrap;
 }
 
-function hudStat(value: number, label: string): HTMLElement {
+function hudStat(value: number | string, label: string): HTMLElement {
   const wrap = el('span');
   const number = el('b');
   number.textContent = String(value);
@@ -1154,7 +1171,7 @@ function hudStat(value: number, label: string): HTMLElement {
   return wrap;
 }
 
-function setCount(node: HTMLElement, value: number, label: string): void {
+function setCount(node: HTMLElement, value: number | string, label: string): void {
   node.replaceChildren();
   const number = el('b');
   number.textContent = String(value);
