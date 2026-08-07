@@ -17,6 +17,7 @@ const {
   POST_FETCH_HEADROOM_MS,
   RESPONSE_GUARD_BAND_MS,
   OVERALL_DEADLINE_MS,
+  mapSettledWithConcurrency,
 } = __testing__;
 
 const DIGEST_SRC = readFileSync(
@@ -85,6 +86,46 @@ describe('news digest timeout budget', () => {
       DIGEST_SRC,
       /cachedFetchJson<ListFeedDigestResponse>\([\s\S]*\{\s*timeoutMs:\s*DIGEST_RESPONSE_TIMEOUT_MS\s*\}\s*,\s*\)/,
       'listFeedDigest must not rely on cachedFetchJson default timeout for cold builds',
+    );
+  });
+
+  it('starts later feeds as soon as a concurrency slot is free', async () => {
+    const controller = new AbortController();
+    const started: string[] = [];
+    let active = 0;
+    let maxActive = 0;
+    let releaseSlow: (() => void) | undefined;
+
+    const slow = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+
+    const run = mapSettledWithConcurrency(
+      ['slow', 'fast-1', 'fast-2', 'fast-3'],
+      2,
+      controller.signal,
+      async (entry) => {
+        started.push(entry);
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        if (entry === 'slow') await slow;
+        active -= 1;
+        return entry;
+      },
+    );
+
+    // Let the immediately-resolving worker drain the later fast entries. A
+    // fixed-size batch would still be waiting for `slow` and would not have
+    // started fast-2 or fast-3 yet.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(started, ['slow', 'fast-1', 'fast-2', 'fast-3']);
+    assert.equal(maxActive, 2, 'worker pool must preserve the concurrency ceiling');
+
+    releaseSlow?.();
+    const settled = await run;
+    assert.deepEqual(
+      settled.map((result) => result?.status),
+      ['fulfilled', 'fulfilled', 'fulfilled', 'fulfilled'],
     );
   });
 

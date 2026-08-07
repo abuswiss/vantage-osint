@@ -1278,6 +1278,44 @@ async function writeStoryTracking(items: ParsedItem[], variant: string, lang: st
   await runRedisPipeline([['EXPIRE', accKey, DIGEST_ACCUMULATOR_TTL]]);
 }
 
+/**
+ * Run asynchronous work with a fixed concurrency ceiling, without a batch
+ * barrier. A completed slot immediately claims the next entry instead of
+ * waiting for every other task in its original batch to settle. This matters
+ * for RSS fan-out: one slow host must not prevent fast feeds later in the
+ * catalogue from being attempted before the request deadline.
+ */
+async function mapSettledWithConcurrency<T, R>(
+  entries: readonly T[],
+  concurrency: number,
+  signal: AbortSignal,
+  worker: (entry: T, index: number) => Promise<R>,
+): Promise<Array<PromiseSettledResult<R> | undefined>> {
+  const settled = new Array<PromiseSettledResult<R> | undefined>(entries.length);
+  const workerCount = Math.min(entries.length, Math.max(0, Math.floor(concurrency)));
+  let nextIndex = 0;
+
+  const runWorker = async (): Promise<void> => {
+    while (!signal.aborted) {
+      const index = nextIndex;
+      if (index >= entries.length) return;
+      nextIndex += 1;
+
+      try {
+        settled[index] = {
+          status: 'fulfilled',
+          value: await worker(entries[index]!, index),
+        };
+      } catch (reason) {
+        settled[index] = { status: 'rejected', reason };
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  return settled;
+}
+
 async function buildDigest(variant: string, lang: string): Promise<ListFeedDigestResponse> {
   const feedsByCategory = VARIANT_FEEDS[variant] ?? {};
   const feedStatuses: Record<string, string> = {};
@@ -1311,44 +1349,42 @@ async function buildDigest(variant: string, lang: string): Promise<ListFeedDiges
     // distinguish a genuine timeout (never ran) from a successful empty fetch.
     const completedFeeds = new Set<string>();
 
-    for (let i = 0; i < allEntries.length; i += BATCH_CONCURRENCY) {
-      if (deadlineController.signal.aborted) break;
-
-      const batch = allEntries.slice(i, i + BATCH_CONCURRENCY);
-      const settled = await Promise.allSettled(
-        batch.map(async ({ category, feed }) => {
-          const result = await fetchAndParseRss(feed, variant, deadlineController.signal);
-          completedFeeds.add(feed.name);
-          // Classify per-feed status. 'all-undated' is the silent-zeroing
-          // failure mode (every parsed item dropped for missing/unparseable
-          // dates) — distinguished from a genuinely empty fetch ('empty')
-          // so log aggregation can keyword-match. 'partial-undated' is
-          // informational (some items dropped, some kept).
-          if (result.parsedTotal > 0 && result.items.length === 0 && result.droppedUndated > 0) {
-            feedStatuses[feed.name] = 'all-undated';
-          } else if (result.items.length === 0) {
-            feedStatuses[feed.name] = 'empty';
-          } else if (result.droppedUndated > 0) {
-            feedStatuses[feed.name] = 'partial-undated';
-          }
-          return {
-            category,
-            items: result.items,
-            droppedUndated: result.droppedUndated,
-            droppedFeedCap: result.droppedFeedCap ?? 0,
-          };
-        }),
-      );
-
-      for (const result of settled) {
-        if (result.status === 'fulfilled') {
-          const { category, items, droppedUndated, droppedFeedCap } = result.value;
-          const existing = results.get(category) ?? [];
-          existing.push(...items);
-          results.set(category, existing);
-          ledgerDrops.undated += droppedUndated;
-          ledgerDrops.perFeedCap += droppedFeedCap;
+    const settled = await mapSettledWithConcurrency(
+      allEntries,
+      BATCH_CONCURRENCY,
+      deadlineController.signal,
+      async ({ category, feed }) => {
+        const result = await fetchAndParseRss(feed, variant, deadlineController.signal);
+        completedFeeds.add(feed.name);
+        // Classify per-feed status. 'all-undated' is the silent-zeroing
+        // failure mode (every parsed item dropped for missing/unparseable
+        // dates) — distinguished from a genuinely empty fetch ('empty')
+        // so log aggregation can keyword-match. 'partial-undated' is
+        // informational (some items dropped, some kept).
+        if (result.parsedTotal > 0 && result.items.length === 0 && result.droppedUndated > 0) {
+          feedStatuses[feed.name] = 'all-undated';
+        } else if (result.items.length === 0) {
+          feedStatuses[feed.name] = 'empty';
+        } else if (result.droppedUndated > 0) {
+          feedStatuses[feed.name] = 'partial-undated';
         }
+        return {
+          category,
+          items: result.items,
+          droppedUndated: result.droppedUndated,
+          droppedFeedCap: result.droppedFeedCap ?? 0,
+        };
+      },
+    );
+
+    for (const result of settled) {
+      if (result?.status === 'fulfilled') {
+        const { category, items, droppedUndated, droppedFeedCap } = result.value;
+        const existing = results.get(category) ?? [];
+        existing.push(...items);
+        results.set(category, existing);
+        ledgerDrops.undated += droppedUndated;
+        ledgerDrops.perFeedCap += droppedFeedCap;
       }
     }
 
@@ -1606,6 +1642,7 @@ export const __testing__ = {
   resolveMaxAgeMs,
   capLlmUpgrade,
   parseClassifyCacheHit,
+  mapSettledWithConcurrency,
   VERCEL_INITIAL_RESPONSE_LIMIT_MS,
   DIGEST_RESPONSE_TIMEOUT_MS,
   POST_FETCH_HEADROOM_MS,
