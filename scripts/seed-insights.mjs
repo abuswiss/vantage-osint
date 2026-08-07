@@ -653,13 +653,18 @@ function buildImportanceObservability(clusters, topStories) {
 
 async function warmDigestCache(language = 'en') {
   const apiBase = process.env.API_BASE_URL || 'https://api.worldmonitor.app';
+  const requestOrigin = process.env.SITE_URL || (
+    apiBase === 'https://api.worldmonitor.app'
+      ? 'https://worldmonitor.app'
+      : new URL(apiBase).origin
+  );
   const headers = {
     'User-Agent': CHROME_UA,
-    Origin: 'https://worldmonitor.app',
+    Origin: requestOrigin,
   };
   if (RELAY_API_KEY) headers['X-WorldMonitor-Key'] = RELAY_API_KEY;
   try {
-    const resp = await fetch(`${apiBase}/api/news/v1/list-feed-digest?variant=full&lang=${encodeURIComponent(language)}`, {
+    const resp = await fetch(`${apiBase}/api/news/v1/list-feed-digest?variant=full&lang=${encodeURIComponent(language)}&public=1`, {
       headers,
       signal: AbortSignal.timeout(30_000),
     });

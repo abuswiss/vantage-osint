@@ -1,0 +1,69 @@
+name: Vantage intelligence refresh
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vantage-intelligence-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      API_BASE_URL: https://vantage-osint.vercel.app
+      SITE_URL: https://vantage-osint.vercel.app
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: gpt-5.6-terra
+      UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+      WORLDMONITOR_RELAY_KEY: ${{ secrets.WORLDMONITOR_RELAY_KEY }}
+
+    steps:
+      - name: Check out Vantage
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: '22'
+
+      - name: Warm public news digest
+        run: |
+          status="$(curl --silent --show-error --max-time 45 \
+            --user-agent 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Safari/537.36' \
+            --header 'Origin: https://vantage-osint.vercel.app' \
+            --output /tmp/vantage-news.json \
+            --write-out '%{http_code}' \
+            'https://vantage-osint.vercel.app/api/news/v1/list-feed-digest?variant=full&lang=en&public=1')"
+          test "$status" = '200'
+          node -e "const d=require('/tmp/vantage-news.json'); if (!Array.isArray(d.categories) || d.categories.length < 3) process.exit(1)"
+
+      - name: Refresh escalation scoring
+        run: |
+          status="$(curl --silent --show-error --max-time 60 \
+            --user-agent 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Safari/537.36' \
+            --header 'Origin: https://vantage-osint.vercel.app' \
+            --header "X-WorldMonitor-Key: $WORLDMONITOR_RELAY_KEY" \
+            --output /tmp/vantage-risk.json \
+            --write-out '%{http_code}' \
+            'https://vantage-osint.vercel.app/api/intelligence/v1/get-risk-scores')"
+          test "$status" = '200'
+          node -e "const d=require('/tmp/vantage-risk.json'); if (!Array.isArray(d.ciiScores)) process.exit(1)"
+
+      - name: Generate cited AI brief
+        run: node scripts/seed-insights.mjs
+
+      - name: Verify public data plane
+        run: |
+          curl --silent --show-error --max-time 20 \
+            --user-agent 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Safari/537.36' \
+            --output /tmp/vantage-health.json \
+            'https://vantage-osint.vercel.app/api/vantage-health'
+          node -e "const h=require('/tmp/vantage-health.json'); for (const k of ['redis','news','insights','risk']) if (h.services?.[k]?.status ? h.services[k].status !== 'ready' : h.services?.[k] !== 'ready') throw new Error(k+' is not ready')"
