@@ -40,6 +40,7 @@ jobs:
             --user-agent 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Safari/537.36' \
             --header 'Origin: https://vantage-osint.vercel.app' \
             --header 'Cache-Control: no-cache' \
+            --header "X-WorldMonitor-Key: $WORLDMONITOR_RELAY_KEY" \
             --output /tmp/vantage-news.json \
             --write-out '%{http_code}' \
             "https://vantage-osint.vercel.app/api/news/v1/list-feed-digest?variant=full&lang=en&public=1&refresh=${GITHUB_RUN_ID}")"

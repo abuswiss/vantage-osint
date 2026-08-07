@@ -438,11 +438,13 @@ export const PUBLIC_NO_AUTH_RPC_PATHS = new Set<string>([
   '/api/leads/v1/register-interest',
 ]);
 
-// Cacheable, non-premium RPC endpoints the Railway relay periodically warm-pings
-// to keep their compute caches hot (so the first real user request isn't a cold
-// miss). These require a browser session token or an API key in normal traffic;
-// the relay is a trusted internal service with neither, so it authenticates as
-// itself via WORLDMONITOR_RELAY_KEY (validated below in isRelayWarmPingRequest).
+// Cacheable, non-premium RPC endpoints trusted internal schedulers warm-ping to
+// keep their compute caches hot (so the first real user request isn't a cold
+// miss). Most require a browser session token or API key in normal traffic; a
+// cacheable public read can also need a non-canonical URL to force an origin
+// refresh without weakening its exact anonymous shared-cache contract. The
+// scheduler authenticates as itself via WORLDMONITOR_RELAY_KEY (validated below
+// in isRelayWarmPingRequest).
 //
 // Least privilege: WORLDMONITOR_RELAY_KEY is a DEDICATED relay↔gateway secret —
 // it does NOT need to be (and should not be) a WORLDMONITOR_VALID_KEYS enterprise
@@ -456,6 +458,7 @@ export const RELAY_WARM_PING_PATHS = new Set<string>([
   '/api/infrastructure/v1/get-cable-health',
   '/api/infrastructure/v1/list-temporal-anomalies',
   '/api/intelligence/v1/get-risk-scores',
+  '/api/news/v1/list-feed-digest',
   '/api/supply-chain/v1/get-chokepoint-status',
 ]);
 

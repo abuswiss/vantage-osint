@@ -10,6 +10,7 @@ const workflow = readFileSync(
 describe('Vantage intelligence refresh workflow', () => {
   it('bypasses the public CDN when warming the short-lived Redis digest', () => {
     assert.match(workflow, /--header 'Cache-Control: no-cache'/);
+    assert.match(workflow, /--header "X-WorldMonitor-Key: \$WORLDMONITOR_RELAY_KEY"/);
     assert.match(workflow, /public=1&refresh=\$\{GITHUB_RUN_ID\}/);
   });
 
