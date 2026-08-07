@@ -68,21 +68,21 @@ describe('news digest timeout budget', () => {
     );
   });
 
-  it('only allows the dedicated scheduler secret to force a digest rebuild', () => {
+  it('only allows the dedicated scheduler secret to force a digest rebuild', async () => {
     const restoreEnv = withEnv({ WORLDMONITOR_RELAY_KEY: 'scheduler-secret' });
     try {
-      assert.equal(isAuthorizedDigestRefresh(new Request(
+      assert.equal(await isAuthorizedDigestRefresh(new Request(
         'https://vantage-osint.vercel.app/api/news/v1/list-feed-digest?refresh=123',
       )), false);
-      assert.equal(isAuthorizedDigestRefresh(new Request(
+      assert.equal(await isAuthorizedDigestRefresh(new Request(
         'https://vantage-osint.vercel.app/api/news/v1/list-feed-digest?refresh=123',
         { headers: { 'X-WorldMonitor-Key': 'wrong-secret' } },
       )), false);
-      assert.equal(isAuthorizedDigestRefresh(new Request(
+      assert.equal(await isAuthorizedDigestRefresh(new Request(
         'https://vantage-osint.vercel.app/api/news/v1/list-feed-digest',
         { headers: { 'X-WorldMonitor-Key': 'scheduler-secret' } },
       )), false);
-      assert.equal(isAuthorizedDigestRefresh(new Request(
+      assert.equal(await isAuthorizedDigestRefresh(new Request(
         'https://vantage-osint.vercel.app/api/news/v1/list-feed-digest?refresh=123',
         { headers: { 'X-WorldMonitor-Key': 'scheduler-secret' } },
       )), true);

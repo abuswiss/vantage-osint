@@ -37,7 +37,7 @@ import {
   DIGEST_ACCUMULATOR_TTL,
 } from '../../../_shared/cache-keys';
 import { getRelayBaseUrl, getRelayHeaders } from '../../../_shared/relay';
-import { timingSafeEqual } from '../../../_shared/timing-safe';
+import { timingSafeEqual } from '../../../_shared/internal-auth';
 import diplomacyKeywordsData from '../../../../shared/diplomacy-keywords.json';
 
 const RSS_ACCEPT = 'application/rss+xml, application/xml, text/xml, */*';
@@ -1075,10 +1075,10 @@ function toProtoItem(item: ParsedItem, storyMeta?: ProtoStoryMeta): ProtoNewsIte
   };
 }
 
-function isAuthorizedDigestRefresh(request: Request): boolean {
+async function isAuthorizedDigestRefresh(request: Request): Promise<boolean> {
   const expected = process.env.WORLDMONITOR_RELAY_KEY?.trim() ?? '';
   const candidate = request.headers.get('X-WorldMonitor-Key')?.trim() ?? '';
-  if (!expected || !candidate || !timingSafeEqual(candidate, expected)) return false;
+  if (!expected || !candidate || !(await timingSafeEqual(candidate, expected))) return false;
   try {
     return Boolean(new URL(request.url).searchParams.get('refresh')?.trim());
   } catch {
@@ -1112,7 +1112,7 @@ export async function listFeedDigest(
     // cache is present. Read the prior snapshot first and never delete it: if
     // the rebuild is empty or fails, the scheduler receives the preserved
     // snapshot and its generatedAt freshness gate fails closed.
-    if (isAuthorizedDigestRefresh(ctx.request)) {
+    if (await isAuthorizedDigestRefresh(ctx.request)) {
       const prior = await getCachedJson(digestCacheKey);
       try {
         const rebuilt = await buildDigest(variant, lang);
