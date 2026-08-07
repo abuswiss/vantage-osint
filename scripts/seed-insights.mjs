@@ -651,6 +651,19 @@ function buildImportanceObservability(clusters, topStories) {
   };
 }
 
+export function normalizeDigestRpcPayload(payload) {
+  const digest = unwrapEnvelope(payload).data;
+  if (Array.isArray(digest)) return digest.length > 0 ? digest : null;
+  if (!digest || typeof digest !== 'object') return null;
+  const categories = digest.categories;
+  const hasCategories = Array.isArray(categories)
+    ? categories.length > 0
+    : categories && typeof categories === 'object' && Object.keys(categories).length > 0;
+  const hasItems = ['items', 'articles', 'headlines']
+    .some((key) => Array.isArray(digest[key]) && digest[key].length > 0);
+  return hasCategories || hasItems ? digest : null;
+}
+
 async function warmDigestCache(language = 'en') {
   const apiBase = process.env.API_BASE_URL || 'https://api.worldmonitor.app';
   const requestOrigin = process.env.SITE_URL || (
@@ -668,26 +681,40 @@ async function warmDigestCache(language = 'en') {
       headers,
       signal: AbortSignal.timeout(30_000),
     });
-    if (resp.ok) console.log(`  ${language} digest cache warmed via RPC`);
-    else {
+    if (resp.ok) {
+      const digest = normalizeDigestRpcPayload(await resp.json());
+      if (digest) {
+        console.log(`  ${language} digest loaded via RPC`);
+        return digest;
+      }
+      console.warn(`  Digest warm failed: HTTP ${resp.status} returned no usable digest`);
+    } else {
       const keyNote = RELAY_API_KEY ? '' : ' (WORLDMONITOR_RELAY_KEY not set — Origin-only auth)';
       console.warn(`  Digest warm failed: HTTP ${resp.status}${keyNote}`);
     }
   } catch (err) {
     console.warn(`  Digest warm failed: ${err.message}`);
   }
+  return null;
 }
 
-async function readOrWarmDigest(language) {
+export async function readOrWarmDigest(language, deps = {}) {
+  const readDigest = deps.readDigest || readDigestFromRedis;
+  const warmDigest = deps.warmDigest || warmDigestCache;
+  const pause = deps.pause || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const key = digestKeyForLanguage(language);
-  let digest = await readDigestFromRedis(key);
+  let digest = await readDigest(key);
   if (digest) return digest;
   console.log(`  ${language} digest not in Redis, warming cache via RPC...`);
-  await warmDigestCache(language);
+  const rpcDigest = await warmDigest(language);
+  // A successful request can be served from Vercel's CDN without invoking the
+  // function that writes Redis. Consume the authenticated response directly
+  // instead of discarding fresh news and incorrectly preserving stale LKG.
+  if (rpcDigest) return rpcDigest;
   // Wait for the Edge write to propagate before the readback. This is the
   // existing full/en warm-cache contract, now reused for the Chinese digest.
-  await new Promise(r => setTimeout(r, 3_000));
-  digest = await readDigestFromRedis(key);
+  await pause(3_000);
+  digest = await readDigest(key);
   return digest;
 }
 

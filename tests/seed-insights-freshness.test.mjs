@@ -7,13 +7,49 @@ import {
   classifyInsightsSynthesisFailure,
   decorateInsightsRun,
   insightsFreshnessPatchArgs,
+  normalizeDigestRpcPayload,
   publishInsightsPayload,
+  readOrWarmDigest,
   resolveInsightsFallbackStatus,
   validateInsightsPayload,
 } from '../scripts/seed-insights.mjs';
 
 const OLD_GENERATED_AT = '2026-08-01T06:30:39.268Z';
 const NEW_GENERATED_AT = '2026-08-01T08:30:39.268Z';
+
+test('digest normalization accepts public RPC and envelope shapes but rejects empty responses', () => {
+  const digest = { categories: { politics: { items: [{ title: 'Grounded headline' }] } } };
+  assert.equal(normalizeDigestRpcPayload(digest), digest);
+  assert.equal(normalizeDigestRpcPayload({ _seed: { fetchedAt: 1 }, data: digest }), digest);
+  assert.equal(normalizeDigestRpcPayload({ categories: {} }), null);
+  assert.equal(normalizeDigestRpcPayload({ error: 'Forbidden' }), null);
+});
+
+test('cache-miss synthesis consumes a successful RPC digest without requiring a Redis write', async () => {
+  const rpcDigest = { categories: { politics: { items: [{ title: 'Fresh public story' }] } } };
+  let reads = 0;
+  let pauses = 0;
+  const result = await readOrWarmDigest('en', {
+    readDigest: async () => { reads++; return null; },
+    warmDigest: async () => rpcDigest,
+    pause: async () => { pauses++; },
+  });
+  assert.equal(result, rpcDigest);
+  assert.equal(reads, 1, 'the direct response makes a Redis readback unnecessary');
+  assert.equal(pauses, 0, 'a CDN-served response should not incur propagation delay');
+});
+
+test('cache-miss synthesis retains Redis readback when the RPC body is unavailable', async () => {
+  const lateDigest = { categories: { politics: { items: [{ title: 'Late cache story' }] } } };
+  let reads = 0;
+  const result = await readOrWarmDigest('en', {
+    readDigest: async () => (++reads === 1 ? null : lateDigest),
+    warmDigest: async () => null,
+    pause: async () => {},
+  });
+  assert.equal(result, lateDigest);
+  assert.equal(reads, 2);
+});
 
 test('synthesis rejection codes identify missing cluster, provider, parse, and gate stages', () => {
   assert.equal(
