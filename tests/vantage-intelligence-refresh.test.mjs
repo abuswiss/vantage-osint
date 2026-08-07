@@ -24,4 +24,12 @@ describe('Vantage intelligence refresh workflow', () => {
     assert.match(workflow, /Date\.parse\(d\.generatedAt\)/);
     assert.match(workflow, /age > 300000/);
   });
+
+  it('retries until this run publishes a citation-valid AI brief', () => {
+    assert.match(workflow, /brief_started_at=/);
+    assert.match(workflow, /get\/\$\{encodeURIComponent\('news:insights:v1'\)\}/);
+    assert.match(workflow, /stored\?\.data \?\? stored/);
+    assert.match(workflow, /payload\?\.status !== 'ok'/);
+    assert.match(workflow, /generated < started - 5_000/);
+  });
 });

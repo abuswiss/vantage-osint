@@ -62,14 +62,24 @@ jobs:
 
       - name: Generate cited AI brief
         run: |
+          brief_started_at="$(node -e 'process.stdout.write(String(Date.now()))')"
           for attempt in 1 2 3; do
             echo "Cited brief attempt ${attempt}/3"
             node scripts/seed-insights.mjs
-            if curl --silent --show-error --max-time 20 \
-              --user-agent 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Safari/537.36' \
-              --output /tmp/vantage-insights-health.json \
-              'https://vantage-osint.vercel.app/api/vantage-health' \
-              && node -e "const h=require('/tmp/vantage-insights-health.json'); const s=h.services?.insights; if ((s?.status || s) !== 'ready') process.exit(1)"; then
+            if BRIEF_STARTED_AT="$brief_started_at" node --input-type=module <<'NODE'
+              const response = await fetch(\`${process.env.UPSTASH_REDIS_REST_URL}/get/${encodeURIComponent('news:insights:v1')}\`, {
+                headers: { Authorization: \`Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}\` },
+                signal: AbortSignal.timeout(10_000),
+              });
+              if (!response.ok) process.exit(1);
+              const { result } = await response.json();
+              const stored = typeof result === 'string' ? JSON.parse(result) : result;
+              const payload = stored?.data ?? stored;
+              const generated = Date.parse(payload?.generatedAt);
+              const started = Number(process.env.BRIEF_STARTED_AT);
+              if (payload?.status !== 'ok' || !Number.isFinite(generated) || generated < started - 5_000) process.exit(1);
+          NODE
+            then
               exit 0
             fi
             echo "Cited brief is not fresh yet; retrying through the strict grounding gate"
