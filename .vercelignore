@@ -18,6 +18,11 @@ target/
 
 # Common local artifacts
 .DS_Store
+output/
+test-results/
+
+# Runtime credentials are configured in Vercel and must never enter uploads
+.env*
 
 # Never deploy api test files: every non-underscore file under api/ becomes a
 # live serverless function, and a deployed *.test.mjs executes its whole
