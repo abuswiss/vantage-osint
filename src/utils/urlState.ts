@@ -178,9 +178,17 @@ export function buildMapUrl(
   }
   const params = new URLSearchParams();
 
-  if (state.center) {
-    params.set('lat', state.center.lat.toFixed(4));
-    params.set('lon', state.center.lon.toFixed(4));
+  const center = state.center;
+  const hasValidCenter = center
+    && Number.isFinite(center.lat)
+    && Number.isFinite(center.lon)
+    && center.lat >= -90
+    && center.lat <= 90
+    && center.lon >= -180
+    && center.lon <= 180;
+  if (center && hasValidCenter) {
+    params.set('lat', center.lat.toFixed(4));
+    params.set('lon', center.lon.toFixed(4));
   }
 
   params.set('zoom', state.zoom.toFixed(2));

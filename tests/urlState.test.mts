@@ -131,6 +131,42 @@ describe('buildMapUrl expanded param', () => {
   });
 });
 
+describe('buildMapUrl center validation', () => {
+  const baseState = {
+    view: 'global' as const,
+    zoom: 2,
+    timeRange: '24h' as const,
+    layers: EMPTY_LAYERS,
+  };
+
+  it('serializes a finite center', () => {
+    const params = new URL(buildMapUrl('https://worldmonitor.app/dashboard', {
+      ...baseState,
+      center: { lat: 24.5564, lon: 11.9743 },
+    })).searchParams;
+    assert.equal(params.get('lat'), '24.5564');
+    assert.equal(params.get('lon'), '11.9743');
+  });
+
+  it('omits both coordinates when a renderer reports an invalid center', () => {
+    const invalidCenters = [
+      { lat: Number.NaN, lon: 0 },
+      { lat: 0, lon: Number.POSITIVE_INFINITY },
+      { lat: 91, lon: 0 },
+      { lat: 0, lon: -181 },
+    ];
+
+    for (const center of invalidCenters) {
+      const params = new URL(buildMapUrl('https://worldmonitor.app/dashboard', {
+        ...baseState,
+        center,
+      })).searchParams;
+      assert.equal(params.has('lat'), false);
+      assert.equal(params.has('lon'), false);
+    }
+  });
+});
+
 describe('expanded param round-trip', () => {
   const base = 'https://worldmonitor.app/dashboard';
   const baseState = {

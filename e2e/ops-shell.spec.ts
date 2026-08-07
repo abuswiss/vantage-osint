@@ -249,6 +249,10 @@ test.describe('Vantage public mobile shell', () => {
     await page.waitForTimeout(1_000);
 
     expect(relayBackedRequests).toEqual([]);
+    for (const key of ['lat', 'lon']) {
+      const value = new URL(page.url()).searchParams.get(key);
+      if (value !== null) expect(Number.isFinite(Number(value))).toBe(true);
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await expect(page.locator('body')).not.toContainText(/sign in|upgrade|pricing/i);
   });
