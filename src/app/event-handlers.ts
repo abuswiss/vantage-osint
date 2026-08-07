@@ -1138,9 +1138,11 @@ export class EventHandlerManager implements AppModule {
 
   private setupIdleDetection(): void {
     this.boundIdleResetHandler = () => {
-      if (this.ctx.isIdle) {
+      // The visibility handler can add the class without setting isIdle, so
+      // clear on the class itself — otherwise activity never unpauses.
+      if (this.ctx.isIdle || document.body?.classList.contains('animations-paused')) {
         this.ctx.isIdle = false;
-        document.body?.classList.remove('animations-paused');
+        if (!document.hidden) document.body?.classList.remove('animations-paused');
       }
       this.resetIdleTimer();
     };

@@ -383,8 +383,8 @@ export class SearchModal {
         <div class="search-sheet">
           <div class="search-sheet-handle"></div>
           <div class="search-mobile-ident">
-            <span>${escapeHtml(BRAND.shortName.toUpperCase())} // COMMAND DECK</span>
-            <span class="search-index-state"><i></i> LIVE</span>
+            <span>${escapeHtml(BRAND.shortName)} search</span>
+            <span class="search-index-state"><i></i> Live</span>
           </div>
           <div class="search-sheet-header">
             <span class="search-sheet-icon" aria-hidden="true"></span>
@@ -424,12 +424,12 @@ export class SearchModal {
           <div class="search-command-topline">
             <div class="search-command-ident">
               <span class="search-command-mark" aria-hidden="true"><i></i></span>
-              <span>${escapeHtml(BRAND.shortName.toUpperCase())} // INTELLIGENCE COMMAND DECK</span>
-              <span class="search-index-state"><i></i> INDEX ONLINE</span>
+              <span>${escapeHtml(BRAND.shortName)} search</span>
+              <span class="search-index-state"><i></i> Index online</span>
             </div>
             <div class="search-command-metrics" aria-label="Search index status">
-              <span><strong data-search-entity-count>${this.getIndexedEntityCount()}</strong> SIGNALS</span>
-              <span><strong data-search-command-count>${this.getVisibleCommandCount()}</strong> OPS</span>
+              <span><strong data-search-entity-count>${this.getIndexedEntityCount()}</strong> signals</span>
+              <span><strong data-search-command-count>${this.getVisibleCommandCount()}</strong> commands</span>
             </div>
           </div>
           <div class="search-header">
@@ -440,7 +440,7 @@ export class SearchModal {
           ${this.renderScopeMarkup()}
           <div class="search-results"></div>
           <div class="search-footer">
-            <span class="search-footer-ready"><i></i> READY FOR TASKING</span>
+            <span class="search-footer-ready"><i></i> Ready</span>
             <span><kbd>\u2191\u2193</kbd> ${t('modals.search.navigate')}</span>
             <span><kbd>\u21B5</kbd> ${t('modals.search.select')}</span>
             <span><kbd>esc</kbd> ${t('modals.search.close')}</span>

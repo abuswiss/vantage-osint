@@ -241,6 +241,14 @@ body.animations-paused *::after {
   transition: none !important;
 }
 
+/* One-shot entry animations start at opacity 0 — pausing them at frame 0
+   pins the element invisible (search modal opened / breaking alert arriving
+   while the idle pauser is active). Let them run to completion. */
+body.animations-paused .search-modal,
+body.animations-paused .breaking-alert {
+  animation-play-state: running !important;
+}
+
 /* ============================================================
    Theme Transition — smooth 200ms animation for theme switches.
    Scoped: theme-manager adds .theme-transition to <html> just before

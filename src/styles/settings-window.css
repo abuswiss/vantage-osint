@@ -591,17 +591,16 @@
   font-weight: 600;
   color: var(--settings-accent);
   background: color-mix(in srgb, var(--accent, #8ab4f8) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent, #8ab4f8) 25%, transparent);
+  border: none;
   border-radius: 6px;
   padding: 4px 10px;
   text-decoration: none;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background-color var(--motion-fast, 140ms cubic-bezier(0.2,0,0,1));
 }
 
 .settings-secret-link:hover {
   background: color-mix(in srgb, var(--accent, #8ab4f8) 20%, transparent);
-  border-color: var(--settings-accent);
 }
 
 .settings-secret-hint {
