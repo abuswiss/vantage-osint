@@ -436,6 +436,15 @@ describe('serverless insights publisher adapter', () => {
     assert.equal(unwrapStoredInsights(null), null);
   });
 
+  it('accepts a fresh citation-locked deterministic safety fallback', () => {
+    const verified = verifyInsightsSnapshot(validInsights({
+      briefProvider: 'deterministic-grounded-fallback',
+      briefModel: 'headline-citation-v1',
+    }), NOW_MS, NOW_MS);
+    assert.equal(verified?.provider, 'deterministic-grounded-fallback');
+    assert.equal(verified?.citationCount, 1);
+  });
+
   it('rejects uncited, out-of-range, stale, and non-OK snapshots', () => {
     assert.equal(verifyInsightsSnapshot(validInsights({ worldBrief: 'No citation.' }), NOW_MS, NOW_MS), null);
     assert.equal(verifyInsightsSnapshot(validInsights({ worldBrief: 'Bad citation [2].', briefStoryLines: [] }), NOW_MS, NOW_MS), null);

@@ -36,6 +36,71 @@ export function pickBriefCluster(topStories) {
 }
 
 /**
+ * Build a citation-complete brief without asking a model to rewrite facts.
+ *
+ * This is the safety net for a synthesis response that fails the editorial
+ * gates. It publishes only sanitized source headlines, keeps citations in
+ * strict lockstep with explicit source URLs, and leads with a corroborated
+ * cluster. The next scheduled run may try synthesis again; readers never have
+ * to choose between an invented model claim and a stale brief meanwhile.
+ */
+export function composeDeterministicGroundedBrief(topStories, opts = {}) {
+  if (!Array.isArray(topStories) || topStories.length === 0) return null;
+
+  const sanitize = typeof opts.sanitizeTitle === 'function' ? opts.sanitizeTitle : (value) => value;
+  const sourceFromStory = typeof opts.sourceFromStory === 'function' ? opts.sourceFromStory : () => null;
+  const briefCluster = Object.prototype.hasOwnProperty.call(opts, 'briefCluster')
+    ? opts.briefCluster
+    : pickBriefCluster(topStories);
+  if (!briefCluster) return null;
+
+  const normalizeEntry = (story) => {
+    const source = sourceFromStory(story);
+    if (!source || typeof source.url !== 'string') return null;
+    try {
+      const parsed = new URL(source.url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    } catch {
+      return null;
+    }
+    const rawTitle = typeof source.title === 'string' ? source.title : story?.primaryTitle;
+    let title = typeof rawTitle === 'string'
+      ? String(sanitize(rawTitle)).replace(/\s*\[\d+\]/g, '').replace(/\s+/g, ' ').trim()
+      : '';
+    if (title.length > 280) title = `${title.slice(0, 277).trimEnd()}...`;
+    if (!title) return null;
+    return { title, source: { ...source, title } };
+  };
+
+  // The corroborated story is the editorial floor, not merely a preferred
+  // ordering. If that exact lead cannot be cited, fail closed instead of
+  // silently promoting a later single-source item.
+  const leadEntry = normalizeEntry(briefCluster);
+  if (!leadEntry) return null;
+  const usable = [leadEntry];
+  for (const story of topStories) {
+    if (story === briefCluster) continue;
+    if (usable.length >= 8) break;
+    const entry = normalizeEntry(story);
+    if (entry) usable.push(entry);
+  }
+
+  const citedSentence = ({ title }, index) => {
+    const punctuation = /[.!?]["'\u2019\u201d]?$/.test(title) ? '' : '.';
+    return `${title}${punctuation} [${index + 1}]`;
+  };
+  const lines = usable.map((entry, index) => ({ n: index + 1, text: citedSentence(entry, index) }));
+
+  return {
+    lead: lines.slice(0, Math.min(2, lines.length)).map((line) => line.text).join(' '),
+    lines,
+    sources: usable.map((entry) => entry.source),
+    hallucinatedLines: 0,
+    strippedCitations: 0,
+  };
+}
+
+/**
  * System prompt for the WORLD BRIEF LLM call. Kept as a pure function so tests
  * can assert its invariants (no "pick the most important" language, no
  * unconditional WHERE instruction, explicit no-invention rules).

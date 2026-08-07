@@ -4,6 +4,7 @@ import {
   pickBriefCluster,
   briefSystemPrompt,
   briefUserPrompt,
+  composeDeterministicGroundedBrief,
   composeSynthesizedBrief,
   splitCitedLeadSentences,
 } from '../scripts/_insights-brief.mjs';
@@ -111,6 +112,79 @@ describe('briefUserPrompt', () => {
 
   it('instructs using only facts from the provided headline', () => {
     assert.match(briefUserPrompt('X'), /only facts from this headline/i);
+  });
+});
+
+describe('composeDeterministicGroundedBrief', () => {
+  const stories = [
+    {
+      primaryTitle: 'Single-source alert remains developing',
+      primarySource: 'Outlet A',
+      primaryLink: 'https://example.test/a',
+      sources: ['Outlet A'],
+    },
+    {
+      primaryTitle: 'Corroborated diplomatic talks resume',
+      primarySource: 'Outlet B',
+      primaryLink: 'https://example.test/b',
+      sources: ['Outlet B', 'Outlet C'],
+    },
+  ];
+  const opts = {
+    sanitizeTitle: (value) => value,
+    sourceFromStory: (story) => ({
+      title: story.primaryTitle,
+      source: story.primarySource,
+      url: story.primaryLink,
+    }),
+  };
+
+  it('leads with corroborated evidence and locks every citation to a source URL', () => {
+    const composed = composeDeterministicGroundedBrief(stories, opts);
+    assert.ok(composed);
+    assert.equal(composed.sources[0].url, 'https://example.test/b');
+    assert.match(composed.lead, /^Corroborated diplomatic talks resume\. \[1\]/);
+    assert.match(composed.lead, /Single-source alert remains developing\. \[2\]/);
+    assert.deepEqual(composed.lines.map((line) => line.n), [1, 2]);
+    assert.ok(composed.lines.every((line, index) => line.text.includes(`[${index + 1}]`)));
+  });
+
+  it('fails closed when there is no corroborated lead or explicit source URL', () => {
+    assert.equal(composeDeterministicGroundedBrief([stories[0]], opts), null);
+    assert.equal(composeDeterministicGroundedBrief(stories, {
+      ...opts,
+      sourceFromStory: () => null,
+    }), null);
+  });
+
+  it('does not replace an unsourceable corroborated lead with a single-source story', () => {
+    assert.equal(composeDeterministicGroundedBrief(stories, {
+      ...opts,
+      sourceFromStory: (story) => story === stories[1] ? null : opts.sourceFromStory(story),
+    }), null);
+  });
+
+  it('strips injected citation markers and rejects non-HTTP source protocols', () => {
+    const injected = stories.map((story, index) => ({
+      ...story,
+      primaryTitle: `${story.primaryTitle} [${index + 8}]`,
+    }));
+    const composed = composeDeterministicGroundedBrief(injected, opts);
+    assert.ok(composed);
+    assert.doesNotMatch(composed.lead, /\[(8|9)\]/);
+    assert.match(composed.lead, /\[1\]/);
+    assert.equal(composeDeterministicGroundedBrief(stories, {
+      ...opts,
+      sourceFromStory: (story) => ({ ...opts.sourceFromStory(story), url: 'javascript:alert(1)' }),
+    }), null);
+  });
+
+  it('bounds the deterministic lead even when source titles are oversized', () => {
+    const oversized = stories.map((story) => ({ ...story, primaryTitle: 'A'.repeat(500) }));
+    const composed = composeDeterministicGroundedBrief(oversized, opts);
+    assert.ok(composed);
+    assert.ok(composed.lead.length <= 700);
+    assert.ok(composed.sources.every((source) => source.title.length <= 280));
   });
 });
 

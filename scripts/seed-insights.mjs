@@ -36,6 +36,7 @@ import {
   synthesisSystemPrompt,
   synthesisUserPrompt,
   parseBriefSynthesis,
+  composeDeterministicGroundedBrief,
   composeSynthesizedBrief,
 } from './_insights-brief.mjs';
 import { buildLlmCallEvent, emitLlmEvents, flushPendingLlmEvents } from './lib/llm-telemetry.cjs';
@@ -233,11 +234,18 @@ export function buildInsightsFreshnessMetaPatch({
   const eligibleClusters = normalizeBriefEligibleClusters(briefEligibleClusters);
 
   if (outcome === INSIGHTS_RUN_OUTCOMES.PUBLISHED) {
+    const synthesisSucceeded = normalizedFailureCode == null;
     return {
       lastAttemptAt: now,
-      lastSuccessAt: now,
+      // A deterministic grounded publication is fresh and usable, but it must
+      // not impersonate a successful AI synthesis in operational telemetry.
+      lastSuccessAt: synthesisSucceeded
+        ? now
+        : (Number.isFinite(previous.lastSuccessAt) ? previous.lastSuccessAt : null),
       servedGeneratedAt: servedAt,
-      consecutiveFailures: 0,
+      consecutiveFailures: synthesisSucceeded
+        ? 0
+        : Math.min(INSIGHTS_MAX_CONSECUTIVE_FAILURES, previousFailures + 1),
       lastSynthesisFailureCode: normalizedFailureCode,
       briefEligibleClusters: eligibleClusters,
     };
@@ -833,7 +841,9 @@ export async function fetchInsights() {
   // #4921/#4928: L1 = top-8 synthesis via the pure composer (parse +
   // corroboration gate + lead noun/anchor gates + per-line enforcement +
   // citation verification + index-locked sources — all unit-tested in
-  // _insights-brief.mjs). L2 = legacy single-headline brief. Degraded last.
+  // _insights-brief.mjs). L2 = deterministic, citation-locked headlines when
+  // model output is rejected. The legacy single-headline path remains the
+  // final degraded fallback when no explicit source URL can be grounded.
   // The brief always ships.
   let worldBrief = '';
   let briefProvider = '';
@@ -928,22 +938,36 @@ export async function fetchInsights() {
   } else {
     console.warn(
       `  [brief_synthesis] rejected (${synthesisFailureCode || INSIGHTS_SYNTHESIS_FAILURE_CODES.PROVIDER}) — `
-      + 'falling back to single-headline brief',
+      + 'falling back to deterministic grounded brief',
     );
-    const legacy = await generateLegacySingleHeadlineBrief(topStories, {
-      callBudgetMs: Math.max(0, INSIGHTS_LLM_CALL_BUDGET_MS - (Date.now() - llmRunStartedAtMs)),
+    const grounded = composeDeterministicGroundedBrief(topStories, {
+      sanitizeTitle,
+      sourceFromStory: briefSourceFromStory,
+      briefCluster,
     });
-    worldBrief = legacy.worldBrief;
-    briefProvider = legacy.briefProvider;
-    briefModel = legacy.briefModel;
-    worldBriefSources = legacy.worldBriefSources;
-    // A usable L2 headline must not clear an L1 synthesis failure. Keep this
-    // run degraded so an existing LKG remains the freshness anchor and the
-    // bounded failure metadata advances until L1 publishes successfully.
-    status = resolveInsightsFallbackStatus({
-      synthesisFailureCode,
-      legacyStatus: legacy.status,
-    });
+    if (grounded) {
+      worldBrief = grounded.lead;
+      briefStoryLines = grounded.lines;
+      worldBriefSources = grounded.sources;
+      briefProvider = 'deterministic-grounded-fallback';
+      briefModel = 'headline-citation-v1';
+      status = 'ok';
+    } else {
+      const legacy = await generateLegacySingleHeadlineBrief(topStories, {
+        callBudgetMs: Math.max(0, INSIGHTS_LLM_CALL_BUDGET_MS - (Date.now() - llmRunStartedAtMs)),
+      });
+      worldBrief = legacy.worldBrief;
+      briefProvider = legacy.briefProvider;
+      briefModel = legacy.briefModel;
+      worldBriefSources = legacy.worldBriefSources;
+      // A usable legacy headline must not clear an L1 synthesis failure. Keep
+      // this rare path degraded so an existing LKG remains the freshness
+      // anchor and bounded failure metadata advances.
+      status = resolveInsightsFallbackStatus({
+        synthesisFailureCode,
+        legacyStatus: legacy.status,
+      });
+    }
   }
 
   const multiSourceCount = clusters.filter(c => (c.sources?.length ?? 0) >= 2 || c.entityCorroboration === true).length;
@@ -999,11 +1023,11 @@ export async function fetchInsights() {
   );
 
   // #4921 staleness footer: the age window of the BRIEF'S OWN material —
-  // the top stories the synthesis cites — not the whole digest pool
+  // the explicit cited-source list, not the whole digest pool
   // (#4928 external review: an unrelated fresh item made the footer claim
   // the brief's sources were fresher than they are).
-  const pubTimes = topStories
-    .map(story => new Date(story.pubDate).getTime())
+  const pubTimes = worldBriefSources
+    .map(source => new Date(source.publishedAt).getTime())
     .filter(Number.isFinite);
   const sourceAgeRange = pubTimes.length > 0
     ? { newestMs: Math.max(...pubTimes), oldestMs: Math.min(...pubTimes) }

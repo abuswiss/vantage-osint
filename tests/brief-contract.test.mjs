@@ -192,7 +192,14 @@ describe('brief-contract wiring (source-textual)', () => {
     assert.match(src, /accept: composeFromText/, 'the acceptance gate must be the composer itself');
     assert.match(src, /validatorMode: BRIEF_VALIDATOR_MODE/);
     assert.match(src, /=== 'shadow' \? 'shadow' : 'enforce'/, 'enforce must be the default mode');
+    assert.match(src, /composeDeterministicGroundedBrief\(topStories[,)]/, 'citation-locked L2 fallback must be wired');
     assert.match(src, /generateLegacySingleHeadlineBrief\(topStories[,)]/, 'L2 fallback must be wired');
+    assert.ok(
+      src.lastIndexOf('composeDeterministicGroundedBrief(topStories')
+        < src.lastIndexOf('generateLegacySingleHeadlineBrief(topStories'),
+      'deterministic grounded L2 must run before the legacy degraded path',
+    );
+    assert.doesNotMatch(src, /worldBrief\s*=\s*synthesisResult\.text/, 'rejected model text must never be reused');
     assert.match(src, /briefStoryLines/);
     assert.match(src, /sourceAgeRange/);
   });

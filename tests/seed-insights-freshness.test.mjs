@@ -145,6 +145,25 @@ test('a newly published payload resets synthesis failures only after publication
   assert.equal(patch.lastSynthesisFailureCode, null);
 });
 
+test('a grounded fallback publishes fresh data without laundering an AI synthesis failure', () => {
+  const patch = buildInsightsFreshnessMetaPatch({
+    previousMeta: {
+      lastSuccessAt: 1_754_000_000_000,
+      consecutiveFailures: 2,
+    },
+    outcome: 'published',
+    failureCode: INSIGHTS_SYNTHESIS_FAILURE_CODES.GATE,
+    nowMs: 1_754_000_180_000,
+    servedGeneratedAt: NEW_GENERATED_AT,
+  });
+
+  assert.equal(patch.lastAttemptAt, 1_754_000_180_000);
+  assert.equal(patch.lastSuccessAt, 1_754_000_000_000);
+  assert.equal(patch.servedGeneratedAt, NEW_GENERATED_AT);
+  assert.equal(patch.consecutiveFailures, 3);
+  assert.equal(patch.lastSynthesisFailureCode, INSIGHTS_SYNTHESIS_FAILURE_CODES.GATE);
+});
+
 // #5947: MISSING_CLUSTER alone could not distinguish "the corpus genuinely had
 // no corroborated story" (a legitimate degraded run) from "corroborated
 // clusters existed but selection never surfaced them" (the 35-run production
