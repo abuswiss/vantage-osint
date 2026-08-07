@@ -56,15 +56,20 @@
 
   /* Font stack */
   --font-mono: 'SF Mono', 'Monaco', 'Cascadia Code', 'Fira Code', 'DejaVu Sans Mono', 'Liberation Mono', monospace;
-  /* Base body font, controlled by font preference (mono vs system) */
-  --font-body-base: var(--font-mono);
+  /* Base body font, controlled by font preference (system default, mono opt-in) */
+  --font-body-base: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   /* Effective body font used throughout the app */
   --font-body: var(--font-body-base);
 }
 
-/* System font selection via data-font attribute (avoids inline style specificity issues with RTL) */
+/* Font selection via data-font attribute (avoids inline style specificity issues with RTL).
+   Default is the system stack above; mono is the opt-in preference. */
 [data-font="system"] {
   --font-body-base: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+[data-font="mono"] {
+  --font-body-base: var(--font-mono);
 }
 
 [dir="rtl"] {

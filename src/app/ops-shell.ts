@@ -246,7 +246,7 @@ export class OpsShell {
   inspectSearchResult(result: OpsSearchSummary): void {
     this.selection = { kind: 'search', result };
     this.setFocus(null);
-    const content = this.beginInspector(result.type === 'market' ? 'MARKET SIGNAL' : 'PREDICTION', result.title, result.subtitle);
+    const content = this.beginInspector(result.type === 'market' ? 'Market signal' : 'Prediction', result.title, result.subtitle);
     const note = el('p', 'ops-inspector-copy');
     note.textContent = result.type === 'market'
       ? 'Current market context from the live intelligence index.'
@@ -263,7 +263,7 @@ export class OpsShell {
     const brand = el('div', 'ops-brand');
     brand.textContent = BRAND.name;
     const live = el('span', 'ops-live');
-    live.textContent = 'LIVE';
+    live.textContent = 'Live';
     brand.appendChild(live);
 
     const chips = el('div', 'ops-chips');
@@ -325,13 +325,13 @@ export class OpsShell {
   private buildFilterRail(): HTMLElement {
     const rail = el('div', 'ops-filter');
     const label = el('span', 'ops-filter-label');
-    label.textContent = 'TIME';
+    label.textContent = 'Time';
 
     const timeSeg = el('div', 'ops-seg');
     for (const range of TIME_RANGES) {
       const button = el('button', 'ops-seg-btn') as HTMLButtonElement;
       button.type = 'button';
-      button.textContent = range === 'all' ? 'ALL' : range.toUpperCase();
+      button.textContent = range === 'all' ? 'All' : range.toUpperCase();
       button.setAttribute('aria-label', `Show ${range === 'all' ? 'all available' : `the last ${range}`} activity`);
       button.addEventListener('click', () => this.ctx.map?.setTimeRange(range));
       timeSeg.appendChild(button);
@@ -353,7 +353,7 @@ export class OpsShell {
     feed.setAttribute('aria-label', 'Live intelligence feed');
     const head = el('div', 'ops-feed-head');
     const label = el('span');
-    label.textContent = 'LIVE FEED';
+    label.textContent = 'Live feed';
     this.feedCount = el('span', 'count');
     head.append(label, this.feedCount);
     this.feedList = el('div', 'ops-feed-list');
@@ -378,13 +378,13 @@ export class OpsShell {
   private buildHud(): HTMLElement {
     const hud = el('div', 'ops-hud');
     const label = el('div', 'ops-hud-label');
-    label.textContent = 'ESCALATION INDEX';
+    label.textContent = 'Escalation index';
 
     const score = el('div', 'ops-hud-score');
     this.hudScore = el('b');
     this.hudScore.textContent = '--';
     this.hudLevel = el('span', 'ops-hud-level');
-    this.hudLevel.textContent = 'PENDING';
+    this.hudLevel.textContent = 'Pending';
     score.append(this.hudScore, this.hudLevel);
 
     const bar = el('div', 'ops-hud-bar');
@@ -401,7 +401,7 @@ export class OpsShell {
 
     const timeline = el('div', 'ops-timeline');
     const timelineLabel = el('span', 'ops-timeline-label');
-    timelineLabel.textContent = 'ACTIVITY';
+    timelineLabel.textContent = 'Activity';
     this.timelineBars = el('div', 'ops-timeline-bars');
     this.timelineBars.setAttribute('aria-label', 'Activity timeline');
     this.timelineMeta = el('span', 'ops-timeline-meta');
@@ -616,7 +616,7 @@ export class OpsShell {
     if (!this.layerPopover) return;
     const header = el('div', 'ops-layer-popover-head');
     const title = el('div');
-    title.textContent = `MAP LAYERS · ${this.currentRenderer().toUpperCase()}`;
+    title.textContent = `Map layers · ${sentence(this.currentRenderer())}`;
     const close = iconButton('×', 'Close map layers', () => this.toggleLayerPopover(false));
     header.append(title, close);
 
@@ -751,7 +751,7 @@ export class OpsShell {
       if (bucket[0]) button.addEventListener('click', () => this.inspectFeedItem(bucket[0]!));
       this.timelineBars?.appendChild(button);
     });
-    this.timelineMeta.textContent = `${items.length} REPORTS · ${range.toUpperCase()}`;
+    this.timelineMeta.textContent = `${items.length} reports · ${range.toUpperCase()}`;
   }
 
   // ---- inspector ----
@@ -760,15 +760,15 @@ export class OpsShell {
     this.selection = { kind: 'feed', item };
     if (updateUrl) this.setFocus(item.id);
     const content = this.beginInspector(
-      item.alert ? 'PRIORITY REPORT' : 'INTELLIGENCE REPORT',
+      item.alert ? 'Priority report' : 'Intelligence report',
       item.title,
       `${item.source} · ${formatTimeAgo(item.when)}`,
     );
 
     const badges = el('div', 'ops-inspector-badges');
-    if (item.threat) badges.appendChild(badge(item.threat.level.toUpperCase(), `level-${item.threat.level}`));
-    if (item.sourceCount > 1) badges.appendChild(badge(`${item.sourceCount} SOURCES`, 'sources'));
-    if (item.locationName) badges.appendChild(badge(item.locationName.toUpperCase(), 'location'));
+    if (item.threat) badges.appendChild(badge(sentence(item.threat.level), `level-${item.threat.level}`));
+    if (item.sourceCount > 1) badges.appendChild(badge(`${item.sourceCount} sources`, 'sources'));
+    if (item.locationName) badges.appendChild(badge(item.locationName, 'location'));
     if (badges.childElementCount > 0) content.appendChild(badges);
 
     const summary = el('p', 'ops-inspector-copy');
@@ -777,17 +777,17 @@ export class OpsShell {
 
     const facts = el('div', 'ops-inspector-facts');
     facts.append(
-      fact('UPDATED', formatAbsoluteTime(item.when)),
-      fact('SOURCES', String(item.sourceCount)),
-      fact('SIGNAL', item.threat?.category?.toUpperCase() ?? (item.alert ? 'PRIORITY' : 'REPORTING')),
-      fact('CONFIDENCE', item.threat ? `${Math.round(item.threat.confidence * 100)}%` : 'UNSCORED'),
+      fact('Updated', formatAbsoluteTime(item.when)),
+      fact('Sources', String(item.sourceCount)),
+      fact('Signal', item.threat?.category ? sentence(item.threat.category) : (item.alert ? 'Priority' : 'Reporting')),
+      fact('Confidence', item.threat ? `${Math.round(item.threat.confidence * 100)}%` : 'Unscored'),
     );
     content.appendChild(facts);
 
     const sources = uniqueSources(item);
     if (sources.length > 0) {
       const evidenceTitle = el('h3', 'ops-inspector-section-title');
-      evidenceTitle.textContent = 'EVIDENCE SOURCES';
+      evidenceTitle.textContent = 'Evidence sources';
       const list = el('div', 'ops-source-list');
       for (const source of sources.slice(0, 6)) {
         const link = el('a', 'ops-source-link') as HTMLAnchorElement;
@@ -823,14 +823,14 @@ export class OpsShell {
     this.selection = { kind: 'hotspot', hotspot };
     this.setFocus(`hotspot:${hotspot.id}`);
     const content = this.beginInspector(
-      'INTELLIGENCE HOTSPOT',
+      'Intelligence hotspot',
       hotspot.name,
       hotspot.location || hotspot.subtext || `${hotspot.lat.toFixed(2)}, ${hotspot.lon.toFixed(2)}`,
     );
     const badges = el('div', 'ops-inspector-badges');
-    badges.appendChild(badge((hotspot.level ?? 'low').toUpperCase(), `level-${hotspot.level ?? 'low'}`));
-    if (hotspot.escalationScore) badges.appendChild(badge(`ESCALATION ${hotspot.escalationScore}/5`, 'sources'));
-    if (hotspot.status) badges.appendChild(badge(hotspot.status.toUpperCase(), 'location'));
+    badges.appendChild(badge(sentence(hotspot.level ?? 'low'), `level-${hotspot.level ?? 'low'}`));
+    if (hotspot.escalationScore) badges.appendChild(badge(`Escalation ${hotspot.escalationScore}/5`, 'sources'));
+    if (hotspot.status) badges.appendChild(badge(sentence(hotspot.status), 'location'));
     content.appendChild(badges);
 
     const description = el('p', 'ops-inspector-copy');
@@ -839,7 +839,7 @@ export class OpsShell {
 
     if (hotspot.whyItMatters && hotspot.whyItMatters !== description.textContent) {
       const heading = el('h3', 'ops-inspector-section-title');
-      heading.textContent = 'WHY IT MATTERS';
+      heading.textContent = 'Why it matters';
       const copy = el('p', 'ops-inspector-copy');
       copy.textContent = hotspot.whyItMatters;
       content.append(heading, copy);
@@ -847,7 +847,7 @@ export class OpsShell {
 
     if (hotspot.escalationIndicators?.length) {
       const heading = el('h3', 'ops-inspector-section-title');
-      heading.textContent = 'ESCALATION INDICATORS';
+      heading.textContent = 'Escalation indicators';
       const list = el('ul', 'ops-indicator-list');
       for (const indicator of hotspot.escalationIndicators) {
         const item = el('li');
@@ -869,15 +869,15 @@ export class OpsShell {
   private inspectAlert(alert: BreakingAlert): void {
     this.selection = { kind: 'alert', alert };
     this.setFocus(null);
-    const content = this.beginInspector('BREAKING ALERT', alert.headline, `${alert.source} · ${formatTimeAgo(coerceDate(alert.timestamp))}`);
+    const content = this.beginInspector('Breaking alert', alert.headline, `${alert.source} · ${formatTimeAgo(coerceDate(alert.timestamp))}`);
     const badges = el('div', 'ops-inspector-badges');
-    badges.appendChild(badge(alert.threatLevel.toUpperCase(), `level-${alert.threatLevel}`));
+    badges.appendChild(badge(sentence(alert.threatLevel), `level-${alert.threatLevel}`));
     if (alert.countryCode) badges.appendChild(badge(alert.countryCode, 'location'));
     content.appendChild(badges);
     const copy = el('p', 'ops-inspector-copy');
     copy.textContent = alert.description || 'This is an automated high-priority signal. Verify the report with the linked source and corroborating evidence before acting.';
     content.appendChild(copy);
-    content.appendChild(fact('ORIGIN', alert.origin.replace(/_/g, ' ').toUpperCase()));
+    content.appendChild(fact('Origin', sentence(alert.origin.replace(/_/g, ' '))));
     if (alert.link) {
       const actions = el('div', 'ops-inspector-actions');
       const link = el('a', 'ops-inspector-action primary') as HTMLAnchorElement;
@@ -892,7 +892,7 @@ export class OpsShell {
   }
 
   private async inspectBrief(): Promise<void> {
-    const loading = this.beginInspector('AI SYNTHESIS', 'Compiling the current picture', 'CITED · CACHED · PUBLIC');
+    const loading = this.beginInspector('AI synthesis', 'Compiling the current picture', 'Cited · cached · public');
     const loadingCopy = el('p', 'ops-inspector-copy');
     loadingCopy.textContent = 'Loading the latest validated brief and its evidence trail…';
     loading.appendChild(loadingCopy);
@@ -913,7 +913,7 @@ export class OpsShell {
     const brief = insights ? buildVantageSynthesis(insights) : null;
     this.selection = { kind: 'brief', brief };
     if (!brief) {
-      const unavailable = this.beginInspector('AI SYNTHESIS', 'Brief temporarily unavailable', 'DATA PLANE DEGRADED');
+      const unavailable = this.beginInspector('AI synthesis', 'Brief temporarily unavailable', 'Data plane degraded');
       const copy = el('p', 'ops-inspector-copy');
       copy.textContent = 'The cited snapshot is not fresh enough to display. Live reporting remains available in the feed while the next synthesis run completes.';
       unavailable.appendChild(copy);
@@ -921,33 +921,33 @@ export class OpsShell {
     }
 
     const briefLabel = brief.generationMode === 'grounded-fallback'
-      ? 'CITED SYNTHESIS · SAFETY FALLBACK'
+      ? 'Cited synthesis · safety fallback'
       : brief.degraded
-        ? 'AI SYNTHESIS · DEGRADED'
-        : 'AI SYNTHESIS';
+        ? 'AI synthesis · degraded'
+        : 'AI synthesis';
     const content = this.beginInspector(
       briefLabel,
       'Global situation brief',
       brief.freshness,
     );
     const badges = el('div', 'ops-inspector-badges');
-    badges.appendChild(badge(`${brief.confidence} CONFIDENCE`, brief.confidence === 'HIGH' ? 'sources' : 'location'));
-    badges.appendChild(badge(`${brief.sources.length} SOURCES`, 'sources'));
+    badges.appendChild(badge(`${sentence(brief.confidence)} confidence`, brief.confidence === 'HIGH' ? 'sources' : 'location'));
+    badges.appendChild(badge(`${brief.sources.length} sources`, 'sources'));
     content.appendChild(badges);
 
     const changedHeading = el('h3', 'ops-inspector-section-title');
-    changedHeading.textContent = 'WHAT CHANGED';
+    changedHeading.textContent = 'What changed';
     const changed = el('p', 'ops-inspector-copy ops-brief-copy');
     changed.textContent = brief.whatChanged;
     const whyHeading = el('h3', 'ops-inspector-section-title');
-    whyHeading.textContent = 'WHY IT MATTERS';
+    whyHeading.textContent = 'Why it matters';
     const why = el('p', 'ops-inspector-copy');
     why.textContent = brief.whyItMatters;
     content.append(changedHeading, changed, whyHeading, why);
 
     if (brief.threads.length > 0) {
       const threadHeading = el('h3', 'ops-inspector-section-title');
-      threadHeading.textContent = 'LEADING THREADS';
+      threadHeading.textContent = 'Leading threads';
       const threadList = el('ol', 'ops-brief-threads');
       for (const thread of brief.threads) {
         const item = el('li');
@@ -957,14 +957,14 @@ export class OpsShell {
       content.append(threadHeading, threadList);
     }
 
-    content.appendChild(fact('EVIDENCE', brief.confidenceDetail));
+    content.appendChild(fact('Evidence', brief.confidenceDetail));
     const provenance = el('p', 'ops-brief-provenance');
     provenance.textContent = brief.provenance;
     content.appendChild(provenance);
 
     if (brief.sources.length > 0) {
       const evidenceTitle = el('h3', 'ops-inspector-section-title');
-      evidenceTitle.textContent = 'NUMBERED EVIDENCE';
+      evidenceTitle.textContent = 'Numbered evidence';
       const list = el('div', 'ops-source-list');
       for (const source of brief.sources) {
         const link = el('a', 'ops-source-link') as HTMLAnchorElement;
@@ -1077,11 +1077,11 @@ export class OpsShell {
     if (!this.statusLine) return;
     const range = (this.ctx.map?.getTimeRange() ?? this.ctx.currentTimeRange).toUpperCase();
     if (VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED) {
-      this.statusLine.textContent = `WINDOW ${range} · AIR/SHIPS PENDING`;
+      this.statusLine.textContent = `Window ${range} · Air/ships pending`;
       return;
     }
     const ais = safeAisStatus();
-    this.statusLine.textContent = `WINDOW ${range} · AIS ${ais.connected ? 'LIVE' : 'IDLE'}`;
+    this.statusLine.textContent = `Window ${range} · AIS ${ais.connected ? 'live' : 'idle'}`;
   }
 
   private updateHud(): void {
@@ -1090,7 +1090,7 @@ export class OpsShell {
     if (this.hudScore) this.hudScore.textContent = risk ? String(Math.round(risk.score)) : '--';
     if (this.hudLevel) {
       const level = risk?.level ?? 'low';
-      this.hudLevel.textContent = risk ? level.toUpperCase() : 'PENDING';
+      this.hudLevel.textContent = risk ? sentence(level) : 'Pending';
       this.hudLevel.dataset.level = level;
     }
     if (this.hudBar) {
@@ -1104,15 +1104,15 @@ export class OpsShell {
 
     if (this.hudStats) {
       this.hudStats.replaceChildren(
-        hudStat(VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : militaryFlights, 'MIL AIR'),
-        hudStat(VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : ais.vessels, 'VESSELS'),
-        hudStat(events, 'EVENTS'),
-        hudStat(scores?.cii?.filter((score) => score.level === 'high' || score.level === 'critical').length ?? 0, 'HIGH CII'),
+        hudStat(VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : militaryFlights, 'Mil air'),
+        hudStat(VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : ais.vessels, 'Vessels'),
+        hudStat(events, 'Events'),
+        hudStat(scores?.cii?.filter((score) => score.level === 'high' || score.level === 'critical').length ?? 0, 'High CII'),
       );
     }
-    if (this.countAir) setCount(this.countAir, VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : militaryFlights, 'AIR');
-    if (this.countShips) setCount(this.countShips, VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : ais.vessels, 'SHIPS');
-    if (this.countEvents) setCount(this.countEvents, events, 'EVENTS');
+    if (this.countAir) setCount(this.countAir, VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : militaryFlights, 'air');
+    if (this.countShips) setCount(this.countShips, VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : ais.vessels, 'ships');
+    if (this.countEvents) setCount(this.countEvents, events, 'events');
     this.updateStatusLine();
   }
 
@@ -1124,6 +1124,11 @@ export class OpsShell {
 }
 
 // ---- small DOM/data helpers ----
+
+function sentence(text: string): string {
+  const lower = text.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
 
 function el(tag: string, className?: string): HTMLElement {
   const node = document.createElement(tag);
@@ -1206,7 +1211,7 @@ function formatAbsoluteTime(when: Date): string {
     minute: '2-digit',
     timeZone: 'UTC',
     hour12: false,
-  }).format(when).toUpperCase() + ' UTC';
+  }).format(when) + ' UTC';
 }
 
 function formatTimelineDate(when: Date): string {

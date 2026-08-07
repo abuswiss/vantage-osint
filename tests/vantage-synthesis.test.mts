@@ -53,7 +53,7 @@ describe('Vantage cited synthesis view model', () => {
 
     assert.ok(brief);
     assert.equal(brief.confidence, 'HIGH');
-    assert.equal(brief.freshness, 'UPDATED 5M AGO');
+    assert.equal(brief.freshness, 'Updated 5m ago');
     assert.match(brief.whyItMatters, /2 lead stories are independently corroborated/);
     assert.match(brief.provenance, /282 stories across 74 sources/);
     assert.deepEqual(brief.sources.map((source) => source.index), [1, 3]);

@@ -1566,9 +1566,9 @@ export class MapComponent {
     if (!this.baseLayerGroup || !this.countryFeatures) return;
 
     const sanctionColors: Record<string, string> = {
-      severe: 'rgba(255, 0, 0, 0.35)',
-      high: 'rgba(255, 100, 0, 0.25)',
-      moderate: 'rgba(255, 200, 0, 0.2)',
+      severe: 'rgba(229, 101, 94, 0.26)',
+      high: 'rgba(224, 140, 77, 0.18)',
+      moderate: 'rgba(217, 174, 79, 0.14)',
     };
     const defaultFill = getCSSColor('--map-country');
     const useSanctions = this.state.layers.sanctions;

@@ -12,11 +12,11 @@ export function getFontFamily(): FontFamily {
   } catch {
     // ignore
   }
-  return 'mono';
+  return 'system';
 }
 
 export function setFontFamily(font: FontFamily): void {
-  const safe = ALLOWED.includes(font) ? font : 'mono';
+  const safe = ALLOWED.includes(font) ? font : 'system';
   try {
     localStorage.setItem(STORAGE_KEY, safe);
   } catch {
@@ -28,8 +28,8 @@ export function setFontFamily(font: FontFamily): void {
 
 export function applyFont(font?: FontFamily): void {
   const resolved = font ?? getFontFamily();
-  if (resolved === 'system') {
-    document.documentElement.dataset.font = 'system';
+  if (resolved === 'mono') {
+    document.documentElement.dataset.font = 'mono';
   } else {
     delete document.documentElement.dataset.font;
   }

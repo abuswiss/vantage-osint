@@ -46,12 +46,12 @@ function sourceFromStory(story: ServerInsightStory): ServerBriefSource | null {
 
 function relativeFreshness(generatedAt: string, nowMs: number): string {
   const generatedMs = new Date(generatedAt).getTime();
-  if (!Number.isFinite(generatedMs)) return 'FRESHNESS UNKNOWN';
+  if (!Number.isFinite(generatedMs)) return 'Freshness unknown';
   const ageMinutes = Math.max(0, Math.round((nowMs - generatedMs) / 60_000));
-  if (ageMinutes < 1) return 'UPDATED NOW';
-  if (ageMinutes < 60) return `UPDATED ${ageMinutes}M AGO`;
+  if (ageMinutes < 1) return 'Updated just now';
+  if (ageMinutes < 60) return `Updated ${ageMinutes}m ago`;
   const hours = Math.round((ageMinutes / 60) * 10) / 10;
-  return `UPDATED ${hours}H AGO`;
+  return `Updated ${hours}h ago`;
 }
 
 function confidenceFor(stories: ServerInsightStory[]): Pick<VantageSynthesis, 'confidence' | 'confidenceDetail'> {

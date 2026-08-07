@@ -1,4 +1,6 @@
 import './styles/base-layer.css';
+// Vantage skin — unlayered, so it wins over the @layer base styles above.
+import './styles/vantage-theme.css';
 import './bootstrap/zod-csp';
 import { SITE_VARIANT } from '@/config/variant';
 import { installLcpAttributionDebug } from '@/bootstrap/lcp-attribution';

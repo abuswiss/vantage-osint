@@ -115,7 +115,7 @@ test.describe('Vantage operations shell', () => {
     await expect(page.locator('.mobile-menu-variant')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Air layer pending relay provisioning' })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Ships layer pending relay provisioning' })).toBeDisabled();
-    await expect(page.locator('.ops-status-item')).toContainText('AIR/SHIPS PENDING');
+    await expect(page.locator('.ops-status-item')).toContainText('Air/ships pending');
     const bottomLabelLayout = await page.evaluate(() => {
       const status = document.querySelector<HTMLElement>('.ops-status-item');
       const activity = document.querySelector<HTMLElement>('.ops-timeline-label');
@@ -134,8 +134,8 @@ test.describe('Vantage operations shell', () => {
     await page.getByRole('button', { name: 'Open cited AI situation brief' }).click();
     await expect(page.locator('#opsInspector')).toBeVisible();
     await expect(page.locator('.ops-inspector-title')).toHaveText('Global situation brief');
-    await expect(page.locator('#opsInspector')).toContainText('WHAT CHANGED');
-    await expect(page.locator('#opsInspector')).toContainText('WHY IT MATTERS');
+    await expect(page.locator('#opsInspector')).toContainText('What changed');
+    await expect(page.locator('#opsInspector')).toContainText('Why it matters');
     await expect(page.locator('#opsInspector')).toContainText('Compiled from 282 stories across 74 sources.');
     await expect(page.locator('.ops-source-link')).toHaveCount(2);
     await expect(page.locator('.ops-source-link').first()).toHaveAttribute('href', TEST_LINK);
