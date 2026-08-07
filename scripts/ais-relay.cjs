@@ -9699,12 +9699,15 @@ function handleNotamProxyRequest(req, res) {
 
 // CORS origin allowlist — only our domains can use this relay
 const ALLOWED_ORIGINS = [
+  'https://vantage-osint.vercel.app',
   'https://worldmonitor.app',
   'https://tech.worldmonitor.app',
   'https://finance.worldmonitor.app',
   'http://localhost:5173',   // Vite dev
   'http://localhost:5174',   // Vite dev alt port
   'http://localhost:4173',   // Vite preview
+  'http://localhost:3000',   // Vantage dev
+  'http://127.0.0.1:3000',   // Vantage dev
   'https://localhost',       // Tauri desktop
   'tauri://localhost',       // Tauri iOS/macOS
 ];
