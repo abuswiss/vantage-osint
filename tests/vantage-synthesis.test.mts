@@ -59,6 +59,18 @@ describe('Vantage cited synthesis view model', () => {
     assert.deepEqual(brief.sources.map((source) => source.index), [1, 3]);
     assert.equal(brief.sources.some((source) => source.url.startsWith('javascript:')), false);
     assert.equal('briefProvider' in brief, false);
+    assert.equal(brief.generationMode, 'ai');
+  });
+
+  it('identifies the grounded safety fallback without exposing provider details', () => {
+    const input = makeInsights();
+    input.briefProvider = 'deterministic-grounded-fallback';
+
+    const brief = buildVantageSynthesis(input);
+
+    assert.ok(brief);
+    assert.equal(brief.generationMode, 'grounded-fallback');
+    assert.equal('briefProvider' in brief, false);
   });
 
   it('falls back to cited headlines when per-story synthesis lines are absent', () => {

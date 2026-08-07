@@ -920,8 +920,13 @@ export class OpsShell {
       return;
     }
 
+    const briefLabel = brief.generationMode === 'grounded-fallback'
+      ? 'CITED SYNTHESIS · SAFETY FALLBACK'
+      : brief.degraded
+        ? 'AI SYNTHESIS · DEGRADED'
+        : 'AI SYNTHESIS';
     const content = this.beginInspector(
-      brief.degraded ? 'AI SYNTHESIS · DEGRADED' : 'AI SYNTHESIS',
+      briefLabel,
       'Global situation brief',
       brief.freshness,
     );

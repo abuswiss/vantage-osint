@@ -19,6 +19,7 @@ export interface VantageSynthesis {
   confidenceDetail: string;
   provenance: string;
   degraded: boolean;
+  generationMode: 'ai' | 'grounded-fallback';
 }
 
 const MAX_SOURCES = 8;
@@ -126,5 +127,8 @@ export function buildVantageSynthesis(
     ...confidence,
     provenance: `Compiled from ${storiesConsidered} stories across ${sourcesConsidered} sources.`,
     degraded: insights.status === 'degraded',
+    generationMode: insights.briefProvider === 'deterministic-grounded-fallback'
+      ? 'grounded-fallback'
+      : 'ai',
   };
 }
