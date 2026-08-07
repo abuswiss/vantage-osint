@@ -39,11 +39,12 @@ jobs:
           status="$(curl --silent --show-error --max-time 45 \
             --user-agent 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Safari/537.36' \
             --header 'Origin: https://vantage-osint.vercel.app' \
+            --header 'Cache-Control: no-cache' \
             --output /tmp/vantage-news.json \
             --write-out '%{http_code}' \
-            'https://vantage-osint.vercel.app/api/news/v1/list-feed-digest?variant=full&lang=en&public=1')"
+            "https://vantage-osint.vercel.app/api/news/v1/list-feed-digest?variant=full&lang=en&public=1&refresh=${GITHUB_RUN_ID}")"
           test "$status" = '200'
-          node -e "const d=require('/tmp/vantage-news.json'); const c=d.categories; const n=Array.isArray(c)?c.length:Object.keys(c||{}).length; if (n < 3) process.exit(1)"
+          node -e "const d=require('/tmp/vantage-news.json'); const c=d.categories; const n=Array.isArray(c)?c.length:Object.keys(c||{}).length; const age=Date.now()-Date.parse(d.generatedAt); if (n < 3 || !Number.isFinite(age) || age < -300000 || age > 300000) process.exit(1)"
 
       - name: Refresh escalation scoring
         run: |
