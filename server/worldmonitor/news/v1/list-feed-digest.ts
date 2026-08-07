@@ -402,13 +402,11 @@ interface ParseResult {
   droppedFeedCap?: number; // #4920: items beyond ITEMS_PER_FEED, previously uncounted
 }
 
-// Cache TTLs: a successful parse (parsedTotal > 0) caches for an hour to
-// match the existing aggressive-caching behaviour. A zero-from-zero result
-// (no `<item>` tags found at all) caches for only 5 minutes — without this
-// split, a single upstream-CF-challenge or transient outage would pin the
-// panel to "No news available" for the full hour. 5min keeps load on
-// upstream bounded while still recovering quickly when upstream heals.
-const CACHE_TTL_HEALTHY_S = 3600;
+// Cache TTLs: healthy feeds refresh every 10 minutes. This keeps the public
+// digest near-real-time while still shielding hundreds of upstream RSS hosts
+// from per-user fan-out. A zero-from-zero result stays on a shorter 5-minute
+// retry so a transient challenge/outage cannot pin an empty feed.
+const CACHE_TTL_HEALTHY_S = 600;
 const CACHE_TTL_EMPTY_S = 300;
 
 async function fetchAndParseRss(
@@ -1088,7 +1086,7 @@ export async function listFeedDigest(
     // neg-sentinel (120s) to absorb the request storm during degraded periods.
     const fresh = await cachedFetchJson<ListFeedDigestResponse>(
       digestCacheKey,
-      900,
+      120,
       async () => {
         const result = await buildDigest(variant, lang);
         const totalItems = Object.values(result.categories).reduce((sum, b) => sum + b.items.length, 0);

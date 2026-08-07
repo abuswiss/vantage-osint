@@ -69,6 +69,20 @@ describe('parseMapUrlState chokepoint param', () => {
   });
 });
 
+describe('parseMapUrlState ops focus param', () => {
+  it('parses supported inspector targets', () => {
+    assert.equal(parseMapUrlState('?focus=cluster:1720000000-IranTalks', EMPTY_LAYERS).focus, 'cluster:1720000000-IranTalks');
+    assert.equal(parseMapUrlState('?focus=news:1ab23z', EMPTY_LAYERS).focus, 'news:1ab23z');
+    assert.equal(parseMapUrlState('?focus=hotspot:taiwan-strait', EMPTY_LAYERS).focus, 'hotspot:taiwan-strait');
+  });
+
+  it('rejects unknown, malformed, or oversized targets', () => {
+    assert.equal(parseMapUrlState('?focus=panel:markets', EMPTY_LAYERS).focus, undefined);
+    assert.equal(parseMapUrlState('?focus=hotspot:../secret', EMPTY_LAYERS).focus, undefined);
+    assert.equal(parseMapUrlState(`?focus=cluster:${'a'.repeat(100)}`, EMPTY_LAYERS).focus, undefined);
+  });
+});
+
 describe('buildMapUrl expanded param', () => {
   const base = 'https://worldmonitor.app/dashboard';
   const baseState = {
@@ -104,6 +118,17 @@ describe('buildMapUrl expanded param', () => {
     const params = new URL(url).searchParams;
     assert.equal(params.get('chokepoint'), 'hormuz_strait');
   });
+
+  it('preserves ops inspector and classic-dashboard deep links', () => {
+    const url = buildMapUrl(base, {
+      ...baseState,
+      focus: 'hotspot:taiwan-strait',
+      classic: true,
+    });
+    const params = new URL(url).searchParams;
+    assert.equal(params.get('focus'), 'hotspot:taiwan-strait');
+    assert.equal(params.get('classic'), '1');
+  });
 });
 
 describe('expanded param round-trip', () => {
@@ -134,5 +159,11 @@ describe('expanded param round-trip', () => {
     const url = buildMapUrl(base, { ...baseState, chokepoint: 'hormuz_strait' });
     const parsed = parseMapUrlState(new URL(url).search, EMPTY_LAYERS);
     assert.equal(parsed.chokepoint, 'hormuz_strait');
+  });
+
+  it('round-trips ops inspector focus', () => {
+    const url = buildMapUrl(base, { ...baseState, focus: 'cluster:1720000000-IranTalks' });
+    const parsed = parseMapUrlState(new URL(url).search, EMPTY_LAYERS);
+    assert.equal(parsed.focus, 'cluster:1720000000-IranTalks');
   });
 });

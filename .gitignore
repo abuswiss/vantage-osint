@@ -105,7 +105,12 @@ skills-lock.json
 tmp/
 .context/
 
+# Local browser-verification artifacts
+/output/
+
 # Local planning documents (not for public repo)
 docs/plans/
 docs/brainstorms/
 playground-pricing.html
+.env*
+!.env.example

@@ -13,6 +13,7 @@ import {
 } from '@/config/panels';
 import { isProUser } from '@/services/widget-store';
 import { SITE_VARIANT } from '@/config/variant';
+import { VANTAGE_PUBLIC_MODE, isPublicVantageCapability } from '@/config/product-policy';
 import { t } from '@/services/i18n';
 import { createSettingsButton } from '@/components/settings-button';
 import { confirmDialog } from '@/components/confirm-dialog';
@@ -380,9 +381,11 @@ export class UnifiedSettings {
 
     this.render();
     document.body.appendChild(this.overlay);
-    this.unsubscribeAuth = subscribeAuthState((state) => {
-      this.handleAccountIdentityChange(state.user?.id ?? null);
-    });
+    if (!VANTAGE_PUBLIC_MODE) {
+      this.unsubscribeAuth = subscribeAuthState((state) => {
+        this.handleAccountIdentityChange(state.user?.id ?? null);
+      });
+    }
   }
 
   private handleAccountIdentityChange(nextUserId: string | null): void {
@@ -447,6 +450,11 @@ export class UnifiedSettings {
     document.addEventListener('keydown', this.escapeHandler);
     (this.overlay.querySelector('.unified-settings-tabs') as HTMLElement)?.addEventListener('keydown', (e: KeyboardEvent) => this.handleKeyDown(e));
     track('settings-open', { tab: tab ?? 'default' });
+
+    // Public Vantage has no account lifecycle. Its settings surface is local
+    // display/panel/source configuration only, so do not start entitlement,
+    // billing, notification, API-key, or MCP account work.
+    if (VANTAGE_PUBLIC_MODE) return;
 
     // Re-render API Keys panel when entitlements arrive (cold-load race:
     // hasFeature('apiAccess') returns false until the Convex subscription
@@ -640,24 +648,24 @@ export class UnifiedSettings {
     this.notifCleanup = null;
     this.pendingNotifs = null;
 
-    const isSignedIn = !this.config.isDesktopApp && (getAuthState().user !== null);
+    const isSignedIn = !VANTAGE_PUBLIC_MODE && !this.config.isDesktopApp && (getAuthState().user !== null);
     const prefs = renderPreferences({
       isDesktopApp: this.config.isDesktopApp,
       onMapProviderChange: this.config.onMapProviderChange,
       isSignedIn,
     });
-    const showNotificationsTab = !this.config.isDesktopApp;
+    const showNotificationsTab = !VANTAGE_PUBLIC_MODE && !this.config.isDesktopApp;
     const notifs = showNotificationsTab
       ? renderNotificationsSettings({ isSignedIn })
       : null;
-    const showMcpClientsTab = hasFeature('mcpAccess');
+    const showMcpClientsTab = !VANTAGE_PUBLIC_MODE && hasFeature('mcpAccess');
     const availableTabs: TabId[] = [
       'settings',
       ...(isSignedIn ? ['billing' as const] : []),
       'panels',
       'sources',
       ...(showNotificationsTab ? ['notifications' as const] : []),
-      'api-keys',
+      ...(!VANTAGE_PUBLIC_MODE ? ['api-keys' as const] : []),
       ...(showMcpClientsTab ? ['mcp-clients' as const] : []),
     ];
     this.activeTab = normalizeSettingsTab(this.activeTab, availableTabs);
@@ -676,7 +684,7 @@ export class UnifiedSettings {
           <button class="${tabClass('panels')}" tabindex="${this.activeTab === 'panels' ? 0 : -1}" data-tab="panels" role="tab" aria-selected="${this.activeTab === 'panels'}" id="us-tab-panels" aria-controls="us-tab-panel-panels">${t('header.tabPanels')}</button>
           <button class="${tabClass('sources')}" tabindex="${this.activeTab === 'sources' ? 0 : -1}" data-tab="sources" role="tab" aria-selected="${this.activeTab === 'sources'}" id="us-tab-sources" aria-controls="us-tab-panel-sources">${t('header.tabSources')}</button>
           ${showNotificationsTab ? `<button class="${tabClass('notifications')}" tabindex="${this.activeTab === 'notifications' ? 0 : -1}" data-tab="notifications" role="tab" aria-selected="${this.activeTab === 'notifications'}" id="us-tab-notifications" aria-controls="us-tab-panel-notifications">${t('header.tabNotifications')}</button>` : ''}
-          <button class="${tabClass('api-keys')}" tabindex="${this.activeTab === 'api-keys' ? 0 : -1}" data-tab="api-keys" role="tab" aria-selected="${this.activeTab === 'api-keys'}" id="us-tab-api-keys" aria-controls="us-tab-panel-api-keys">API Keys <span class="panel-pro-badge">PRO</span></button>
+          ${VANTAGE_PUBLIC_MODE ? '' : `<button class="${tabClass('api-keys')}" tabindex="${this.activeTab === 'api-keys' ? 0 : -1}" data-tab="api-keys" role="tab" aria-selected="${this.activeTab === 'api-keys'}" id="us-tab-api-keys" aria-controls="us-tab-panel-api-keys">API Keys <span class="panel-pro-badge">PRO</span></button>`}
           ${showMcpClientsTab ? `<button class="${tabClass('mcp-clients')}" tabindex="${this.activeTab === 'mcp-clients' ? 0 : -1}" data-tab="mcp-clients" role="tab" aria-selected="${this.activeTab === 'mcp-clients'}" id="us-tab-mcp-clients" aria-controls="us-tab-panel-mcp-clients">MCP Clients <span class="panel-pro-badge">PRO</span></button>` : ''}
         </div>
         <div class="unified-settings-tab-panel${this.activeTab === 'settings' ? ' active' : ''}" data-panel-id="settings" id="us-tab-panel-settings" role="tabpanel" aria-labelledby="us-tab-settings">
@@ -732,9 +740,9 @@ export class UnifiedSettings {
           ${notifs.html}
         </div>
         ` : ''}
-        <div class="unified-settings-tab-panel${this.activeTab === 'api-keys' ? ' active' : ''}" data-panel-id="api-keys" id="us-tab-panel-api-keys" role="tabpanel" aria-labelledby="us-tab-api-keys">
+        ${VANTAGE_PUBLIC_MODE ? '' : `<div class="unified-settings-tab-panel${this.activeTab === 'api-keys' ? ' active' : ''}" data-panel-id="api-keys" id="us-tab-panel-api-keys" role="tabpanel" aria-labelledby="us-tab-api-keys">
           ${this.renderApiKeysContent()}
-        </div>
+        </div>`}
         ${showMcpClientsTab ? `
         <div class="unified-settings-tab-panel${this.activeTab === 'mcp-clients' ? ' active' : ''}" data-panel-id="mcp-clients" id="us-tab-panel-mcp-clients" role="tabpanel" aria-labelledby="us-tab-mcp-clients">
           ${this.renderMcpClientsContent()}
@@ -993,7 +1001,11 @@ export class UnifiedSettings {
     const panelSettings = this.draftPanelSettings;
     let entries = Object.entries(panelSettings)
       .filter(([key]) => key !== 'runtime-config' || this.config.isDesktopApp)
-      .filter(([key]) => !key.startsWith('cw-'));
+      .filter(([key]) => !key.startsWith('cw-'))
+      .filter(([key, panel]) => {
+        const resolved = ALL_PANELS[key] ? getEffectivePanelConfig(key, SITE_VARIANT) : panel;
+        return isPublicVantageCapability(resolved.premium);
+      });
 
     if (this.activePanelCategory !== 'all') {
       const catDef = PANEL_CATEGORY_MAP[this.activePanelCategory];
@@ -1048,7 +1060,7 @@ export class UnifiedSettings {
         <button type="button" class="panel-toggle-item ${panel.enabled && !locked ? 'active' : ''}${changed ? ' changed' : ''}${locked ? ' pro-locked' : ''}" data-panel="${escapeHtml(key)}" ${a11yState.ariaPressed === null ? '' : `aria-pressed="${a11yState.ariaPressed}"`} ${a11yState.ariaLabel === null ? '' : `aria-label="${escapeHtml(a11yState.ariaLabel)}"`} ${locked ? 'data-pro-locked="1"' : ''}>
           <div  class="panel-toggle-checkbox" aria-hidden="true">${panel.enabled && !locked ? '\u2713' : ''}${locked ? '\uD83D\uDD12' : ''}</div>
           <span class="panel-toggle-label">${escapeHtml(displayName)}</span>
-          ${(locked || resolvedPanel.premium) ? '<span class="panel-toggle-pro-badge" aria-hidden="true">PRO</span>' : ''}
+          ${!VANTAGE_PUBLIC_MODE && (locked || resolvedPanel.premium) ? '<span class="panel-toggle-pro-badge" aria-hidden="true">PRO</span>' : ''}
         </button>
       `;
     }).join(''), "legacy direct innerHTML migration"));

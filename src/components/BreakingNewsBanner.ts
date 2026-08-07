@@ -69,6 +69,18 @@ export class BreakingNewsBanner {
         return;
       }
 
+      // The ops shell deliberately keeps the classic panel grid off-screen, so
+      // scrolling to a source panel is a no-op there. Route the same alert into
+      // the shell's evidence inspector instead.
+      if (document.body.classList.contains('ops-mode')) {
+        const id = alertEl.getAttribute('data-alert-id');
+        const active = id ? this.activeAlerts.find((entry) => entry.alert.id === id) : null;
+        if (active) {
+          document.dispatchEvent(new CustomEvent('wm:ops-inspect-alert', { detail: active.alert }));
+        }
+        return;
+      }
+
       const panelId = alertEl.getAttribute('data-target-panel');
       if (panelId) this.scrollToPanel(panelId);
     });

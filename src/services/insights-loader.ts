@@ -83,8 +83,8 @@ export function getServerInsights(): ServerInsights | null {
 }
 
 /**
- * On-demand refetch of the server-insights snapshot via the bootstrap
- * key-filter endpoint. Used by InsightsPanel when getServerInsights() returns
+ * On-demand refetch of the server-insights snapshot via the public fast-tier
+ * bootstrap endpoint. Used by InsightsPanel when getServerInsights() returns
  * null because the bootstrap hydration cache is empty — typically:
  *   - mobile fast-tier abort on 4G (bootstrap.ts:179 — 1.2 s budget),
  *   - cached value went stale (>MAX_AGE_MS) with no second bootstrap fetch,
@@ -92,19 +92,20 @@ export function getServerInsights(): ServerInsights | null {
  *     (it deletes on read; insights-loader.ts validation drained the slot
  *     without caching, leaving subsequent reads with nothing).
  *
- * The bootstrap API supports `?keys=insights` filtering (api/bootstrap.js:250)
- * and is CDN-cached (s-maxage=600 for fast tier), so polling is cheap.
+ * `insights` belongs to the fast tier. The exact `tier=fast&public=1` shape is
+ * credentials-free and CDN-cached; the legacy single-key shape is not public.
  * Mirrors the AAIISentimentPanel fallback shape (AAIISentimentPanel.ts:147).
  *
  * Returns the validated insights on success, null on any failure (network,
  * timeout, validation). Caches the value module-locally on success so
  * subsequent getServerInsights() calls return it without re-fetching.
  */
-export async function fetchServerInsights(timeoutMs = 5_000): Promise<ServerInsights | null> {
-  if (cached && isFresh(cached)) return cached;
+export async function fetchServerInsights(timeoutMs = 5_000, force = false): Promise<ServerInsights | null> {
+  if (!force && cached && isFresh(cached)) return cached;
   try {
-    const resp = await fetch(toApiUrl('/api/bootstrap?keys=insights'), {
+    const resp = await fetch(toApiUrl('/api/bootstrap?tier=fast&public=1'), {
       signal: AbortSignal.timeout(timeoutMs),
+      credentials: 'omit',
     });
     if (!resp.ok) return null;
     const payload = (await resp.json()) as { data?: { insights?: unknown } };

@@ -63,8 +63,22 @@ export interface AppContext {
   map: import('@/components').MapContainer | null;
   /** True when the map-first ops shell replaces the classic panel grid (default on desktop; ?classic=1 opts out). */
   readonly opsMode: boolean;
-  /** Live handle to the mounted ops shell, if any — data loaders notify it on store updates. */
-  opsShell: { onDataUpdated(): void; syncLayerChips(): void } | null;
+  /** Deep-linkable item currently open in the ops inspector. */
+  opsFocus: string | null;
+  /** Live handle to the mounted ops shell, if any. */
+  opsShell: {
+    onDataUpdated(): void;
+    onTimeRangeChanged(range: import('@/components').TimeRange): void;
+    syncLayerChips(): void;
+    inspectNewsItem(item: NewsItem): void;
+    inspectSearchResult(result: {
+      id: string;
+      title: string;
+      subtitle?: string;
+      type: 'market' | 'prediction';
+    }): void;
+    destroy(): void;
+  } | null;
   readonly isMobile: boolean;
   readonly isDesktopApp: boolean;
   readonly container: HTMLElement;

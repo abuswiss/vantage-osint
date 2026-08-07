@@ -368,9 +368,8 @@ async function readExistingInsights() {
   return data.result ? unwrapEnvelope(JSON.parse(data.result)).data : null;
 }
 
-// Provider config — mirrors server/_shared/llm.ts getProviderCredentials()
-// Order: ollama → openrouter → groq (canonical chain since #4944: DeepSeek
-// V4 Flash primary with reasoning disabled, groq 70B free-tier fallback)
+// Provider config. Vantage uses its directly provisioned OpenAI key first;
+// OpenRouter/Groq remain transport fallbacks for upstream-compatible installs.
 const LLM_PROVIDERS = [
   {
     name: 'ollama',
@@ -385,6 +384,20 @@ const LLM_PROVIDERS = [
     },
     extraBody: { think: false },
     timeout: 25_000,
+  },
+  {
+    name: 'openai',
+    envKey: 'OPENAI_API_KEY',
+    apiUrl: 'https://api.openai.com/v1/chat/completions',
+    model: () => process.env.OPENAI_MODEL || 'gpt-5.6-terra',
+    headers: (key) => ({ 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'User-Agent': CHROME_UA }),
+    buildBody: ({ model, messages, maxTokens }) => ({
+      model,
+      messages,
+      max_completion_tokens: Math.max(maxTokens, 1_200),
+      reasoning_effort: 'low',
+    }),
+    timeout: 30_000,
   },
   {
     name: 'openrouter',
@@ -487,19 +500,23 @@ async function callLLM(headline, options = {}) {
       const resp = await withRetry(async () => {
         const usable = usableBudgetMs();
         if (usable <= 0) throw createLlmBudgetError('insights llm budget exhausted');
+        const messages = [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ];
+        const requestBody = provider.buildBody
+          ? provider.buildBody({ model, messages, maxTokens })
+          : {
+              model,
+              messages,
+              max_tokens: maxTokens,
+              temperature: 0.1,
+              ...provider.extraBody,
+            };
         const response = await insightsFetch(apiUrl, {
           method: 'POST',
           headers: provider.headers(envVal),
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            max_tokens: maxTokens,
-            temperature: 0.1,
-            ...provider.extraBody,
-          }),
+          body: JSON.stringify(requestBody),
           signal: AbortSignal.timeout(Math.max(1, Math.min(provider.timeout, usable))),
         });
         if (!response.ok) {

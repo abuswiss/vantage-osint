@@ -834,7 +834,18 @@ export default defineConfig(({ mode }) => {
   const isE2E = process.env.VITE_E2E === '1';
   const isDesktopBuild = process.env.VITE_DESKTOP_RUNTIME === '1';
   const activeVariant = process.env.VITE_VARIANT || 'full';
-  const activeMeta = VARIANT_META[activeVariant] || VARIANT_META.full;
+  const publicVantageMode = ['1', 'true'].includes((process.env.VITE_VANTAGE_PUBLIC_MODE || '').toLowerCase());
+  const baseMeta = VARIANT_META[activeVariant] || VARIANT_META.full;
+  const activeMeta: VariantMeta = publicVantageMode
+    ? {
+        ...baseMeta,
+        title: 'Vantage - Real-Time Global Intelligence Dashboard',
+        description: 'Open-source global intelligence with live news, map signals, risk context, and citation-backed AI synthesis in one public view.',
+        url: 'https://vantage-osint.vercel.app/',
+        siteName: 'Vantage',
+        shortName: 'Vantage',
+      }
+    : baseMeta;
 
   return {
     html: {
@@ -894,7 +905,7 @@ export default defineConfig(({ mode }) => {
           name: `${activeMeta.siteName} - ${activeMeta.subject}`,
           short_name: activeMeta.shortName,
           description: activeMeta.description,
-          start_url: '/dashboard',
+          start_url: publicVantageMode ? '/' : '/dashboard',
           scope: '/',
           display: 'standalone',
           orientation: 'any',

@@ -671,11 +671,17 @@ describe('welcome landing page routing', () => {
     assert.equal(redirect.permanent, true);
   });
 
-  it('redirects the human pricing route to the canonical pricing section before SPA routing', () => {
+  it('redirects retired pricing and Pro routes to the public Vantage dashboard', () => {
     const redirect = vercelConfig.redirects.find((r) => r.source === '/pricing');
     assert.ok(redirect, 'expected a redirect for /pricing');
-    assert.equal(redirect.destination, '/pro#pricing');
-    assert.equal(redirect.permanent, true);
+    assert.equal(redirect.destination, '/');
+    assert.equal(redirect.permanent, false);
+
+    for (const source of ['/pro', '/pro/:match*']) {
+      const proRedirect = vercelConfig.redirects.find((r) => r.source === source);
+      assert.ok(proRedirect, `expected a redirect for ${source}`);
+      assert.equal(proRedirect.destination, '/');
+    }
 
     assert.equal(
       vercelConfig.redirects.some((r) => r.source === '/pricing.md'),
@@ -691,6 +697,11 @@ describe('welcome landing page routing', () => {
       vercelConfig.rewrites.some((r) => r.source === '/pricing'),
       false,
       '/pricing must be handled in the redirects phase before the SPA rewrites phase',
+    );
+    assert.equal(
+      vercelConfig.rewrites.some((r) => r.source === '/pro'),
+      false,
+      '/pro must not expose the retired paid-product page',
     );
   });
 
@@ -724,8 +735,8 @@ describe('welcome landing page routing', () => {
     assert.ok(!dashboardCache.includes('no-store'), 'HTML must not set no-store — it disables bfcache');
   });
 
-  it('starts installed PWAs on /dashboard, not the public welcome page', () => {
-    assert.match(viteConfigSource, /start_url:\s*'\/dashboard'/);
+  it('starts the public Vantage PWA on its canonical root', () => {
+    assert.match(viteConfigSource, /start_url:\s*publicVantageMode\s*\?\s*'\/'\s*:\s*'\/dashboard'/);
   });
 
   it('sitemap lists dashboard routes and does not list legacy /welcome', () => {
@@ -771,8 +782,8 @@ describe('welcome landing page routing', () => {
       'generated welcome HTML must launch the dashboard at /dashboard'
     );
     assert.ok(
-      dashboardHtml.includes('<link rel="canonical" href="https://www.worldmonitor.app/dashboard" />'),
-      'dashboard shell must canonicalize to /dashboard'
+      dashboardHtml.includes('<link rel="canonical" href="https://vantage-osint.vercel.app/" />'),
+      'dashboard shell must canonicalize to the public Vantage root'
     );
   });
 
@@ -1550,17 +1561,14 @@ describe('agent readiness: api-catalog + openapi build', () => {
     );
   });
 
-  it('every vercel.json Link rel="status" advertisement uses the keyless compact form', () => {
-    // Same #4715→#4856 drift class as above, for the Link-header copies: an
-    // auth-gating change on /api/health must not silently strand the
-    // machine-readable status advertisements on a URL that 401s keyless.
+  it('every vercel.json Link rel="status" advertisement uses public Vantage readiness', () => {
     const vercelRaw = readFileSync(resolve(__dirname, '../vercel.json'), 'utf-8');
     const statusLinks = vercelRaw.match(/<[^>]*>;\s*rel=\\"status\\"/g) ?? [];
     assert.ok(statusLinks.length > 0, 'expected at least one Link rel="status" advertisement in vercel.json');
     for (const link of statusLinks) {
       assert.ok(
-        link.startsWith('</api/health?compact=1>'),
-        `Link rel="status" must point at /api/health?compact=1 (keyless), got: ${link}`
+        link.startsWith('</api/vantage-health>'),
+        `Link rel="status" must point at /api/vantage-health (public), got: ${link}`
       );
     }
   });
@@ -2043,11 +2051,8 @@ describe('vercel.json functions config (none expected after carousel moved to ed
 // Agent readiness: RFC 8288 Link response headers on the homepage and
 // dashboard entry.
 // Scanners like isitagentready.com fetch GET / and expect a Link
-// header advertising every well-known resource. Each rel is either
-// an IANA-registered token (api-catalog, service-desc, service-doc,
-// status) or the full IANA URI form (RFC 9728 OAuth rels). The MCP
-// card rel carries anchor="/mcp" because the server card describes
-// the /mcp endpoint, not the document URL being fetched.
+// header advertising public machine-readable resources. Vantage deliberately
+// omits paid OAuth/MCP discovery from this no-login product surface.
 describe('agent readiness: homepage Link headers', () => {
   const vercel = JSON.parse(readFileSync(resolve(__dirname, '../vercel.json'), 'utf-8'));
 
@@ -2064,10 +2069,6 @@ describe('agent readiness: homepage Link headers', () => {
         'rel="service-desc"',
         'rel="service-doc"',
         'rel="status"',
-        'rel="http://www.iana.org/assignments/relation/oauth-protected-resource"',
-        'rel="http://www.iana.org/assignments/relation/oauth-authorization-server"',
-        'rel="mcp-server-card"',
-        'rel="agent-skills-index"',
       ];
       for (const rel of requiredRels) {
         assert.ok(
@@ -2075,29 +2076,6 @@ describe('agent readiness: homepage Link headers', () => {
           `Link header missing ${rel}`
         );
       }
-
-      // MCP card rel must carry anchor="/mcp" (server card describes /mcp, not homepage)
-      assert.match(
-        linkHeader.value,
-        /<\/\.well-known\/mcp\/server-card\.json>[^,]*anchor="\/mcp"/,
-        'mcp-server-card rel must carry anchor="/mcp"'
-      );
-
-      // The docs MCP server (#4958) is advertised in the Link header directly —
-      // header-first crawlers should not have to follow rel="api-catalog" to
-      // discover the second MCP surface. Same rel as the product card, but
-      // anchored to /docs/mcp (the card describes the docs endpoint). We
-      // advertise a FIRST-PARTY card (/.well-known/mcp/docs-server-card.json),
-      // NOT Mintlify's /docs/.well-known/mcp/server-card.json, because that
-      // card's url points at worldmonitor.mintlify.dev/mcp which 404s on
-      // initialize — a card-following agent would land on a dead endpoint
-      // (#4964 review). The first-party card advertises the working
-      // /docs/mcp facade.
-      assert.match(
-        linkHeader.value,
-        /<\/\.well-known\/mcp\/docs-server-card\.json>[^,]*rel="mcp-server-card"[^,]*anchor="\/docs\/mcp"/,
-        'docs mcp-server-card rel must point at the first-party /.well-known/mcp/docs-server-card.json with anchor="/docs/mcp"'
-      );
 
       // `service-desc` is advertised twice — the JSON spec (/openapi.json,
       // parseable by JSON-only scanners like ora.ai/orank) first, then the
@@ -2114,10 +2092,9 @@ describe('agent readiness: homepage Link headers', () => {
       );
 
       // Target URIs must be root-relative (start with /, not http://).
-      // One target per required rel, plus two rels advertised with a second
-      // target: service-desc (/openapi.json + /openapi.yaml) and
-      // mcp-server-card (product /mcp card + docs /docs/mcp card) — hence +2.
-      const EXTRA_DOUBLE_ADVERTISED_RELS = 2;
+      // One target per required rel, plus service-desc advertised with a
+      // second target (/openapi.json + /openapi.yaml) — hence +1.
+      const EXTRA_DOUBLE_ADVERTISED_RELS = 1;
       const targetMatches = [...linkHeader.value.matchAll(/<([^>]+)>/g)];
       assert.strictEqual(
         targetMatches.length,

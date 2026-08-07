@@ -37,6 +37,7 @@ import {
 } from '@/config';
 import { BETA_MODE } from '@/config/beta';
 import { BRAND } from '@/config/brand';
+import { VANTAGE_PUBLIC_MODE } from '@/config/product-policy';
 import { t } from '@/services/i18n';
 import { getCurrentTheme } from '@/utils';
 import { trackCriticalBannerAction, trackCheckoutSuccess, trackCheckoutFailed, trackGateHit, replayPendingCheckoutSuccess, replayPendingProFunnelEvents, replayPendingConversionEvents } from '@/services/analytics';
@@ -411,6 +412,18 @@ export class PanelLayoutManager implements AppModule {
       this.applyTimeRangeFilterToNewsPanels();
     }, 120);
 
+    // The public Vantage surface has no account, checkout, entitlement, or
+    // billing lifecycle. Keep a dormant controller for the shared teardown
+    // contract, then leave before any paid-product state is read or watched.
+    if (VANTAGE_PUBLIC_MODE) {
+      this.proActivationController = new ProActivationController(ctx, {
+        reloadPending: false,
+        openAiAnalyst: () => {},
+        openSearch: callbacks.openSearch,
+      });
+      return;
+    }
+
     // Dodo Payments: entitlement subscription + billing watch for ALL users.
     // Free users need the subscription active so they receive real-time
     // entitlement updates after purchasing (P1: newly upgraded users must
@@ -584,9 +597,11 @@ export class PanelLayoutManager implements AppModule {
     if (this.ctx.isDestroyed) return;
 
     // Subscribe to auth state for reactive panel gating on web
-    this.unsubscribeAuth = subscribeAuthState((state) => {
-      this.updatePanelGating(state);
-    });
+    if (!VANTAGE_PUBLIC_MODE) {
+      this.unsubscribeAuth = subscribeAuthState((state) => {
+        this.updatePanelGating(state);
+      });
+    }
 
     // Handle analyst action chip "Create chart widget →" click
     this.boundWidgetCreatorHandler = ((e: CustomEvent<{ initialMessage?: string }>) => {
@@ -608,7 +623,7 @@ export class PanelLayoutManager implements AppModule {
     // a pending-onboarding marker should open the interstitial (or surface the
     // finish-setup chip). Deferred off the boot critical path like the panel
     // hydration scheduler above.
-    this.proActivationController.init();
+    if (!VANTAGE_PUBLIC_MODE) this.proActivationController.init();
   }
 
   /**
@@ -835,19 +850,24 @@ export class PanelLayoutManager implements AppModule {
     const mapStartsCollapsed = this.ctx.isMobile && PanelLayoutManager.isMobileMapCollapsedPreferred();
     const bootShellFootprint = import.meta.env.DEV ? captureBootShellFootprint(this.ctx.container) : null;
     const referenceLinksHtml = DASHBOARD_REFERENCE_LINKS.map(({ label, path }) => {
-      const href = this.ctx.isDesktopApp ? `https://www.worldmonitor.app${path}` : path;
+      const href = this.ctx.isDesktopApp && !VANTAGE_PUBLIC_MODE ? `https://www.worldmonitor.app${path}` : path;
       return `<a href="${href}" target="_blank" rel="noopener">${label}</a>`;
     }).join('');
+    const publicProjectLinksHtml = `
+      <a href="/blog/" target="_blank" rel="noopener">Blog</a>
+      <a href="/docs" target="_blank" rel="noopener">Docs</a>
+      <a href="https://github.com/abuswiss/vantage-osint" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/koala73/worldmonitor" target="_blank" rel="noopener">Upstream</a>`;
 
     markLcpDebug('wm:layout:render-start');
     document.documentElement.classList.add('wm-layout-hydrated');
     setTrustedHtml(this.ctx.container, trustedHtml(`
       ${this.ctx.isDesktopApp ? '<div class="tauri-titlebar" data-tauri-drag-region></div>' : ''}
       <a href="#main" class="skip-link">Skip to main content</a>
-      <div id="proBannerSlot" class="pro-banner-slot" aria-live="polite"></div>
+      ${VANTAGE_PUBLIC_MODE ? '' : '<div id="proBannerSlot" class="pro-banner-slot" aria-live="polite"></div>'}
       <div class="header">
         <div class="header-left">
-          <div class="variant-switcher">${(() => {
+          ${VANTAGE_PUBLIC_MODE ? '' : `<div class="variant-switcher">${(() => {
         const local = this.ctx.isDesktopApp || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
         const inIframe = window.self !== window.top;
         const vHref = (v: string, prod: string) => local || SITE_VARIANT === v ? '#' : prod;
@@ -906,13 +926,13 @@ export class PanelLayoutManager implements AppModule {
               <span class="variant-icon">☀️</span>
               <span class="variant-label">Good News</span>
             </a>`;
-      })()}</div>
+      })()}</div>`}
           <span class="logo">${BRAND.name.toUpperCase()}</span><span class="logo-mobile">${BRAND.name}</span><span class="version">v${__APP_VERSION__}</span>${BETA_MODE ? '<span class="beta-badge">BETA</span>' : ''}
-          <a href="https://x.com/eliehabib" target="_blank" rel="noopener" class="credit-link">
+          ${VANTAGE_PUBLIC_MODE ? '' : `<a href="https://x.com/eliehabib" target="_blank" rel="noopener" class="credit-link">
             <svg class="x-logo" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
             <span class="credit-text">@eliehabib</span>
-          </a>
-          <a href="https://github.com/koala73/worldmonitor" target="_blank" rel="noopener" class="github-link" title="${t('header.viewOnGitHub')}">
+          </a>`}
+          <a href="https://github.com/abuswiss/vantage-osint" target="_blank" rel="noopener" class="github-link" title="${t('header.viewOnGitHub')}">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
           </a>
           <button class="mobile-settings-btn" id="mobileSettingsBtn" title="${t('header.settings')}">
@@ -952,19 +972,18 @@ export class PanelLayoutManager implements AppModule {
       <div class="mobile-menu-overlay" id="mobileMenuOverlay"></div>
       <nav class="mobile-menu" id="mobileMenu">
         <div class="mobile-menu-header">
-          <span class="mobile-menu-title">WORLD MONITOR</span>
+          <span class="mobile-menu-title">${escapeHtml(BRAND.shortName.toUpperCase())}</span>
           <button class="mobile-menu-close" id="mobileMenuClose" aria-label="Close menu">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
-        <div class="mobile-menu-divider"></div>
+        ${VANTAGE_PUBLIC_MODE ? '' : `<div class="mobile-menu-divider"></div>
         <div class="mobile-menu-account" aria-label="Account">
           <span class="mobile-menu-account-icon" aria-hidden="true">◯</span>
           <div id="mobileAuthWidgetMount"></div>
           <button class="mobile-auth-fallback" id="mobileAuthFallback" type="button">Sign In</button>
-        </div>
-        <div class="mobile-menu-divider"></div>
-        ${(() => {
+        </div>`}
+        ${VANTAGE_PUBLIC_MODE ? '' : `<div class="mobile-menu-divider"></div>${(() => {
         const variants = [
           { key: 'full', icon: '🌍', label: t('header.world') },
           { key: 'tech', icon: '💻', label: t('header.tech') },
@@ -980,7 +999,7 @@ export class PanelLayoutManager implements AppModule {
             ${v.key === SITE_VARIANT ? '<span class="mobile-menu-check">✓</span>' : ''}
           </button>`
         ).join('');
-      })()}
+      })()}`}
         <div class="mobile-menu-divider"></div>
         <button class="mobile-menu-item" id="mobileMenuRegion">
           <span class="mobile-menu-item-icon">🌐</span>
@@ -1001,17 +1020,18 @@ export class PanelLayoutManager implements AppModule {
           <span class="mobile-menu-item-icon">${getCurrentTheme() === 'dark' ? '☀️' : '🌙'}</span>
           <span class="mobile-menu-item-label">${getCurrentTheme() === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
         </button>
-        <a class="mobile-menu-item" href="https://x.com/eliehabib" target="_blank" rel="noopener">
+        ${VANTAGE_PUBLIC_MODE ? '' : `<a class="mobile-menu-item" href="https://x.com/eliehabib" target="_blank" rel="noopener">
           <span class="mobile-menu-item-icon"><svg class="x-logo" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></span>
           <span class="mobile-menu-item-label">@eliehabib</span>
-        </a>
+        </a>`}
         <div class="mobile-menu-divider"></div>
         <div class="mobile-menu-footer-links">
           ${referenceLinksHtml}
-          <a href="${this.ctx.isDesktopApp ? 'https://www.worldmonitor.app/pro#pricing' : '/pro#pricing'}" target="_blank" rel="noopener">Pricing</a>
-          <a href="${this.ctx.isDesktopApp ? 'https://worldmonitor.app/blog/' : 'https://www.worldmonitor.app/blog/'}" target="_blank" rel="noopener">Blog</a>
-          <a href="${this.ctx.isDesktopApp ? 'https://worldmonitor.app/docs' : 'https://www.worldmonitor.app/docs'}" target="_blank" rel="noopener">Docs</a>
-          <a href="https://status.worldmonitor.app/" target="_blank" rel="noopener">Status</a>
+          ${VANTAGE_PUBLIC_MODE ? publicProjectLinksHtml : `
+            <a href="${this.ctx.isDesktopApp ? 'https://www.worldmonitor.app/pro#pricing' : '/pro#pricing'}" target="_blank" rel="noopener">Pricing</a>
+            <a href="${this.ctx.isDesktopApp ? 'https://worldmonitor.app/blog/' : 'https://www.worldmonitor.app/blog/'}" target="_blank" rel="noopener">Blog</a>
+            <a href="${this.ctx.isDesktopApp ? 'https://worldmonitor.app/docs' : 'https://www.worldmonitor.app/docs'}" target="_blank" rel="noopener">Docs</a>
+            <a href="https://status.worldmonitor.app/" target="_blank" rel="noopener">Status</a>`}
         </div>
         <div class="mobile-menu-version">v${__APP_VERSION__}</div>
       </nav>
@@ -1087,20 +1107,21 @@ export class PanelLayoutManager implements AppModule {
         <div class="site-footer-brand">
           <img src="/favico/android-chrome-96x96.png" alt="" width="28" height="28" loading="lazy" decoding="async" class="site-footer-icon" />
           <div class="site-footer-brand-text">
-            <span class="site-footer-name">WORLD MONITOR</span>
+            <span class="site-footer-name">${escapeHtml(BRAND.shortName.toUpperCase())}</span>
             <span class="site-footer-sub">v${__APP_VERSION__} &middot; <a href="https://x.com/eliehabib" target="_blank" rel="noopener" class="site-footer-credit">@eliehabib</a></span>
           </div>
         </div>
         <nav>
           ${referenceLinksHtml}
-          <a href="${this.ctx.isDesktopApp ? 'https://www.worldmonitor.app/pro#pricing' : '/pro#pricing'}" target="_blank" rel="noopener">Pricing</a>
-          <a href="${this.ctx.isDesktopApp ? 'https://worldmonitor.app/blog/' : 'https://www.worldmonitor.app/blog/'}" target="_blank" rel="noopener">Blog</a>
-          <a href="${this.ctx.isDesktopApp ? 'https://worldmonitor.app/docs' : 'https://www.worldmonitor.app/docs'}" target="_blank" rel="noopener">Docs</a>
-          <a href="https://status.worldmonitor.app/" target="_blank" rel="noopener">Status</a>
-          <a href="https://github.com/koala73/worldmonitor" target="_blank" rel="noopener">GitHub</a>
-          <a href="https://discord.gg/re63kWKxaz" target="_blank" rel="noopener">Discord</a>
-          <a href="https://x.com/worldmonitorai" target="_blank" rel="noopener">X</a>
-          ${this.ctx.isDesktopApp ? '' : `<span id="footerDownloadMount"></span>`}
+          ${VANTAGE_PUBLIC_MODE ? publicProjectLinksHtml : `
+            <a href="${this.ctx.isDesktopApp ? 'https://www.worldmonitor.app/pro#pricing' : '/pro#pricing'}" target="_blank" rel="noopener">Pricing</a>
+            <a href="${this.ctx.isDesktopApp ? 'https://worldmonitor.app/blog/' : 'https://www.worldmonitor.app/blog/'}" target="_blank" rel="noopener">Blog</a>
+            <a href="${this.ctx.isDesktopApp ? 'https://worldmonitor.app/docs' : 'https://www.worldmonitor.app/docs'}" target="_blank" rel="noopener">Docs</a>
+            <a href="https://status.worldmonitor.app/" target="_blank" rel="noopener">Status</a>
+            <a href="https://github.com/koala73/worldmonitor" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://discord.gg/re63kWKxaz" target="_blank" rel="noopener">Discord</a>
+            <a href="https://x.com/worldmonitorai" target="_blank" rel="noopener">X</a>
+            ${this.ctx.isDesktopApp ? '' : '<span id="footerDownloadMount"></span>'}`}
         </nav>
         <span class="site-footer-copy">&copy; ${new Date().getFullYear()} ${BRAND.name}</span>
       </footer>
@@ -2738,6 +2759,7 @@ export class PanelLayoutManager implements AppModule {
     this.ctx.map.onTimeRangeChanged((range) => {
       this.ctx.currentTimeRange = range;
       this.applyTimeRangeFilterDebounced();
+      this.ctx.opsShell?.onTimeRangeChanged(range);
     });
 
     this.applyPanelSettings();

@@ -41,6 +41,20 @@ test('requests without origin remain allowed', () => {
   assert.equal(isDisallowedOrigin(req), false);
 });
 
+test('allows the Vantage canonical and project-scoped preview origins', () => {
+  const origins = [
+    'https://vantage-osint.vercel.app',
+    'https://vantage-osint-git-main-abuswiss-projects.vercel.app',
+    'https://vantage-osint-a1b2c3-abuswiss-projects.vercel.app',
+  ];
+
+  for (const origin of origins) {
+    const req = makeRequest(origin);
+    assert.equal(isDisallowedOrigin(req), false, `origin should be allowed: ${origin}`);
+    assert.equal(getCorsHeaders(req)['Access-Control-Allow-Origin'], origin);
+  }
+});
+
 test('CORS allow headers include MCP transport headers', () => {
   const privateCors = getCorsHeaders(makeRequest('https://worldmonitor.app'));
   const publicCors = getPublicCorsHeaders('POST, GET, OPTIONS');

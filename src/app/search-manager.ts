@@ -39,6 +39,7 @@ import { fetchAircraftPositions } from '@/services/aviation';
 import { isProUser } from '@/services/widget-store';
 import { getAuthState } from '@/services/auth-state';
 import { hasPremiumAccess } from '@/services/panel-gating';
+import { VANTAGE_PUBLIC_MODE } from '@/config/product-policy';
 
 export interface SearchManagerCallbacks {
   openCountryBriefByCode: (code: string, country: string) => void;
@@ -230,7 +231,7 @@ export class SearchManager implements AppModule {
         this.ctx.mapLayers[key],
         renderer,
         isDeckGL,
-        hasPremiumAccess(getAuthState()),
+        !VANTAGE_PUBLIC_MODE && hasPremiumAccess(getAuthState()),
       );
     });
     this.ctx.searchModal.setOnSelect((result) => this.handleSearchResult(result));
@@ -238,7 +239,7 @@ export class SearchManager implements AppModule {
     // Always wire flight search; check pro status reactively inside the callback
     // so mid-session sign-ins get the feature without a page reload.
     this.ctx.searchModal.setOnFlightSearch((callsign) => {
-      if (!isProUser() && getAuthState().user?.role !== 'pro') return;
+      if (!VANTAGE_PUBLIC_MODE && !isProUser() && getAuthState().user?.role !== 'pro') return;
       fetchAircraftPositions({ callsign }).then((positions) => {
         if (!this.ctx.searchModal) return;
         // Deduplicate by callsign: keep the most recently observed entry per callsign.
@@ -291,6 +292,10 @@ export class SearchManager implements AppModule {
     switch (result.type) {
       case 'news': {
         const item = result.data as NewsItem;
+        if (this.ctx.opsShell) {
+          this.ctx.opsShell.inspectNewsItem(item);
+          break;
+        }
         // Find which panel contains this item (may not always be 'politics')
         let targetPanelId = 'politics';
         let targetPanel = this.ctx.newsPanels['politics'] ?? null;
@@ -320,10 +325,28 @@ export class SearchManager implements AppModule {
         break;
       }
       case 'market': {
+        if (this.ctx.opsShell) {
+          this.ctx.opsShell.inspectSearchResult({
+            id: result.id,
+            title: result.title,
+            type: 'market',
+            ...(result.subtitle && { subtitle: result.subtitle }),
+          });
+          break;
+        }
         this.scrollToPanel('markets');
         break;
       }
       case 'prediction': {
+        if (this.ctx.opsShell) {
+          this.ctx.opsShell.inspectSearchResult({
+            id: result.id,
+            title: result.title,
+            type: 'prediction',
+            ...(result.subtitle && { subtitle: result.subtitle }),
+          });
+          break;
+        }
         this.scrollToPanel('polymarket');
         break;
       }
@@ -496,7 +519,7 @@ export class SearchManager implements AppModule {
         // Premium entitlement is also required for locked layers (#6045).
         const renderer: MapRenderer = this.ctx.map?.isGlobeMode?.() ? 'globe' : 'flat';
         const isDeckGL = this.ctx.map?.isDeckGLActive?.() ?? false;
-        const premium = hasPremiumAccess(getAuthState());
+        const premium = !VANTAGE_PUBLIC_MODE && hasPremiumAccess(getAuthState());
         const executable = (k: keyof MapLayers): boolean =>
           allowed.has(k)
           && isLayerExecutable(k, renderer, isDeckGL)
@@ -541,7 +564,7 @@ export class SearchManager implements AppModule {
           currentValue,
           renderer,
           isDeckGL,
-          hasPremiumAccess(getAuthState()),
+          !VANTAGE_PUBLIC_MODE && hasPremiumAccess(getAuthState()),
         )) return;
         let newValue = !currentValue;
         if (newValue && layerKey === 'resilienceScore' && !this.ctx.map?.isDeckGLActive?.()) {

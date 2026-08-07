@@ -5,6 +5,7 @@ import { h, replaceChildren, safeHtml as sanitizeHtmlFragment, setTrustedHtml, t
 import { safeHtmlToString, type SafeHtml } from '@/utils/sanitize';
 import { trackPanelResized } from '@/services/analytics';
 import { getAiFlowSettings } from '@/services/ai-flow-settings';
+import { VANTAGE_PUBLIC_MODE } from '@/config/product-policy';
 import { getSecretState } from '@/services/runtime-config';
 import { PanelGateReason } from '@/services/panel-gating';
 import { lockSvg, upgradeSvg } from '@/components/gate-icons';
@@ -231,7 +232,7 @@ export class Panel {
       headerLeft.appendChild(this.newBadgeEl);
     }
 
-    if (options.premium && !getSecretState('WORLDMONITOR_API_KEY').present) {
+    if (!VANTAGE_PUBLIC_MODE && options.premium && !getSecretState('WORLDMONITOR_API_KEY').present) {
       const proBadge = h('span', { className: 'panel-pro-badge' }, t('premium.pro'));
       headerLeft.appendChild(proBadge);
     }

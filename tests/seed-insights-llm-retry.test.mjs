@@ -1,4 +1,4 @@
-import { describe, it, afterEach } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { callLLM, __setInsightsLlmTransportForTests } from '../scripts/seed-insights.mjs';
@@ -6,10 +6,17 @@ import { callLLM, __setInsightsLlmTransportForTests } from '../scripts/seed-insi
 const LONG_BRIEF = 'Insights brief succeeded with more than enough narrative content to pass.';
 
 const originalEnv = {
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  OPENAI_MODEL: process.env.OPENAI_MODEL,
   GROQ_API_KEY: process.env.GROQ_API_KEY,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   OLLAMA_API_URL: process.env.OLLAMA_API_URL,
 };
+
+beforeEach(() => {
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_MODEL;
+});
 
 afterEach(() => {
   __setInsightsLlmTransportForTests(null);
@@ -29,6 +36,32 @@ function okResponse(content) {
 }
 
 describe('seed-insights callLLM retry/budget', () => {
+  it('uses the provisioned OpenAI model without unsupported sampling fields', async () => {
+    process.env.OPENAI_API_KEY = 'openai-test-key';
+    process.env.OPENAI_MODEL = 'gpt-5.6-terra';
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.GROQ_API_KEY;
+    delete process.env.OLLAMA_API_URL;
+    let requestBody;
+
+    __setInsightsLlmTransportForTests({
+      fetch: async (url, init) => {
+        assert.equal(String(url), 'https://api.openai.com/v1/chat/completions');
+        requestBody = JSON.parse(String(init.body));
+        return okResponse(LONG_BRIEF);
+      },
+    });
+
+    const result = await callLLM('Some breaking headline');
+
+    assert.equal(result?.provider, 'openai');
+    assert.equal(requestBody.model, 'gpt-5.6-terra');
+    assert.equal(requestBody.reasoning_effort, 'low');
+    assert.ok(requestBody.max_completion_tokens >= 1_200);
+    assert.equal('temperature' in requestBody, false);
+    assert.equal('max_tokens' in requestBody, false);
+  });
+
   it('honors a 429 Retry-After on the same provider before falling through', async () => {
     process.env.GROQ_API_KEY = 'groq-test-key';
     process.env.OPENROUTER_API_KEY = 'openrouter-test-key';

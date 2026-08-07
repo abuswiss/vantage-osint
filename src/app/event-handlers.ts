@@ -1,4 +1,5 @@
 import { BRAND } from '@/config/brand';
+import { VANTAGE_PUBLIC_MODE } from '@/config/product-policy';
 import type {
   AppContext,
   AppModule,
@@ -331,7 +332,7 @@ export class EventHandlerManager implements AppModule {
     const config = this.ctx.panelSettings[panelId];
     if (!config) return false;
     if (config.enabled) return true;
-    if (!isProUser() && isFreePanelCapCounted(panelId)) {
+    if (!VANTAGE_PUBLIC_MODE && !isProUser() && isFreePanelCapCounted(panelId)) {
       const enabledCount = countFreePanelCapUsage(this.ctx.panelSettings);
       if (enabledCount >= FREE_MAX_PANELS) {
         // Tell the user why nothing happened instead of failing silently.
@@ -1260,6 +1261,8 @@ export class EventHandlerManager implements AppModule {
       country: isCountryVisible ? (briefPage?.getCode() ?? undefined) : undefined,
       expanded: isCountryVisible && briefPage?.getIsMaximized?.() ? true : undefined,
       chokepoint: !isCountryVisible ? (this.ctx.activeChokepoint ?? undefined) : undefined,
+      focus: this.ctx.opsMode ? (this.ctx.opsFocus ?? undefined) : undefined,
+      classic: !this.ctx.opsMode,
     });
   }
 
@@ -1800,7 +1803,7 @@ export class EventHandlerManager implements AppModule {
       getDisabledSources: () => this.ctx.disabledSources,
       toggleSource: (name: string) => {
         const reenabling = this.ctx.disabledSources.has(name);
-        if (reenabling && !isProUser()) {
+        if (reenabling && !VANTAGE_PUBLIC_MODE && !isProUser()) {
           const allSources = this.getAllSourceNames();
           const currentlyEnabled = allSources.filter(n => !this.ctx.disabledSources.has(n)).length;
           if (currentlyEnabled + 1 > FREE_MAX_SOURCES) {
@@ -1816,7 +1819,7 @@ export class EventHandlerManager implements AppModule {
         saveToStorage(STORAGE_KEYS.disabledFeeds, Array.from(this.ctx.disabledSources));
       },
       setSourcesEnabled: (names: string[], enabled: boolean) => {
-        if (enabled && !isProUser()) {
+        if (enabled && !VANTAGE_PUBLIC_MODE && !isProUser()) {
           const allSources = this.getAllSourceNames();
           const currentlyEnabled = allSources.filter(n => !this.ctx.disabledSources.has(n)).length;
           const wouldEnable = names.filter(n => this.ctx.disabledSources.has(n) && allSources.includes(n)).length;
@@ -1879,6 +1882,7 @@ export class EventHandlerManager implements AppModule {
   }
 
   setupAuthWidget(): void {
+    if (VANTAGE_PUBLIC_MODE) return;
     const modal = new AuthLauncher();
     this.ctx.authModal = modal;
 

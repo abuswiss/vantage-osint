@@ -92,7 +92,7 @@ test('dashboard retains a legitimate no-JavaScript fallback and visible referenc
     '/tools/',
     '/blog/',
     '/docs',
-    '/pro#pricing',
+    'https://github.com/abuswiss/vantage-osint',
     'https://github.com/koala73/worldmonitor',
   ]) {
     assert.ok(noScript.includes(`href="${href}`), `no-JavaScript fallback should link to ${href}`);

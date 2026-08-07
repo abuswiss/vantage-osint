@@ -1,6 +1,7 @@
 import type { Monitor, PanelConfig, MapLayers } from '@/types';
 import { normalizeExclusiveChoropleths } from '@/components/resilience-choropleth-utils';
 import type { AppContext } from '@/app/app-context';
+import { BRAND } from '@/config/brand';
 import {
   REFRESH_INTERVALS,
   DEFAULT_PANELS,
@@ -24,6 +25,11 @@ import {
   shouldSanitizeLockedLayers,
 } from '@/config/map-layer-definitions';
 import type { MapVariant } from '@/config/map-layer-definitions';
+import {
+  VANTAGE_NEWS_REFRESH_MS,
+  VANTAGE_PUBLIC_MODE,
+  isPublicVantageCapability,
+} from '@/config/product-policy';
 import { getStoredMapModePreference } from '@/services/map-mode-preference';
 import {
   initDB,
@@ -250,6 +256,11 @@ export class App {
   private pendingCloudRecoverySyncVersion: number | undefined;
   private readonly handleWmSessionDegraded = (): void => {
     if (!this.state.isDestroyed) {
+      // The map-first shell can continue on its public news and static-layer
+      // data plane when anonymous-session services are unavailable. A cookie
+      // warning is both misleading for standalone deployments and obscures
+      // the primary investigation UI even though its core workflow is live.
+      if (this.state.opsMode) return;
       showToast('Anonymous data is temporarily unavailable. Check your cookie settings, then reload.');
     }
   };
@@ -992,6 +1003,14 @@ export class App {
     }
     // One-time migration: reduce default-enabled sources (full variant only)
     if (currentVariant === 'full' && storageAvailable) {
+      if (VANTAGE_PUBLIC_MODE) {
+        const publicCatalogKey = 'vantage-public-news-catalog-v1';
+        if (!localStorage.getItem(publicCatalogKey)) {
+          saveToStorage(STORAGE_KEYS.disabledFeeds, []);
+          localStorage.setItem(publicCatalogKey, 'done');
+          console.log(`[App] Vantage public catalog: enabled all ${getTotalFeedCount()} declared news sources`);
+        }
+      } else {
       const baseKey = 'worldmonitor-sources-reduction-v3';
       if (!localStorage.getItem(baseKey)) {
         const defaultDisabled = computeDefaultDisabledSources();
@@ -1121,6 +1140,26 @@ export class App {
         }
         localStorage.setItem(localeKey, 'done');
       }
+      }
+    }
+
+    // Public Vantage never renders an unavailable panel as a sign-in or
+    // upgrade gate. Omit user-bound paid capabilities from every surface,
+    // including the classic/mobile layout and settings panel catalog.
+    if (VANTAGE_PUBLIC_MODE) {
+      let publicPanelSettingsChanged = false;
+      for (const [key, panel] of Object.entries(panelSettings)) {
+        const effective = ALL_PANELS[key]
+          ? getEffectivePanelConfig(key, currentVariant)
+          : panel;
+        if (!isPublicVantageCapability(effective.premium) && panel.enabled) {
+          panelSettings[key] = { ...panel, enabled: false };
+          publicPanelSettingsChanged = true;
+        }
+      }
+      if (publicPanelSettingsChanged && storageAvailable) {
+        saveToStorage(STORAGE_KEYS.panels, panelSettings);
+      }
     }
 
     const disabledSources = new Set(loadFromStorage<string[]>(STORAGE_KEYS.disabledFeeds, []));
@@ -1129,6 +1168,7 @@ export class App {
     this.state = {
       map: null,
       opsMode: !isMobile && !new URLSearchParams(window.location.search).has('classic'),
+      opsFocus: initialUrlState.focus ?? null,
       opsShell: null,
       isMobile,
       isDesktopApp,
@@ -1514,15 +1554,16 @@ export class App {
     // Localize the static index.html shell — <title>, meta description, and
     // the accessible <h1> are baked in English before the app boots; once i18n
     // is ready we swap them to the user's locale.
-    document.title = t('shell.documentTitle');
+    const brandedDocumentTitle = `${BRAND.name} — ${BRAND.tagline}`;
+    document.title = brandedDocumentTitle;
     const setMeta = (sel: string, val: string) => {
       const el = document.querySelector(sel);
       if (el) el.setAttribute('content', val);
     };
     setMeta('meta[name="description"]', t('shell.metaDescription'));
-    setMeta('meta[property="og:title"]', t('shell.documentTitle'));
+    setMeta('meta[property="og:title"]', brandedDocumentTitle);
     setMeta('meta[property="og:description"]', t('shell.metaDescription'));
-    setMeta('meta[name="twitter:title"]', t('shell.documentTitle'));
+    setMeta('meta[name="twitter:title"]', brandedDocumentTitle);
     setMeta('meta[name="twitter:description"]', t('shell.metaDescription'));
     // Mirror of OG_LOCALE in pro-test/src/i18n.ts. The two packages have
     // separate Vite roots and bundlers and can't share an import — keep the
@@ -1537,7 +1578,7 @@ export class App {
     const baseLang = (document.documentElement.lang || 'en').split('-')[0] || 'en';
     setMeta('meta[property="og:locale"]', ogLocaleMap[baseLang] || `${baseLang}_${baseLang.toUpperCase()}`);
     const srH1 = document.querySelector('body > h1');
-    if (srH1) srH1.textContent = t('shell.documentTitle');
+    if (srH1) srH1.textContent = brandedDocumentTitle;
     const aiFlow = getAiFlowSettings();
     if (aiFlow.browserModel || isDesktopRuntime()) {
       await mlWorker.init();
@@ -1608,8 +1649,13 @@ export class App {
     if (!isDesktopRuntime()) {
       window.addEventListener(WM_SESSION_DEGRADED_EVENT, this.handleWmSessionDegraded);
       installWmSessionFetchInterceptor();
-      await ensureWmSession();
-      markLcpDebug('wm:boot:session-ready');
+      // Public tier/bootstrap reads need no cookie. Other allowlisted API calls
+      // mint an anonymous session lazily through the interceptor, avoiding a
+      // sign-in-like critical-path dependency without weakening abuse control.
+      if (!VANTAGE_PUBLIC_MODE) {
+        await ensureWmSession();
+        markLcpDebug('wm:boot:session-ready');
+      }
     }
 
     // Hydrate in-memory cache from bootstrap endpoint. Awaits only the fast tier; the slow
@@ -1623,6 +1669,10 @@ export class App {
     markLcpDebug('wm:boot:fast-bootstrap-ready');
     this.bootstrapHydrationState = getBootstrapHydrationState();
 
+    // Vantage is a public product: do not boot Clerk, cloud account state,
+    // billing handoffs, or entitlement UI. Anonymous API sessions remain
+    // available independently through the fetch interceptor above.
+    if (!VANTAGE_PUBLIC_MODE) {
     // Verify OAuth OTT and hydrate auth session BEFORE any UI subscribes to auth state
     await initAuthState();
     initAuthAnalytics();
@@ -1846,6 +1896,7 @@ export class App {
       // previous user's entitlement against the new user's panels.
       firePremiumLoaders();
     });
+    }
 
 
     const geoCoordsPromise: Promise<PreciseCoordinates | null> =
@@ -1873,12 +1924,13 @@ export class App {
           this.eventHandlers.applyMapLayerChange(layer, enabled, 'user');
           this.state.map?.setLayers({ ...this.state.mapLayers });
         },
+        onOpenSearch: () => { void this.openSearch(); },
       });
       shell.mount();
       this.state.opsShell = shell;
     }
     this.eventHandlers.setupSearchControls();
-    showProBanner(this.state.container);
+    if (!VANTAGE_PUBLIC_MODE) showProBanner(this.state.container);
     this.updateConnectivityUi();
     window.addEventListener('online', this.handleConnectivityChange);
     window.addEventListener('offline', this.handleConnectivityChange);
@@ -1903,35 +1955,35 @@ export class App {
 
     // Phase 3: UI setup methods
     this.eventHandlers.startHeaderClock();
-    this.eventHandlers.setupPlaybackControl();
+    if (!VANTAGE_PUBLIC_MODE) this.eventHandlers.setupPlaybackControl();
     this.eventHandlers.setupStatusPanel();
     this.eventHandlers.setupPizzIntIndicator();
     this.eventHandlers.setupLlmStatusIndicator();
-    this.eventHandlers.setupExportPanel();
+    if (!VANTAGE_PUBLIC_MODE) this.eventHandlers.setupExportPanel();
     this.eventHandlers.setupSearchControls();
 
     // Correlation engine is constructed lazily at its post-loadAllData run site
     // (Phase 6 below) so its bytes + adapters stay off the eager boot graph (#4486).
     this.eventHandlers.setupUnifiedSettings();
-    this.eventHandlers.setupAuthWidget();
+    if (!VANTAGE_PUBLIC_MODE) this.eventHandlers.setupAuthWidget();
     // Capture any ?ref= / ?wm_referral= from the URL into localStorage
     // and strip from the visible URL. Runs BEFORE the pending-checkout
     // capture so a /dashboard?ref=X&checkoutProduct=Y landing preserves both
     // signals. Pure read of current URL — no-op when neither param is
     // present.
-    captureReferralFromUrl();
+    if (!VANTAGE_PUBLIC_MODE) captureReferralFromUrl();
     // Wire checkout-attempt lifecycle watchers (sign-out clear) before
     // any capture/resume path runs, so a stale session from a prior
     // user can't bleed into the current one.
-    initCheckoutWatchers();
+    if (!VANTAGE_PUBLIC_MODE) initCheckoutWatchers();
     // Stale attempt records are ignored by loadCheckoutAttempt() via
     // the 24h TTL — no separate sweep needed. The attempt record's
     // only consumer (the failure-retry banner) runs handleCheckoutReturn
     // synchronously during panel-layout mount, which is after the
     // captureePendingCheckoutIntentFromUrl repopulates it for any /pro
     // handoff — so no race exists that would want to sweep pre-capture.
-    const pendingCheckout = capturePendingCheckoutIntentFromUrl();
-    if (pendingCheckout) {
+    const pendingCheckout = VANTAGE_PUBLIC_MODE ? null : capturePendingCheckoutIntentFromUrl();
+    if (!VANTAGE_PUBLIC_MODE && pendingCheckout) {
       // Checkout intent from /pro page redirect. Resume immediately if
       // already authenticated, otherwise the auth callback handles it.
       void resumePendingCheckout({
@@ -2075,6 +2127,11 @@ export class App {
     layers: MapLayers,
     fallbackActive = this.freeTierGate.authSettleDeadlineExceeded,
   ): MapLayers {
+    if (VANTAGE_PUBLIC_MODE) {
+      const publicLayers = sanitizeLockedLayers(layers, false);
+      if (publicLayers !== layers) saveToStorage(STORAGE_KEYS.mapLayers, publicLayers);
+      return publicLayers;
+    }
     if (!shouldSanitizeLockedLayers(
       hasPremiumAccess(),
       isProTierResolved(),
@@ -2192,6 +2249,10 @@ export class App {
    * Safe to call multiple times (idempotent) — e.g. on auth state changes.
    */
   private enforceFreeTierLimits(cloudSyncVersion?: number): boolean {
+    if (VANTAGE_PUBLIC_MODE) {
+      this.freeTierGate.cancelFallback();
+      return false;
+    }
     // ── One-time v1 cap-bug recovery ──────────────────────────────────
     // Pre-2026-05-01 the source cap was enforced by Array.sort().slice(),
     // which silently auto-disabled every source past alphabetical position
@@ -2388,6 +2449,9 @@ export class App {
       window.clearTimeout(this.chokepointDeepLinkTimer);
       this.chokepointDeepLinkTimer = null;
     }
+
+    this.state.opsShell?.destroy();
+    this.state.opsShell = null;
 
     // Destroy all modules in reverse order
     for (let i = this.modules.length - 1; i >= 0; i--) {
@@ -2610,7 +2674,11 @@ export class App {
 
   private setupRefreshIntervals(): void {
     // Always refresh news for all variants
-    this.refreshScheduler.scheduleRefresh('news', () => this.dataLoader.loadNews(), REFRESH_INTERVALS.feeds);
+    this.refreshScheduler.scheduleRefresh(
+      'news',
+      () => this.dataLoader.loadNews(),
+      VANTAGE_PUBLIC_MODE ? VANTAGE_NEWS_REFRESH_MS : REFRESH_INTERVALS.feeds,
+    );
     // Registration (and its immediate first hydration) is deferred to
     // post-paint idle: freshness badges are below-the-fold decoration, so the
     // fetch must not compete with the LCP-window requests (#4907, #4890).

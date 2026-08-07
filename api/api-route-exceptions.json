@@ -496,6 +496,13 @@
       "removal_issue": null
     },
     {
+      "path": "api/vantage-health.js",
+      "category": "ops-admin",
+      "reason": "Public no-store readiness summary for the Vantage Redis, news, insights, risk, AIR, and SHIPS data plane. It exposes status and bounded age only, never cached data, provider URLs, or secrets.",
+      "owner": "@abuswiss",
+      "removal_issue": null
+    },
+    {
       "path": "api/analytics-health.js",
       "category": "ops-admin",
       "reason": "Anonymous, bounded analytics collector health counter ingress. It accepts no event or identity payload and aggregates operator telemetry in Redis; not a product API.",

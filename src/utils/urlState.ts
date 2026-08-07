@@ -53,6 +53,7 @@ export interface ParsedMapUrlState {
   country?: string;
   expanded?: boolean;
   chokepoint?: string;
+  focus?: string;
 }
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -105,6 +106,14 @@ export function parseMapUrlState(
     ? chokepointParam.trim().toLowerCase()
     : undefined;
 
+  // Ops-shell inspector deep link. Values are opaque stable identifiers, but
+  // constrain both their namespaces and characters before carrying them into
+  // app state or future URL writes.
+  const focusParam = params.get('focus');
+  const focus = focusParam && /^(?:cluster:[a-z0-9_-]{1,80}|news:[a-z0-9]{1,20}|hotspot:[a-z0-9_-]{1,80})$/i.test(focusParam.trim())
+    ? focusParam.trim()
+    : undefined;
+
   const layersParam = params.get('layers');
   let layers: MapLayers | undefined;
   if (layersParam !== null) {
@@ -141,6 +150,7 @@ export function parseMapUrlState(
     country,
     expanded,
     chokepoint,
+    focus,
   };
 }
 
@@ -155,6 +165,8 @@ export function buildMapUrl(
     country?: string;
     expanded?: boolean;
     chokepoint?: string;
+    focus?: string;
+    classic?: boolean;
   }
 ): string {
   let url: URL;
@@ -188,6 +200,14 @@ export function buildMapUrl(
 
   if (state.chokepoint) {
     params.set('chokepoint', state.chokepoint);
+  }
+
+  if (state.focus) {
+    params.set('focus', state.focus);
+  }
+
+  if (state.classic) {
+    params.set('classic', '1');
   }
 
   url.search = params.toString();

@@ -25,18 +25,14 @@ interface StaticResponse {
   status: number;
 }
 
+const VANTAGE_ORIGIN = 'https://vantage-osint.vercel.app';
+
 const DEPLOYED_ROUTES = new Map<string, string>([
-  ['/', 'public/pro/welcome.html'],
-  ['/dashboard', 'index.html'],
-  ['/pro', 'public/pro/index.html'],
+  ['/', 'index.html'],
 ]);
 
 const SOURCE_DOCUMENTS = [
-  { path: 'index.html', canonical: 'https://www.worldmonitor.app/dashboard' },
-  { path: 'pro-test/welcome.html', canonical: 'https://www.worldmonitor.app/' },
-  { path: 'pro-test/index.html', canonical: 'https://www.worldmonitor.app/pro' },
-  { path: 'public/pro/welcome.html', canonical: 'https://www.worldmonitor.app/' },
-  { path: 'public/pro/index.html', canonical: 'https://www.worldmonitor.app/pro' },
+  { path: 'index.html', canonical: 'https://vantage-osint.vercel.app/' },
 ];
 
 function tagText(html: string, tag: string): string {
@@ -193,12 +189,12 @@ describe('international SEO application-locale mode (#5666)', () => {
 
     for (const locale of locales) {
       for (const [route] of DEPLOYED_ROUTES) {
-        const request = new URL(route, 'https://www.worldmonitor.app');
+        const request = new URL(route, VANTAGE_ORIGIN);
         request.searchParams.set('lang', locale);
         const response = await fetchStaticRoute(request.href);
         assert.equal(response.status, 200, `${request.href}: HTTP status`);
         const document = parseDocument(response.body);
-        assert.equal(document.canonical, new URL(route, 'https://www.worldmonitor.app').href, `${request.href}: base canonical`);
+        assert.equal(document.canonical, new URL(route, VANTAGE_ORIGIN).href, `${request.href}: base canonical`);
         assert.ok(!document.hreflang.has(locale) || locale === 'en', `${request.href}: locale must not be advertised as an indexable alternate`);
       }
     }
@@ -206,7 +202,7 @@ describe('international SEO application-locale mode (#5666)', () => {
 
   it('accepts the deployed English hreflang clusters', async () => {
     for (const [route] of DEPLOYED_ROUTES) {
-      const url = new URL(route, 'https://www.worldmonitor.app').href;
+      const url = new URL(route, VANTAGE_ORIGIN).href;
       assert.deepEqual(await validateHreflangCluster(url, fetchStaticRoute), [], url);
     }
   });
