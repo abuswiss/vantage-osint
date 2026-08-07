@@ -417,7 +417,11 @@ export class DataLoaderManager implements AppModule {
   private loadAllDataQueuedForceAll = false;
 
   private digestBreaker = { state: 'closed' as 'closed' | 'open' | 'half-open', failures: 0, cooldownUntil: 0 };
-  private readonly digestRequestTimeoutMs = 8000;
+  // Vantage is deployed as a public serverless app across multiple regions.
+  // A region's first function boot can exceed the upstream dashboard's 8s
+  // cutoff even when the shared Redis digest is healthy, so leave enough room
+  // for that cold request to complete before falling back.
+  private readonly digestRequestTimeoutMs = VANTAGE_PUBLIC_MODE ? 15_000 : 8_000;
   private readonly digestFirstPaintGraceMs = 1500;
   private readonly digestBreakerCooldownMs = 5 * 60 * 1000;
   private readonly persistedDigestMaxAgeMs = 6 * 60 * 60 * 1000;
@@ -683,12 +687,31 @@ export class DataLoaderManager implements AppModule {
 
     try {
       markLcpDebug('wm:data:feed-digest-start');
-      const resp = await publicRpcFetch(
-        toApiUrl(`/api/news/v1/list-feed-digest?variant=${SITE_VARIANT}&lang=${requestLanguage}`),
-        { signal: AbortSignal.timeout(this.digestRequestTimeoutMs) },
-      );
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json() as ListFeedDigestResponse;
+      const fetchDigestOnce = async (): Promise<ListFeedDigestResponse> => {
+        const resp = await publicRpcFetch(
+          toApiUrl(`/api/news/v1/list-feed-digest?variant=${SITE_VARIANT}&lang=${requestLanguage}`),
+          { signal: AbortSignal.timeout(this.digestRequestTimeoutMs) },
+        );
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json() as ListFeedDigestResponse;
+        if (countDigestCategories(data) === 0) throw new Error('digest returned 0 categories');
+        return data;
+      };
+
+      let data: ListFeedDigestResponse;
+      try {
+        data = await fetchDigestOnce();
+      } catch (firstError) {
+        const fallback = this.getRetainedDigest(requestKey) ?? await this.loadPersistedDigest(requestKey);
+        if (!VANTAGE_PUBLIC_MODE || fallback) throw firstError;
+        // One bounded retry recovers the common serverless cold-start case: the
+        // aborted first invocation warms the same route, and the second reads
+        // the already-prepared Redis digest. This never adds traffic to the
+        // normal healthy path and remains fail-closed after the second failure.
+        console.warn('[News] Cold digest request failed; retrying once:', firstError);
+        data = await fetchDigestOnce();
+      }
+
       const catCount = countDigestCategories(data);
       // A 200 carrying no categories is an outage wearing a success status: every
       // preset category renders empty behind it, because per-feed fallback is off
@@ -696,7 +719,6 @@ export class DataLoaderManager implements AppModule {
       // — the breaker counts it, `lastGoodDigest` keeps the real digest it had, and
       // `digest:last-good` is left alone instead of being poisoned for 6 hours with
       // the empty body the fallback exists to survive (#5877).
-      if (catCount === 0) throw new Error('digest returned 0 categories');
       markLcpDebug('wm:data:feed-digest-ready', { categories: catCount });
       console.info(`[News] Digest fetched: ${catCount} categories`);
       this.persistDigest(requestKey, data);

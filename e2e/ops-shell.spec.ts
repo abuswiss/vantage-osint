@@ -221,6 +221,42 @@ test.describe('Vantage operations shell', () => {
     await expect(page.locator('.ops-inspector-title')).toHaveText(TEST_HEADLINE);
     expect(new URL(page.url()).searchParams.get('focus')).toBe(focus);
   });
+
+  test('recovers the public feed after one cold digest failure', async ({ page }) => {
+    await page.unroute('**/api/news/v1/list-feed-digest*');
+    let attempts = 0;
+    await page.route('**/api/news/v1/list-feed-digest*', async (route) => {
+      attempts += 1;
+      if (attempts === 1) {
+        await route.abort('timedout');
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          categories: {
+            politics: {
+              items: [{
+                source: 'BBC World',
+                title: TEST_HEADLINE,
+                link: TEST_LINK,
+                publishedAt: Date.now(),
+                isAlert: false,
+              }],
+            },
+            intel: { items: [] },
+          },
+          feedStatuses: {},
+          generatedAt: new Date().toISOString(),
+        }),
+      });
+    });
+
+    await openOpsShell(page);
+    expect(attempts).toBe(2);
+  });
 });
 
 test.describe('Vantage public mobile shell', () => {
