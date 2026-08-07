@@ -15,7 +15,10 @@ export type PMTilesTheme = 'black' | 'dark' | 'grayscale' | 'light' | 'white';
 export type OpenFreeMapTheme = 'dark' | 'positron';
 export type CartoTheme = 'dark-matter' | 'voyager' | 'positron';
 
-export const FALLBACK_DARK_STYLE = 'https://tiles.openfreemap.org/styles/dark';
+// Vantage build: dark resolves to a locally-served recolor of OpenFreeMap's
+// dark style (same sources/glyphs/sprite, vantage slate/graphite paint —
+// see public/map-styles/vantage-dark.json). Light keeps remote positron.
+export const FALLBACK_DARK_STYLE = '/map-styles/vantage-dark.json';
 export const FALLBACK_LIGHT_STYLE = 'https://tiles.openfreemap.org/styles/positron';
 
 export type MapProvider = 'auto' | 'pmtiles' | 'openfreemap' | 'carto';

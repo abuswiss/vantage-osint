@@ -163,7 +163,7 @@ export class CountryTimeline {
       .attr('transform', `translate(0,${innerH})`)
       .call(xAxis);
 
-    xAxisG.selectAll('text').attr('fill', getCSSColor('--text-dim')).attr('font-size', '10px');
+    xAxisG.selectAll('text').attr('fill', getCSSColor('--text-dim')).attr('font-size', '11px');
     xAxisG.selectAll('line').attr('stroke', getCSSColor('--border'));
     xAxisG.select('.domain').attr('stroke', getCSSColor('--border'));
 
@@ -209,7 +209,7 @@ export class CountryTimeline {
       .attr('y', -6)
       .attr('text-anchor', 'middle')
       .attr('fill', getCSSColor('--text-muted'))
-      .attr('font-size', '9px')
+      .attr('font-size', '11px')
       .text(t('components.countryTimeline.now'));
   }
 
@@ -230,7 +230,7 @@ export class CountryTimeline {
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')
       .attr('fill', getCSSColor('--text-ghost'))
-      .attr('font-size', '10px')
+      .attr('font-size', '11px')
       .attr('font-style', 'italic')
       .text(t('components.countryTimeline.noEventsIn7Days'));
   }

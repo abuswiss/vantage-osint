@@ -6,7 +6,7 @@ import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
 type ZoomWindow = 30 | 90 | 180;
 type Tab = 'calls' | 'dwt';
 
-const PAD = { top: 14, right: 38, bottom: 24, left: 4 };
+const PAD = { top: 14, right: 44, bottom: 24, left: 4 };
 const GRID_LINES = 4;
 
 const VESSEL_KEYS: Array<keyof TransitDayCount & string> = ['container', 'dryBulk', 'generalCargo', 'roro', 'tanker'];
@@ -78,7 +78,7 @@ export class TransitChart {
     container.appendChild(this.legend);
 
     this.source = document.createElement('div');
-    Object.assign(this.source.style, { fontSize: '10px', color: 'var(--text-dim, #888)', paddingTop: '4px' });
+    Object.assign(this.source.style, { fontSize: '11px', color: 'var(--text-dim, #888)', paddingTop: '4px' });
     this.source.textContent = 'Source: IMF PortWatch · 180d history';
     container.appendChild(this.source);
 
@@ -125,9 +125,9 @@ export class TransitChart {
     const bgColor = getCSSColor('--bg') || '#000';
 
     const btnStyle = (active: boolean) =>
-      `font-size:10px;padding:2px 7px;border-radius:3px;cursor:pointer;border:1px solid ${borderSubtle};` +
+      `font-size:11px;padding:2px 7px;border-radius:3px;cursor:pointer;border:1px solid ${borderSubtle};` +
       `background:${active ? accentColor : 'transparent'};` +
-      `color:${active ? bgColor : textDim};transition:background 0.15s`;
+      `color:${active ? bgColor : textDim};transition:background var(--motion-fast, 0.15s ease)`;
 
     const tabs = document.createElement('div');
     tabs.style.cssText = 'display:flex;gap:4px';
@@ -170,7 +170,7 @@ export class TransitChart {
       const key = this.tab === 'calls' ? VESSEL_KEYS[i]! : CAP_KEYS[i]!;
       const val = last ? (last[key as keyof TransitDayCount] as number) : 0;
       const display = this.tab === 'dwt' ? fmtDWT(val) : String(val);
-      return `<span style="display:flex;align-items:center;gap:4px;font-size:10px;color:${textDim}">` +
+      return `<span style="display:flex;align-items:center;gap:4px;font-size:11px;color:${textDim}">` +
         `<span style="width:7px;height:7px;border-radius:1px;background:${VESSEL_COLORS[i]}"></span>` +
         `${label} <b style="color:${VESSEL_COLORS[i]}">${display}</b></span>`;
     }).join(''), "legacy direct innerHTML migration"));
@@ -212,7 +212,7 @@ export class TransitChart {
     const yPos = (v: number) => PAD.top + plotH - (v / yScale) * plotH;
 
     // Grid
-    ctx.font = `9px -apple-system, BlinkMacSystemFont, system-ui, sans-serif`;
+    ctx.font = `11px -apple-system, BlinkMacSystemFont, system-ui, sans-serif`;
     ctx.textAlign = 'left';
     for (let i = 0; i <= GRID_LINES; i++) {
       const gy = PAD.top + (i / GRID_LINES) * plotH;

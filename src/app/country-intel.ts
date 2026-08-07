@@ -162,6 +162,13 @@ export class CountryIntelManager implements AppModule {
     this.ctx.map.onCountryClicked((countryClick) => {
       if (countryClick.code && countryClick.name) {
         trackCountrySelected(countryClick.code, countryClick.name, 'map');
+        // Ops mode routes country clicks to the inspector rail first; the
+        // classic full-page deep-dive stays behind its "Open full deep-dive"
+        // action (and remains the direct path when the shell is absent).
+        if (this.ctx.opsMode && this.ctx.opsShell) {
+          this.inspectCountryInOps(countryClick.code, countryClick.name);
+          return;
+        }
         void this.openCountryBriefByCode(countryClick.code, countryClick.name)
           .catch((err) => this.handleCountryBriefOpenError(err));
       } else {
@@ -171,6 +178,8 @@ export class CountryIntelManager implements AppModule {
     });
 
     this.ctx.map.onMapContextMenu((payload) => {
+      // Context-menu "open country brief" intentionally keeps the classic
+      // full-page path even in ops mode: it is the explicit deep-dive gesture.
       const items = [];
       if (payload.countryCode && payload.countryName) {
         items.push({
@@ -191,6 +200,26 @@ export class CountryIntelManager implements AppModule {
       }
       items.push({ label: t('contextMenu.copyCoordinates'), action: () => navigator.clipboard.writeText(`${payload.lat.toFixed(5)}, ${payload.lon.toFixed(5)}`).catch(() => {}) });
       showMapContextMenu(payload.screenX, payload.screenY, items);
+    });
+  }
+
+  /**
+   * Ops-mode country click → inspector rail. Hands the shell a small delegate
+   * so it can pull signals lazily without importing this module graph; the
+   * "Open full deep-dive" action funnels back into the classic page.
+   */
+  private inspectCountryInOps(code: string, name: string): void {
+    const shell = this.ctx.opsShell;
+    if (!shell) return;
+    const canonical = TIER1_COUNTRIES[code] || CountryIntelManager.resolveCountryName(code);
+    const display = canonical !== code ? canonical : name;
+    shell.inspectCountry(code, display, {
+      getSignals: () => this.getCountrySignals(code, display),
+      getSignalDetails: () => this.buildSignalDetails(code),
+      openFullBrief: () => {
+        void this.openCountryBriefByCode(code, display, { maximize: true })
+          .catch((err) => this.handleCountryBriefOpenError(err));
+      },
     });
   }
 

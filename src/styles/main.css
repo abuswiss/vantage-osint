@@ -12315,6 +12315,11 @@ a.prediction-link:hover {
 .search-chip { flex: 0 0 auto; padding: 6px 10px; color: var(--text-dim); background: var(--bg); border: 1px solid var(--border); border-radius: 2px; cursor: pointer; font: 600 9px/1 var(--font-mono); white-space: nowrap; }
 .search-chip:active { color: var(--search-accent); border-color: var(--search-accent); }
 
+/* Empty-query command hint row (CMD+K idle state under recents) */
+.search-hint-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 18px 4px; }
+.search-hint-label { color: var(--text-muted); font: 600 9px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.search-hint-row .search-chip:hover { color: var(--search-accent); border-color: var(--search-accent); }
+
 @media (max-width: 768px) {
   .search-btn { display: none !important; }
   .search-overlay.search-mobile .search-scope-rail { display: flex; overflow-x: auto; scrollbar-width: none; }

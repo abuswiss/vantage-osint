@@ -262,7 +262,7 @@ export class ProgressChartsPanel extends Panel {
 
     xAxisG.selectAll('text')
       .attr('fill', 'var(--text-dim)')
-      .attr('font-size', '9px');
+      .attr('font-size', '11px');
     xAxisG.selectAll('line').attr('stroke', 'var(--border-subtle)');
     xAxisG.select('.domain').attr('stroke', 'var(--border-subtle)');
 
@@ -276,7 +276,7 @@ export class ProgressChartsPanel extends Panel {
 
     yAxisG.selectAll('text')
       .attr('fill', 'var(--text-dim)')
-      .attr('font-size', '9px');
+      .attr('font-size', '11px');
     yAxisG.selectAll('line').attr('stroke', 'var(--border-subtle)');
     yAxisG.select('.domain').attr('stroke', 'var(--border-subtle)');
 

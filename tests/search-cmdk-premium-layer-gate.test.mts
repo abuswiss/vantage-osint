@@ -132,8 +132,20 @@ function makeCommandHarness({
       setLayers: () => { calls.setLayers++; },
     },
   };
-  const manager = new SearchManagerHarness();
+  const manager = new SearchManagerHarness() as InstanceType<typeof SearchManagerHarness> & { callbacks: any };
   manager.ctx = ctx;
+  // Direct layer / resilience commands now route through the App-wired
+  // applyMapLayerChange callback (the same funnel as the Layers popover:
+  // mutate ctx.mapLayers, load data on enable, repaint via setLayers). This
+  // stub mirrors that contract so the gate assertions below keep observing
+  // whether the funnel fired at all.
+  manager.callbacks = {
+    applyMapLayerChange: (layer: string, enabled: boolean) => {
+      (ctx.mapLayers as any)[layer] = enabled;
+      if (enabled) ctx.map.enableLayer(layer);
+      ctx.map.setLayers();
+    },
+  };
   // The extracted production method receives the same entitlement dependency
   // as SearchManager, but this closure lets each harness model a tier directly.
   const command = (id: string) => manager.handleCommand({ id });

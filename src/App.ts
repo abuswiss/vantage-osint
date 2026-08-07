@@ -764,6 +764,18 @@ export class App {
       storageAvailable = false;
     }
 
+    // One-time migration to the curated high-signal layer defaults: layer
+    // sets saved before the curation would silently override the new,
+    // quieter defaults for every returning visitor.
+    if (storageAvailable) {
+      try {
+        if (!localStorage.getItem('wm-layer-curation-v1')) {
+          localStorage.removeItem(STORAGE_KEYS.mapLayers);
+          localStorage.setItem('wm-layer-curation-v1', '1');
+        }
+      } catch { /* no-persistence mode */ }
+    }
+
     // Blocked storage is a supported no-persistence mode. Seed the same
     // defaults as a first visit and skip migrations that only mutate storage.
     if (!storageAvailable) {
@@ -1349,6 +1361,14 @@ export class App {
             });
           },
           enablePanel: (panelId) => this.eventHandlers.enablePanelById(panelId),
+          applyMapLayerChange: (layer, enabled) => {
+            // Same two-step as the ops-shell chip wiring below: side-effect
+            // funnel first (mutates ctx.mapLayers, persists, syncs chips,
+            // loads data), then push the resulting layer set into the
+            // renderer — the funnel alone never repaints the map.
+            this.eventHandlers.applyMapLayerChange(layer, enabled, 'user');
+            this.state.map?.setLayers({ ...this.state.mapLayers });
+          },
         });
         manager.init();
         manager.updateFlightSource(this.latestSearchAdsb, this.latestSearchMilitary);

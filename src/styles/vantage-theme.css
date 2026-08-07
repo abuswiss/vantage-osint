@@ -10,6 +10,15 @@
    own token block (also in layer base) keeps working.
    ============================================================ */
 
+/* ---------- Motion tokens (theme-independent) ----------
+   One curve, two speeds. --motion-fast for hover/press/state
+   feedback; --motion-slow for larger movements (bar fills,
+   panel slides). ops-shell.css consumes these directly. */
+:root {
+  --motion-fast: 140ms cubic-bezier(0.2, 0, 0, 1);
+  --motion-slow: 320ms cubic-bezier(0.2, 0, 0, 1);
+}
+
 /* ---------- Base tokens (dark default) ---------- */
 :root:not([data-theme='light']) {
   /* Backgrounds — graphite, not black */
@@ -701,4 +710,103 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   fill: rgba(229, 101, 94, 0.08);
   stroke: rgba(229, 101, 94, 0.55);
   animation: none;
+}
+
+/* ============================================================
+   Deep-panel typography — extend the de-terminal sweep into
+   chart/table internals. 11px floor, sans, tabular numerals.
+   ============================================================ */
+
+/* Chart SVG text (terminal charts, d3 axes, FAO lines) rides the
+   body face. Fills stay per-chart: axis fills are token-driven in
+   the TS, and series labels keep their semantic colors. */
+.panel svg text,
+.market-chart-canvas svg text,
+.ops-inspector svg text {
+  font-family: var(--font-body);
+}
+
+/* Data tables: lift 9–10px terminal headers to the 11px floor,
+   sentence case, numbers tabular. */
+.fires-table th,
+.climate-table th,
+.disp-table th,
+.ucdp-table th,
+.giving-table th {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 550;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.fires-table td,
+.climate-table td,
+.disp-table td,
+.ucdp-table td,
+.giving-table td {
+  font-variant-numeric: tabular-nums;
+}
+.climate-badge,
+.disp-badge,
+.disp-stat-label,
+.ucdp-range {
+  font-size: 11px;
+}
+
+/* Market tickers: symbol/change micro-type up to the floor */
+.market-symbol,
+.market-change,
+.market-data-unavailable {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Consistency: one focus language, one scrollbar language
+   ============================================================ */
+
+/* Every interactive ops element shares one :focus-visible ring.
+   Later in the file than the component rules above, so it wins
+   the same-specificity ties that previously set outline: none. */
+.ops-chip:focus-visible,
+.ops-seg-btn:focus-visible,
+.ops-feed-item:focus-visible,
+.ops-citation:focus-visible,
+.ops-brief-button:focus-visible,
+.ops-more-layers:focus-visible,
+.ops-layer-option:focus-visible,
+.ops-icon-btn:focus-visible,
+.ops-help-btn:focus-visible,
+button.ops-hud-score:focus-visible,
+.ops-inspector-action:focus-visible,
+.ops-source-link:focus-visible,
+.ops-history-entry:focus-visible,
+.ops-timeline-bar:focus-visible,
+.ops-watch-bell:focus-visible,
+.ops-watch-chip-label:focus-visible,
+.ops-watch-remove:focus-visible,
+.ops-watch-clear:focus-visible,
+body.ops-mode .ops-top-right button:focus-visible {
+  outline: 2px solid var(--ops-accent);
+  outline-offset: 2px;
+}
+
+/* Ops scroll areas use the shared scrollbar thumb tokens
+   (feed rail, inspector rail, layer popover grid). */
+.ops-feed-list,
+.ops-inspector,
+.ops-layer-grid {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+.ops-feed-list::-webkit-scrollbar-thumb,
+.ops-inspector::-webkit-scrollbar-thumb,
+.ops-layer-grid::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+}
+.ops-feed-list::-webkit-scrollbar-thumb:hover,
+.ops-inspector::-webkit-scrollbar-thumb:hover,
+.ops-layer-grid::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
 }

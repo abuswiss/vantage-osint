@@ -45,7 +45,9 @@ export default defineConfig({
   ],
   snapshotPathTemplate: '{testDir}/{testFileName}-snapshots/{arg}{ext}',
   webServer: {
-    command: 'VITE_E2E=1 npm run dev -- --host 127.0.0.1 --port 4173',
+    // Pin the unprovisioned-relay scenario the ops-shell specs assert, so a
+    // developer .env.local that enables the live relay can't flip test state.
+    command: 'VITE_E2E=1 VITE_VANTAGE_RELAY_ENABLED=false VITE_WS_RELAY_URL= VITE_OPENSKY_RELAY_URL= npm run dev -- --host 127.0.0.1 --port 4173',
     url: 'http://127.0.0.1:4173/tests/map-harness.html',
     reuseExistingServer: false,
     timeout: 120000,

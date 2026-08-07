@@ -75,6 +75,7 @@ import { getCachedFuelShortageRegistry } from '@/shared/fuel-shortage-registry-s
 import { tokenizeForMatch, matchKeyword, matchesAnyKeyword, findMatchingKeywords } from '@/utils/keyword-match';
 import { t } from '@/services/i18n';
 import { debounce, rafSchedule, getCurrentTheme } from '@/utils/index';
+import { getCSSColor } from '@/utils/theme-colors';
 import { isInputPending, scheduleYield } from '@/utils/after-paint';
 import { showLayerWarning } from '@/utils/layer-warning';
 import { localizeMapLabels } from '@/utils/map-locale';
@@ -265,46 +266,105 @@ const LAYER_ZOOM_THRESHOLDS: Partial<Record<keyof MapLayers, { minZoom: number; 
 // Export for external use
 export { LAYER_ZOOM_THRESHOLDS };
 
+type OverlayRGBA = [number, number, number, number];
+
+// Hex fallbacks mirroring the vantage tokens in src/styles/vantage-theme.css.
+// Used when CSS custom properties are unavailable (worker/SSR/e2e contexts
+// without a live document) so overlays resolve to the same palette.
+const VANTAGE_TOKEN_FALLBACKS = {
+  '--semantic-critical': '#e5655e',
+  '--semantic-high': '#e08c4d',
+  '--semantic-elevated': '#d9ae4f',
+  '--semantic-normal': '#5cb886',
+  '--semantic-info': '#6d9ee8',
+  '--ops-dom-events': '#57c4ad',
+  '--ops-dom-strikes': '#e58b85',
+  '--ops-dom-bases': '#d9b36b',
+  '--ops-dom-air': '#8ab4f8',
+  '--ops-dom-ships': '#7ba6d9',
+  '--ops-dom-fires': '#dd9a6d',
+  '--ops-dom-sats': '#b3a4ec',
+  '--ops-dom-gps': '#cf9ed8',
+  '--ops-dom-neutral': '#99a0ac',
+  '--ops-accent': '#8ab4f8',
+} as const;
+type VantageToken = keyof typeof VANTAGE_TOKEN_FALLBACKS;
+
+function parseCssColor(value: string): [number, number, number] | null {
+  const v = value.trim();
+  const hexMatch = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(v);
+  if (hexMatch?.[1]) {
+    const hex = hexMatch[1].length === 3
+      ? hexMatch[1].split('').map(c => c + c).join('')
+      : hexMatch[1];
+    return [
+      parseInt(hex.slice(0, 2), 16),
+      parseInt(hex.slice(2, 4), 16),
+      parseInt(hex.slice(4, 6), 16),
+    ];
+  }
+  const rgbMatch = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(v);
+  if (rgbMatch) return [Number(rgbMatch[1]), Number(rgbMatch[2]), Number(rgbMatch[3])];
+  return null;
+}
+
+// Resolve a vantage token to an [r,g,b,alpha] tuple. Reads the live CSS value
+// (theme-cached via getCSSColor) and falls back to the pinned hex above.
+function tokenRGBA(token: VantageToken, alpha: number): OverlayRGBA {
+  let rgb = parseCssColor(VANTAGE_TOKEN_FALLBACKS[token]);
+  if (typeof document !== 'undefined') {
+    try {
+      const live = parseCssColor(getCSSColor(token));
+      if (live) rgb = live;
+    } catch { /* keep pinned fallback */ }
+  }
+  const [r, g, b] = rgb ?? [153, 160, 172];
+  return [r, g, b, alpha];
+}
+
 // Theme-aware overlay color function — refreshed each buildLayers() call
 function getOverlayColors() {
   const isLight = getCurrentTheme() === 'light';
   return {
-    // Threat dots: IDENTICAL in both modes (user locked decision)
-    hotspotHigh: [255, 68, 68, 200] as [number, number, number, number],
-    hotspotElevated: [255, 165, 0, 200] as [number, number, number, number],
-    hotspotLow: [255, 255, 0, 180] as [number, number, number, number],
+    // Threat dots: same token ramp in both modes (semantic severity ramp)
+    hotspotHigh: tokenRGBA('--semantic-critical', 200),
+    hotspotElevated: tokenRGBA('--semantic-high', 200),
+    hotspotLow: tokenRGBA('--semantic-elevated', 180),
 
     // Conflict zone fills: more transparent in light mode
     conflict: isLight
-      ? [255, 0, 0, 60] as [number, number, number, number]
-      : [255, 0, 0, 100] as [number, number, number, number],
+      ? [255, 0, 0, 60] as OverlayRGBA
+      : tokenRGBA('--ops-dom-strikes', 90),
+    conflictLine: isLight
+      ? [255, 0, 0, 120] as OverlayRGBA
+      : tokenRGBA('--ops-dom-strikes', 180),
 
     // Infrastructure/category markers: darker variants in light mode for map readability
-    base: [0, 150, 255, 200] as [number, number, number, number],
+    base: tokenRGBA('--ops-dom-bases', 200),
     nuclear: isLight
       ? [180, 120, 0, 220] as [number, number, number, number]
-      : [255, 215, 0, 200] as [number, number, number, number],
+      : tokenRGBA('--ops-dom-bases', 200),
     datacenter: isLight
       ? [13, 148, 136, 200] as [number, number, number, number]
-      : [0, 255, 200, 180] as [number, number, number, number],
-    cable: [0, 200, 255, 150] as [number, number, number, number],
-    cableHighlight: [255, 100, 100, 200] as [number, number, number, number],
-    cableFault: [255, 50, 50, 220] as [number, number, number, number],
-    cableDegraded: [255, 165, 0, 200] as [number, number, number, number],
-    earthquake: [255, 100, 50, 200] as [number, number, number, number],
-    vesselMilitary: [255, 100, 100, 220] as [number, number, number, number],
-    protest: [255, 150, 0, 200] as [number, number, number, number],
-    outage: [255, 50, 50, 180] as [number, number, number, number],
-    trafficAnomaly: [255, 160, 0, 200] as [number, number, number, number],
+      : tokenRGBA('--ops-dom-events', 180),
+    cable: tokenRGBA('--ops-dom-ships', 150),
+    cableHighlight: tokenRGBA('--semantic-critical', 200),
+    cableFault: tokenRGBA('--semantic-critical', 220),
+    cableDegraded: tokenRGBA('--semantic-high', 200),
+    earthquake: tokenRGBA('--ops-dom-fires', 200),
+    vesselMilitary: tokenRGBA('--ops-dom-ships', 220),
+    protest: tokenRGBA('--semantic-high', 200),
+    outage: tokenRGBA('--semantic-critical', 180),
+    trafficAnomaly: tokenRGBA('--semantic-high', 200),
     ddosHit: [180, 0, 255, 200] as [number, number, number, number],
-    weather: [100, 150, 255, 180] as [number, number, number, number],
+    weather: tokenRGBA('--semantic-info', 180),
     startupHub: isLight
       ? [22, 163, 74, 220] as [number, number, number, number]
-      : [0, 255, 150, 200] as [number, number, number, number],
+      : tokenRGBA('--ops-dom-events', 200),
     techHQ: [100, 200, 255, 200] as [number, number, number, number],
     accelerator: isLight
       ? [180, 120, 0, 220] as [number, number, number, number]
-      : [255, 200, 0, 200] as [number, number, number, number],
+      : tokenRGBA('--ops-dom-bases', 200),
     cloudRegion: [150, 100, 255, 180] as [number, number, number, number],
     stockExchange: isLight
       ? [20, 120, 200, 220] as [number, number, number, number]
@@ -314,7 +374,7 @@ function getOverlayColors() {
       : [0, 220, 150, 200] as [number, number, number, number],
     centralBank: isLight
       ? [180, 120, 0, 220] as [number, number, number, number]
-      : [255, 210, 80, 210] as [number, number, number, number],
+      : tokenRGBA('--ops-dom-bases', 210),
     commodityHub: isLight
       ? [190, 95, 40, 220] as [number, number, number, number]
       : [255, 150, 80, 200] as [number, number, number, number],
@@ -323,6 +383,19 @@ function getOverlayColors() {
     ucdpStateBased: [255, 50, 50, 200] as [number, number, number, number],
     ucdpNonState: [255, 165, 0, 200] as [number, number, number, number],
     ucdpOneSided: [255, 255, 0, 200] as [number, number, number, number],
+
+    // Token-derived constants for layers that used to inline neon RGBAs.
+    sanctionsSevere: tokenRGBA('--semantic-critical', 89),
+    sanctionsHigh: tokenRGBA('--semantic-high', 64),
+    sanctionsModerate: tokenRGBA('--semantic-elevated', 51),
+    aisCongested: tokenRGBA('--semantic-elevated', 255),   // alpha computed per datum
+    aisNormal: tokenRGBA('--ops-dom-ships', 255),          // alpha computed per datum
+    tankerAnchored: tokenRGBA('--semantic-elevated', 220),
+    tankerUnderway: tokenRGBA('--ops-dom-ships', 220),
+    tankerUnknown: tokenRGBA('--ops-dom-neutral', 200),
+    flightClusterCombat: tokenRGBA('--ops-dom-air', 200),
+    flightClusterTransport: tokenRGBA('--ops-dom-bases', 180),
+    flightClusterUnknown: tokenRGBA('--ops-dom-neutral', 160),
   };
 }
 // Initialize and refresh on every buildLayers() call
@@ -358,16 +431,15 @@ const CONFLICT_COUNTRY_ISO: Record<string, string[]> = {
   myanmar: ['MM'],
 };
 
-// Altitude-based color gradient matching Wingbits' color scheme.
-// Transitions cyan (sea level) → yellow-green → orange → red (cruise altitude).
+// Altitude-based color gradient on the vantage palette: anchored on
+// --ops-dom-air (#8ab4f8) at sea level and --ops-dom-sats (#b3a4ec) at cruise
+// altitude, sweeping blue → indigo → violet so bands stay distinguishable.
 const ALTITUDE_COLOR_STOPS: Array<{ alt: number; r: number; g: number; b: number }> = [
-  { alt: 0,      r: 0,   g: 217, b: 255 },
-  { alt: 5000,   r: 50,  g: 250, b: 160 },
-  { alt: 10000,  r: 200, g: 230, b: 60  },
-  { alt: 20000,  r: 255, g: 165, b: 30  },
-  { alt: 30000,  r: 255, g: 100, b: 35  },
-  { alt: 40000,  r: 235, g: 50,  b: 55  },
-  { alt: 45000,  r: 210, g: 40,  b: 70  },
+  { alt: 0,      r: 138, g: 180, b: 248 }, // --ops-dom-air
+  { alt: 8000,   r: 118, g: 156, b: 247 }, // saturated blue
+  { alt: 18000,  r: 116, g: 130, b: 244 }, // indigo
+  { alt: 30000,  r: 141, g: 120, b: 240 }, // violet
+  { alt: 42000,  r: 179, g: 164, b: 236 }, // --ops-dom-sats
 ];
 
 function altitudeToColor(altFt: number): [number, number, number] {
@@ -2838,9 +2910,7 @@ export class DeckGLMap {
       filled: true,
       stroked: true,
       getFillColor: () => COLORS.conflict,
-      getLineColor: () => getCurrentTheme() === 'light'
-        ? [255, 0, 0, 120] as [number, number, number, number]
-        : [255, 0, 0, 180] as [number, number, number, number],
+      getLineColor: () => COLORS.conflictLine,
       getLineWidth: 2,
       lineWidthMinPixels: 1,
       pickable: true,
@@ -3442,11 +3512,9 @@ export class DeckGLMap {
         const intensity = Math.min(Math.max(d.intensity, 0.15), 1);
         const isCongested = (d.deltaPct || 0) >= 15;
         const alpha = Math.round(40 + intensity * 160);
-        // Orange for congested areas, cyan for normal traffic
-        if (isCongested) {
-          return [255, 183, 3, alpha] as [number, number, number, number]; // #ffb703
-        }
-        return [0, 209, 255, alpha] as [number, number, number, number]; // #00d1ff
+        // Amber (--semantic-elevated) for congested areas, ships-blue for normal traffic
+        const [r, g, b] = isCongested ? COLORS.aisCongested : COLORS.aisNormal;
+        return [r, g, b, alpha] as [number, number, number, number];
       },
       radiusMinPixels: 4,
       radiusMaxPixels: 12,
@@ -3465,12 +3533,12 @@ export class DeckGLMap {
       // enhancement: enrich via a vessel-registry lookup.
       getRadius: 2500,
       getFillColor: (d) => {
-        // Anchored (speed < 0.5 kn) — orange, signals waiting / loading /
-        // potential congestion. Underway (speed >= 0.5 kn) — cyan, normal
-        // transit. Unknown / missing speed — gray.
-        if (!Number.isFinite(d.speed)) return [127, 140, 141, 200] as [number, number, number, number];
-        if (d.speed < 0.5) return [255, 183, 3, 220] as [number, number, number, number]; // amber
-        return [0, 209, 255, 220] as [number, number, number, number]; // cyan
+        // Anchored (speed < 0.5 kn) — amber (--semantic-elevated), signals
+        // waiting / loading / potential congestion. Underway (speed >= 0.5 kn)
+        // — ships-blue, normal transit. Unknown / missing speed — neutral gray.
+        if (!Number.isFinite(d.speed)) return COLORS.tankerUnknown;
+        if (d.speed < 0.5) return COLORS.tankerAnchored;
+        return COLORS.tankerUnderway;
       },
       radiusMinPixels: 3,
       radiusMaxPixels: 8,
@@ -3713,9 +3781,9 @@ export class DeckGLMap {
       getRadius: (d) => 15000 + (d.flightCount || 1) * 3000,
       getFillColor: (d) => {
         const activity = d.activityType || 'unknown';
-        if (activity === 'exercise' || activity === 'patrol') return [100, 150, 255, 200] as [number, number, number, number];
-        if (activity === 'transport') return [255, 200, 100, 180] as [number, number, number, number];
-        return [150, 150, 200, 160] as [number, number, number, number];
+        if (activity === 'exercise' || activity === 'patrol') return COLORS.flightClusterCombat;
+        if (activity === 'transport') return COLORS.flightClusterTransport;
+        return COLORS.flightClusterUnknown;
       },
       radiusMinPixels: 8,
       radiusMaxPixels: 25,
@@ -4187,9 +4255,9 @@ export class DeckGLMap {
       getFillColor: (d) => {
         const score = d.escalationScore || 1;
         const a = Math.round((score >= 4 ? 200 : score >= 2 ? 200 : 180) * baseOpacity);
-        if (score >= 4) return [255, 68, 68, a] as [number, number, number, number];
-        if (score >= 2) return [255, 165, 0, a] as [number, number, number, number];
-        return [255, 255, 0, a] as [number, number, number, number];
+        // Semantic severity ramp: critical / high / elevated
+        const [r, g, b] = score >= 4 ? COLORS.hotspotHigh : score >= 2 ? COLORS.hotspotElevated : COLORS.hotspotLow;
+        return [r, g, b, a] as [number, number, number, number];
       },
       radiusMinPixels: 4,
       radiusMaxPixels: maxPx,
@@ -4218,7 +4286,8 @@ export class DeckGLMap {
         filled: false,
         getLineColor: (d) => {
           const a = Math.round(120 * baseOpacity);
-          return d.hasBreaking ? [255, 50, 50, a] as [number, number, number, number] : [255, 165, 0, a] as [number, number, number, number];
+          const [r, g, b] = d.hasBreaking ? COLORS.hotspotHigh : COLORS.hotspotElevated;
+          return [r, g, b, a] as [number, number, number, number];
         },
         lineWidthMinPixels: 1.5,
         pickable: false,
@@ -4572,9 +4641,9 @@ export class DeckGLMap {
       getFillColor: (feature: { properties?: Record<string, unknown> }) => {
         const code = feature.properties?.['ISO3166-1-Alpha-2'] as string | undefined;
         const level = code ? SANCTIONED_COUNTRIES_ALPHA2[code] : undefined;
-        if (level === 'severe') return [255, 0, 0, 89] as [number, number, number, number];
-        if (level === 'high') return [255, 100, 0, 64] as [number, number, number, number];
-        if (level === 'moderate') return [255, 200, 0, 51] as [number, number, number, number];
+        if (level === 'severe') return COLORS.sanctionsSevere;
+        if (level === 'high') return COLORS.sanctionsHigh;
+        if (level === 'moderate') return COLORS.sanctionsModerate;
         return [0, 0, 0, 0] as [number, number, number, number];
       },
       pickable: false,

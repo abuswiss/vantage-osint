@@ -131,9 +131,6 @@ body.ops-mode .ops-panel-dock {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .ops-live::before { animation: none; }
-}
 
 .ops-chips {
   display: flex;
@@ -158,7 +155,7 @@ body.ops-mode .ops-panel-dock {
   letter-spacing: 0.04em;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  transition: color var(--motion-fast), border-color var(--motion-fast), background var(--motion-fast);
 }
 .ops-chip:hover { color: var(--ops-text); border-color: var(--ops-border-strong); }
 .ops-chip .dot {
@@ -167,7 +164,7 @@ body.ops-mode .ops-panel-dock {
   border-radius: 50%;
   background: var(--chip-color, var(--ops-dom-neutral));
   opacity: 0.35;
-  transition: opacity 0.15s ease, box-shadow 0.15s ease;
+  transition: opacity var(--motion-fast), box-shadow var(--motion-fast);
 }
 .ops-chip[aria-pressed='true'] {
   color: var(--ops-text);
@@ -375,7 +372,7 @@ body.ops-mode .ops-top-right button:hover { color: var(--ops-text); border-color
   letter-spacing: 0.05em;
   border-radius: 5px;
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition: color var(--motion-fast), background var(--motion-fast);
 }
 .ops-seg-btn:hover { color: var(--ops-text); }
 .ops-seg-btn[aria-pressed='true'] {
@@ -441,7 +438,7 @@ body.ops-mode .ops-top-right button:hover { color: var(--ops-text); border-color
   color: inherit;
   font: inherit;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--motion-fast);
 }
 .ops-feed-item:hover { background: var(--ops-bg-raised); }
 .ops-feed-item:focus-visible,
@@ -576,10 +573,22 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   border-radius: 4px;
 }
 .ops-hud-level[data-level='low'],
-.ops-hud-level[data-level='normal'] { color: #34d399; background: rgba(52, 211, 153, 0.12); }
-.ops-hud-level[data-level='elevated'] { color: #fbbf24; background: rgba(251, 191, 36, 0.12); }
-.ops-hud-level[data-level='high'] { color: #fb923c; background: rgba(251, 146, 60, 0.14); }
-.ops-hud-level[data-level='critical'] { color: #f87171; background: rgba(248, 113, 113, 0.15); }
+.ops-hud-level[data-level='normal'] {
+  color: var(--semantic-normal, #34d399);
+  background: color-mix(in srgb, var(--semantic-normal, #34d399) 12%, transparent);
+}
+.ops-hud-level[data-level='elevated'] {
+  color: var(--semantic-elevated, #fbbf24);
+  background: color-mix(in srgb, var(--semantic-elevated, #fbbf24) 12%, transparent);
+}
+.ops-hud-level[data-level='high'] {
+  color: var(--semantic-high, #fb923c);
+  background: color-mix(in srgb, var(--semantic-high, #fb923c) 14%, transparent);
+}
+.ops-hud-level[data-level='critical'] {
+  color: var(--semantic-critical, #f87171);
+  background: color-mix(in srgb, var(--semantic-critical, #f87171) 15%, transparent);
+}
 .ops-hud-bar {
   height: 3px;
   border-radius: 2px;
@@ -593,7 +602,7 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   border-radius: 2px;
   background: linear-gradient(90deg, #34d399, #fbbf24, #f87171);
   transform-origin: left;
-  transition: transform 0.4s ease;
+  transition: transform var(--motion-slow);
 }
 .ops-hud-stats {
   display: grid;
@@ -831,7 +840,7 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   background: color-mix(in srgb, var(--ops-accent) 70%, var(--ops-bg-raised));
   opacity: 0.62;
   cursor: pointer;
-  transition: height 0.18s ease, opacity 0.15s ease;
+  transition: height var(--motion-fast), opacity var(--motion-fast);
 }
 .ops-timeline-bar:hover:not(:disabled),
 .ops-timeline-bar:focus-visible { opacity: 1; outline: none; }
@@ -925,4 +934,407 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
 @media (max-width: 1120px) {
   body.ops-mode .ops-top #headerClock { display: none; }
   .ops-chip { padding-inline: 9px; }
+}
+
+/* ---- Cross-highlight flashes (feed rows + numbered evidence) ---- */
+@keyframes ops-cross-flash {
+  0% { background-color: color-mix(in srgb, var(--ops-accent) 24%, transparent); }
+  60% { background-color: var(--ops-accent-soft); }
+  100% { background-color: transparent; }
+}
+.ops-feed-flash,
+.ops-source-flash {
+  animation: ops-cross-flash 1.2s ease;
+}
+
+/* ---- Inline brief citations ---- */
+.ops-citation {
+  display: inline;
+  margin: 0 1px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ops-accent);
+  font: 600 0.92em/1.2 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--motion-fast), color var(--motion-fast);
+}
+.ops-citation:hover,
+.ops-citation:focus-visible {
+  background: var(--ops-accent-soft);
+  outline: none;
+}
+
+/* ---- Escalation HUD score button ---- */
+button.ops-hud-score {
+  width: calc(100% + 8px);
+  margin: 6px -4px 0;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--motion-fast);
+}
+button.ops-hud-score:hover,
+button.ops-hud-score:focus-visible {
+  background: var(--ops-accent-soft);
+  outline: none;
+}
+
+/* ---- Escalation provenance inspector ---- */
+.ops-contrib-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ops-contrib-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(60px, 1.4fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--ops-text-dim);
+}
+.ops-contrib-name {
+  overflow: hidden;
+  color: var(--ops-text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ops-contrib-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ops-border);
+  overflow: hidden;
+}
+.ops-contrib-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--ops-accent);
+  transition: width var(--motion-fast);
+}
+.ops-contrib-value {
+  min-width: 22px;
+  color: var(--ops-text);
+  font: 600 11px/1.2 var(--font-mono);
+  text-align: right;
+}
+.ops-region-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ops-region-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--ops-text-dim);
+}
+.ops-region-name {
+  overflow: hidden;
+  color: var(--ops-text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ops-region-level {
+  padding: 2px 7px;
+  border-radius: 4px;
+  font: 650 9.5px/1.3 var(--font-mono);
+  letter-spacing: 0.06em;
+}
+.ops-region-level[data-level='elevated'] { color: #fbbf24; background: rgba(251, 191, 36, 0.12); }
+.ops-region-level[data-level='high'] { color: #fb923c; background: rgba(251, 146, 60, 0.14); }
+.ops-region-level[data-level='critical'] { color: #f87171; background: rgba(248, 113, 113, 0.15); }
+.ops-spark {
+  display: block;
+  width: 100%;
+  height: 36px;
+  margin: 2px 0 8px;
+}
+.ops-trend-delta {
+  margin: 0;
+  color: var(--ops-text-dim);
+  font-size: 12px;
+}
+.ops-trend-delta b {
+  color: var(--ops-text);
+  font: 600 12px/1.2 var(--font-mono);
+}
+
+/* ---- Watchlist strip (feed pane) ---- */
+.ops-feed-head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ops-watch-bell {
+  padding: 3px 8px;
+  border: 1px solid var(--ops-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ops-text-faint);
+  font: 600 9.5px/1.2 var(--font-mono);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: color var(--motion-fast), border-color var(--motion-fast);
+}
+.ops-watch-bell:hover { color: var(--ops-text); border-color: var(--ops-border-strong); }
+.ops-watch-bell[aria-pressed='true'] {
+  color: var(--ops-accent);
+  border-color: rgba(34, 211, 238, 0.3);
+  background: var(--ops-accent-soft);
+}
+.ops-watchlist {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 0 12px 9px;
+  border-bottom: 1px solid var(--ops-border);
+}
+.ops-watchlist[hidden] { display: none; }
+.ops-watch-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--ops-border);
+  border-radius: 999px;
+  overflow: hidden;
+  transition: border-color var(--motion-fast), background var(--motion-fast);
+}
+.ops-watch-chip[data-active='true'] {
+  border-color: rgba(34, 211, 238, 0.4);
+  background: var(--ops-accent-soft);
+}
+.ops-watch-chip-label {
+  padding: 3px 3px 3px 9px;
+  border: 0;
+  background: transparent;
+  color: var(--ops-text-dim);
+  font: 550 10.5px/1.3 var(--font-mono);
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: color var(--motion-fast);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ops-watch-chip:hover .ops-watch-chip-label { color: var(--ops-text); }
+.ops-watch-chip[data-active='true'] .ops-watch-chip-label { color: var(--ops-accent); }
+.ops-watch-remove {
+  padding: 3px 7px 3px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ops-text-faint);
+  font: 600 11px/1 var(--font-mono);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--motion-fast), color var(--motion-fast);
+}
+.ops-watch-chip:hover .ops-watch-remove,
+.ops-watch-remove:focus-visible { opacity: 1; }
+.ops-watch-remove:hover { color: var(--semantic-critical, #e5655e); }
+.ops-watch-clear {
+  padding: 3px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ops-text-faint);
+  font: 550 10px/1.3 var(--font-mono);
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: color var(--motion-fast);
+}
+.ops-watch-clear:hover { color: var(--ops-text); }
+.ops-watch-settings {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding-top: 6px;
+  color: var(--ops-text-dim);
+  font-size: 11px;
+}
+.ops-watch-setting {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.ops-watch-settings input[type='checkbox'] { accent-color: var(--ops-accent); }
+.ops-watch-settings input[type='number'] {
+  width: 52px;
+  padding: 2px 5px;
+  border: 1px solid var(--ops-border);
+  border-radius: 4px;
+  background: var(--ops-bg-raised);
+  color: var(--ops-text);
+  font: 550 11px/1.3 var(--font-mono);
+}
+.ops-watch-note {
+  color: var(--ops-text-faint);
+  font-size: 10px;
+}
+
+/* ---- Loading skeleton ----
+   One shimmer utility for every loading affordance in the shell
+   (brief, country, history). The loading text stays in the DOM for
+   accessibility; the shimmer is background-only. Static fill under
+   reduced motion (see the consolidated block at the end of file). */
+.ops-skeleton {
+  border-radius: 8px;
+  background:
+    linear-gradient(
+      100deg,
+      var(--overlay-subtle, rgba(255, 255, 255, 0.025)) 30%,
+      var(--overlay-light, rgba(255, 255, 255, 0.045)) 50%,
+      var(--overlay-subtle, rgba(255, 255, 255, 0.025)) 70%
+    )
+    0 0 / 200% 100%;
+  animation: ops-skeleton-sweep 1.6s linear infinite;
+}
+@keyframes ops-skeleton-sweep {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ---- Country inspector ---- */
+.ops-country-status {
+  padding-bottom: 10px;
+}
+.ops-country-recent {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.ops-country-recent-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--ops-text-dim);
+}
+.ops-country-recent-text {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.ops-country-recent-when {
+  color: var(--ops-text-faint);
+  font: 500 10px/1.3 var(--font-mono);
+}
+
+/* ---- Brief history & diffs ---- */
+.ops-brief-history {
+  display: grid;
+  gap: 5px;
+}
+.ops-history-status {
+  margin: 0;
+  color: var(--ops-text-faint);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.ops-history-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--ops-border);
+  border-radius: 5px;
+  background: var(--ops-bg-raised);
+  color: var(--ops-text-dim);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--motion-fast), border-color var(--motion-fast);
+}
+.ops-history-entry:hover {
+  color: var(--ops-text);
+  border-color: rgba(34, 211, 238, 0.25);
+}
+.ops-history-when {
+  flex: 0 0 auto;
+  min-width: 26px;
+  color: var(--ops-text-faint);
+  font: 600 10px/1.4 var(--font-mono);
+}
+.ops-history-headline {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.4;
+}
+.ops-diff {
+  display: grid;
+  gap: 3px;
+}
+.ops-diff:empty { display: none; }
+.ops-diff-line {
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ops-text-dim);
+}
+.ops-diff-line[data-kind='added'] {
+  color: var(--semantic-normal, #5cb886);
+  background: color-mix(in srgb, var(--semantic-normal, #5cb886) 8%, transparent);
+}
+.ops-diff-line[data-kind='removed'] {
+  color: color-mix(in srgb, var(--semantic-critical, #e5655e) 70%, var(--ops-text-faint));
+  background: color-mix(in srgb, var(--semantic-critical, #e5655e) 7%, transparent);
+}
+.ops-diff-line[data-kind='changed'] { color: var(--ops-text-faint); }
+
+/* ============================================================
+   Reduced motion — consolidated coverage for every animation
+   and transition the ops shell + vantage skin introduce.
+   Keep this block last so nothing re-enables motion below it.
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  /* Animations off; the skeleton keeps a static tonal fill */
+  .ops-live::before,
+  .ops-feed-flash,
+  .ops-source-flash,
+  .ops-skeleton {
+    animation: none;
+  }
+  .ops-skeleton {
+    background: var(--overlay-subtle, rgba(255, 255, 255, 0.025));
+  }
+
+  /* Hover/press/state transitions snap instead of easing */
+  .ops-chip,
+  .ops-chip .dot,
+  .ops-seg-btn,
+  .ops-feed-item,
+  .ops-hud-bar i,
+  .ops-timeline-bar,
+  .ops-citation,
+  button.ops-hud-score,
+  .ops-contrib-bar i,
+  .ops-watch-bell,
+  .ops-watch-chip,
+  .ops-watch-chip-label,
+  .ops-watch-remove,
+  .ops-watch-clear,
+  .ops-history-entry {
+    transition: none;
+  }
 }

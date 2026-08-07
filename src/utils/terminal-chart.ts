@@ -114,7 +114,7 @@ export function terminalChart(data: number[] | undefined, opts: TerminalChartOpt
   // Preserve readable baselines when LAST is very close to HI or LO. Exact
   // coincidences are combined above; near-coincidences are separated here.
   const labelGap = labelSpecs.length > 1
-    ? Math.min(11, (labelBottom - labelTop) / (labelSpecs.length - 1))
+    ? Math.min(13, (labelBottom - labelTop) / (labelSpecs.length - 1))
     : 0;
   for (let index = 1; index < labelSpecs.length; index++) {
     labelSpecs[index]!.y = Math.max(labelSpecs[index]!.y, labelSpecs[index - 1]!.y + labelGap);
@@ -129,7 +129,7 @@ export function terminalChart(data: number[] | undefined, opts: TerminalChartOpt
   const labels = labelSpecs
     .map(
       (label) =>
-        `<text x="${labelX}" y="${label.y.toFixed(1)}" fill="${label.fill}" font-size="9"${label.emphasis ? ' font-weight="600"' : ''}>${label.text}</text>`,
+        `<text x="${labelX}" y="${label.y.toFixed(1)}" fill="${label.fill}" font-size="11"${label.emphasis ? ' font-weight="600"' : ''}>${label.text}</text>`,
     )
     .join('');
 

@@ -9,11 +9,13 @@
 import type { AppContext } from '@/app/app-context';
 import type {
   ClusteredEvent,
+  CountryBriefSignals,
   Hotspot,
   MapLayers,
   NewsItem,
   ThreatClassification,
 } from '@/types';
+import type { CountryDeepDiveSignalDetails } from '@/components/CountryBriefPanel';
 import type { TimeRange } from '@/components/MapContainer';
 import type { BreakingAlert } from '@/services/breaking-news-alerts';
 import type { LayerDefinition, MapRenderer, MapVariant } from '@/config/map-layer-definitions';
@@ -35,10 +37,39 @@ import { getAuthState, subscribeAuthState } from '@/services/auth-state';
 import { hasPremiumAccess } from '@/services/panel-gating';
 import { fetchServerInsights, getServerInsights } from '@/services/insights-loader';
 import { buildVantageSynthesis, type VantageSynthesis } from '@/services/vantage-synthesis';
+import {
+  fetchBriefDiff,
+  fetchBriefHistory,
+  fetchBriefSnapshot,
+  type ArchivedBriefSnapshot,
+} from '@/services/brief-history';
+import {
+  getAlertPrefs,
+  getWatchlist,
+  isWatched,
+  setAlertPrefs,
+  subscribe as subscribeWatchlist,
+  toggleCountry,
+  toggleTopic,
+  type AlertPrefs,
+  type Watchlist,
+} from '@/services/watchlist';
+import { toFlagEmoji } from '@/utils/country-flag';
 
 export interface OpsShellHooks {
   onToggleLayer: (layer: keyof MapLayers, enabled: boolean) => void;
   onOpenSearch: () => void;
+}
+
+/**
+ * Country-intel delegate handed to inspectCountry by CountryIntelManager, so
+ * the shell can render country signals without importing the (heavy)
+ * country-intel module graph.
+ */
+export interface OpsCountryIntel {
+  getSignals(): Promise<CountryBriefSignals>;
+  getSignalDetails(): Promise<CountryDeepDiveSignalDetails>;
+  openFullBrief(): void;
 }
 
 export interface OpsSearchSummary {
@@ -77,7 +108,11 @@ type InspectorSelection =
   | { kind: 'hotspot'; hotspot: Hotspot }
   | { kind: 'alert'; alert: BreakingAlert }
   | { kind: 'search'; result: OpsSearchSummary }
-  | { kind: 'brief'; brief: VantageSynthesis | null };
+  | { kind: 'brief'; brief: VantageSynthesis | null }
+  | { kind: 'country'; code: string; name: string }
+  | { kind: 'signal' };
+
+type WatchFilter = { kind: 'country' | 'topic'; value: string };
 
 const PRIMARY_LAYER_CHIPS: LayerChipDef[] = [
   { key: 'hotspots', label: 'Events', cssVar: '--ops-dom-events' },
@@ -100,6 +135,20 @@ const FEED_LIMIT = 80;
 const TIMELINE_BUCKETS = 32;
 const HUD_REFRESH_MS = 30_000;
 const FOCUS_PARAM = 'focus';
+const FLASH_MS = 1_300;
+const CITATION_PATTERN = /\[(\d{1,2})\]/g;
+const ESCALATION_HISTORY_KEY = 'wm-escalation-history';
+const ESCALATION_HISTORY_LIMIT = 288;
+const ESCALATION_BUCKET_MS = 5 * 60_000;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const ALERT_COOLDOWN_MS = 5 * 60_000;
+const SEEN_ALERT_LIMIT = 500;
+const BRIEF_HISTORY_LIMIT = 8;
+
+interface EscalationSample {
+  t: number;
+  score: number;
+}
 
 export class OpsShell {
   private readonly ctx: AppContext;
@@ -129,6 +178,16 @@ export class OpsShell {
   private statusLine: HTMLElement | null = null;
   private hudTimer: ReturnType<typeof setInterval> | null = null;
   private focusRestoreTimers: number[] = [];
+  private escalationHistory: EscalationSample[] | null = null;
+  private watchlistRow: HTMLElement | null = null;
+  private watchBell: HTMLButtonElement | null = null;
+  private watchFilter: WatchFilter | null = null;
+  private watchSettingsOpen = false;
+  private unsubscribeWatchlist: (() => void) | null = null;
+  private lastAlertScore: number | null = null;
+  private alertsSeeded = false;
+  private seenAlertIds = new Set<string>();
+  private lastNotifiedAt: Record<'escalation' | 'watchlist', number> = { escalation: 0, watchlist: 0 };
   private unsubscribeAuth: (() => void) | null = null;
   private boundKeydown: ((event: KeyboardEvent) => void) | null = null;
   private boundOutsidePointer: ((event: PointerEvent) => void) | null = null;
@@ -165,8 +224,14 @@ export class OpsShell {
       this.unsubscribeAuth = subscribeAuthState(() => this.syncLayerChips());
     }
 
+    this.unsubscribeWatchlist = subscribeWatchlist(() => {
+      this.renderWatchlistStrip();
+      this.renderFeed();
+    });
+
     this.syncLayerChips();
     this.syncTimeChips(this.ctx.currentTimeRange);
+    this.renderWatchlistStrip();
     this.renderFeed();
     this.updateHud();
     this.restoreDeepLinkedFocus();
@@ -182,6 +247,8 @@ export class OpsShell {
     this.focusRestoreTimers = [];
     this.unsubscribeAuth?.();
     this.unsubscribeAuth = null;
+    this.unsubscribeWatchlist?.();
+    this.unsubscribeWatchlist = null;
     if (this.boundKeydown) document.removeEventListener('keydown', this.boundKeydown);
     if (this.boundOutsidePointer) document.removeEventListener('pointerdown', this.boundOutsidePointer);
     if (this.boundOpsAlert) document.removeEventListener('wm:ops-inspect-alert', this.boundOpsAlert);
@@ -354,10 +421,23 @@ export class OpsShell {
     const head = el('div', 'ops-feed-head');
     const label = el('span');
     label.textContent = 'Live feed';
+    const headRight = el('span', 'ops-feed-head-right');
+    this.watchBell = el('button', 'ops-watch-bell') as HTMLButtonElement;
+    this.watchBell.type = 'button';
+    this.watchBell.textContent = 'Alerts';
+    this.watchBell.setAttribute('aria-label', 'Watchlist alert settings');
+    this.watchBell.setAttribute('aria-pressed', 'false');
+    this.watchBell.addEventListener('click', () => {
+      this.watchSettingsOpen = !this.watchSettingsOpen;
+      this.renderWatchlistStrip();
+    });
     this.feedCount = el('span', 'count');
-    head.append(label, this.feedCount);
+    headRight.append(this.watchBell, this.feedCount);
+    head.append(label, headRight);
+    this.watchlistRow = el('div', 'ops-watchlist');
+    this.watchlistRow.hidden = true;
     this.feedList = el('div', 'ops-feed-list');
-    feed.append(head, this.feedList);
+    feed.append(head, this.watchlistRow, this.feedList);
 
     const mapArea = el('main', 'ops-map');
     mapArea.id = 'opsMapArea';
@@ -380,7 +460,10 @@ export class OpsShell {
     const label = el('div', 'ops-hud-label');
     label.textContent = 'Escalation index';
 
-    const score = el('div', 'ops-hud-score');
+    const score = el('button', 'ops-hud-score') as HTMLButtonElement;
+    score.type = 'button';
+    score.setAttribute('aria-label', 'Escalation index breakdown');
+    score.addEventListener('click', () => this.inspectEscalation());
     this.hudScore = el('b');
     this.hudScore.textContent = '--';
     this.hudLevel = el('span', 'ops-hud-level');
@@ -673,9 +756,14 @@ export class OpsShell {
     if (!applyWindow) return sorted;
     const range = this.ctx.map?.getTimeRange() ?? this.ctx.currentTimeRange;
     const duration = TIME_RANGE_MS[range];
-    const filtered = duration === undefined
+    const windowed = duration === undefined
       ? sorted
       : sorted.filter((item) => item.when.getTime() >= Date.now() - duration);
+    // The active watchlist chip narrows the already time-windowed feed.
+    const filter = this.watchFilter;
+    const filtered = filter
+      ? windowed.filter((item) => watchEntryMatches(item, filter.kind, filter.value))
+      : windowed;
     return filtered.slice(0, FEED_LIMIT);
   }
 
@@ -728,7 +816,12 @@ export class OpsShell {
     const now = Date.now();
     const range = this.ctx.map?.getTimeRange() ?? this.ctx.currentTimeRange;
     const oldest = items[items.length - 1]?.when.getTime() ?? now - 60 * 60_000;
-    const duration = TIME_RANGE_MS[range] ?? Math.max(60 * 60_000, now - oldest);
+    // The feed is capped at FEED_LIMIT newest items, which usually span far
+    // less than the selected time range — bucketing across the nominal range
+    // would pile everything into the last bar. Bucket across the actual data
+    // span instead (floored at 1h, capped at the range).
+    const dataSpan = Math.max(60 * 60_000, now - oldest);
+    const duration = Math.min(TIME_RANGE_MS[range] ?? dataSpan, dataSpan);
     const start = now - duration;
     const buckets: OpsFeedItem[][] = Array.from({ length: TIMELINE_BUCKETS }, () => []);
     for (const item of items) {
@@ -751,7 +844,9 @@ export class OpsShell {
       if (bucket[0]) button.addEventListener('click', () => this.inspectFeedItem(bucket[0]!));
       this.timelineBars?.appendChild(button);
     });
-    this.timelineMeta.textContent = `${items.length} reports · ${range.toUpperCase()}`;
+    const spanHours = duration / 3_600_000;
+    const spanLabel = spanHours < 48 ? `${Math.max(1, Math.round(spanHours))}h` : `${Math.round(spanHours / 24)}d`;
+    this.timelineMeta.textContent = `${items.length} reports · last ${spanLabel}`;
   }
 
   // ---- inspector ----
@@ -759,6 +854,12 @@ export class OpsShell {
   private inspectFeedItem(item: OpsFeedItem, updateUrl = true): void {
     this.selection = { kind: 'feed', item };
     if (updateUrl) this.setFocus(item.id);
+    // User-initiated inspection (feed row or timeline bar click) also flies the
+    // map to the report; passive restores (deep links, data refreshes) do not.
+    if (updateUrl && item.lat !== undefined && item.lon !== undefined) {
+      this.ctx.map?.setCenter(item.lat, item.lon, 5);
+      this.ctx.map?.flashLocation(item.lat, item.lon, 1800);
+    }
     const content = this.beginInspector(
       item.alert ? 'Priority report' : 'Intelligence report',
       item.title,
@@ -803,7 +904,7 @@ export class OpsShell {
     const actions = el('div', 'ops-inspector-actions');
     if (item.lat !== undefined && item.lon !== undefined) {
       actions.appendChild(actionButton('Locate on map', () => {
-        this.ctx.map?.setCenter(item.lat!, item.lon!, 5);
+        this.ctx.map?.setCenter(item.lat!, item.lon!, 6);
         this.ctx.map?.flashLocation(item.lat!, item.lon!, 1800);
       }, true));
     }
@@ -814,6 +915,15 @@ export class OpsShell {
     open.textContent = 'Open original ↗';
     actions.appendChild(open);
     actions.appendChild(actionButton('Copy deep link', (button) => this.copyCurrentUrl(button)));
+    const topic = deriveWatchTopic(item);
+    if (topic) {
+      const watchButton = actionButton('', (button) => {
+        toggleTopic(topic);
+        syncWatchButton(button, 'topic', topic);
+      });
+      syncWatchButton(watchButton, 'topic', topic);
+      actions.appendChild(watchButton);
+    }
     content.appendChild(actions);
     this.openInspector();
     this.syncFeedSelection();
@@ -864,6 +974,51 @@ export class OpsShell {
     );
     content.appendChild(actions);
     this.openInspector();
+    const related = this.findFeedItemForHotspot(hotspot);
+    if (related) this.highlightFeedRow(related);
+  }
+
+  /**
+   * Hotspot → feed correlation for the map → inspector → feed loop. Feed rows
+   * never carry hotspot ids (their legacyFocusId is cluster-based), so try the
+   * deep-link id first, then location/name text, then geographic proximity.
+   */
+  private findFeedItemForHotspot(hotspot: Hotspot): OpsFeedItem | null {
+    const items = this.collectFeedItems(true);
+    const focusId = `hotspot:${hotspot.id}`;
+    const byId = items.find((item) => item.legacyFocusId === focusId || item.id === focusId);
+    if (byId) return byId;
+
+    const needles = [hotspot.name, hotspot.location]
+      .filter((value): value is string => typeof value === 'string' && value.trim().length >= 4)
+      .map((value) => value.trim().toLowerCase());
+    const byText = items.find((item) => {
+      const haystack = `${item.locationName ?? ''} ${item.title}`.toLowerCase();
+      return needles.some((needle) => haystack.includes(needle));
+    });
+    if (byText) return byText;
+
+    return items.find((item) => (
+      item.lat !== undefined && item.lon !== undefined
+      && Math.abs(item.lat - hotspot.lat) <= 2.5
+      && Math.abs(item.lon - hotspot.lon) <= 2.5
+    )) ?? null;
+  }
+
+  /** Select, reveal, and briefly flash a feed row without changing the inspector. */
+  private highlightFeedRow(item: OpsFeedItem): void {
+    const rows = this.feedList?.querySelectorAll<HTMLButtonElement>('.ops-feed-item');
+    if (!rows) return;
+    let target: HTMLButtonElement | null = null;
+    rows.forEach((row) => {
+      if (row.dataset.focusId === item.id) target = row;
+      else row.removeAttribute('aria-current');
+    });
+    if (!target) return;
+    const button: HTMLButtonElement = target;
+    button.setAttribute('aria-current', 'true');
+    button.scrollIntoView({ block: 'nearest' });
+    flashElement(button, 'ops-feed-flash');
   }
 
   private inspectAlert(alert: BreakingAlert): void {
@@ -891,9 +1046,320 @@ export class OpsShell {
     this.openInspector();
   }
 
+  /**
+   * Country deep-dive in the inspector rail. Map country clicks route here in
+   * ops mode (see CountryIntelManager.setupCountryIntel); the classic full-page
+   * deep-dive stays one click away via the delegate's openFullBrief.
+   */
+  inspectCountry(code: string, name: string, intel: OpsCountryIntel): void {
+    const iso = code.trim().toUpperCase();
+    const selection: InspectorSelection = { kind: 'country', code: iso, name };
+    this.selection = selection;
+    this.setFocus(null);
+    const content = this.beginInspector('COUNTRY', `${name} ${toFlagEmoji(iso)}`, iso);
+
+    const status = el('p', 'ops-inspector-copy ops-country-status ops-skeleton');
+    status.textContent = 'Compiling live signals for this country…';
+    content.appendChild(status);
+    const signalsHost = el('div', 'ops-country-signals');
+    content.appendChild(signalsHost);
+
+    const actions = el('div', 'ops-inspector-actions');
+    actions.appendChild(actionButton('Open full deep-dive', () => intel.openFullBrief(), true));
+    const watchButton = actionButton('', (button) => {
+      toggleCountry(iso);
+      syncWatchButton(button, 'country', iso);
+    });
+    syncWatchButton(watchButton, 'country', iso);
+    actions.appendChild(watchButton);
+    content.appendChild(actions);
+    this.openInspector();
+    this.syncFeedSelection();
+
+    void (async () => {
+      let signals: CountryBriefSignals | null = null;
+      try {
+        signals = await intel.getSignals();
+      } catch {
+        signals = null;
+      }
+      if (this.destroyed || this.selection !== selection || !signalsHost.isConnected) return;
+      status.remove();
+      if (!signals) {
+        const failed = el('p', 'ops-inspector-copy');
+        failed.textContent = 'Country signals are unavailable right now. The full deep-dive may still load them.';
+        signalsHost.appendChild(failed);
+        return;
+      }
+      this.renderCountrySignals(signalsHost, signals);
+
+      try {
+        const details = await intel.getSignalDetails();
+        if (this.destroyed || this.selection !== selection || !signalsHost.isConnected) return;
+        this.renderCountrySignalDetails(signalsHost, details);
+      } catch {
+        // Signal-detail chunk unavailable — the summary above stands alone.
+      }
+    })();
+  }
+
+  private renderCountrySignals(host: HTMLElement, signals: CountryBriefSignals): void {
+    const badges = el('div', 'ops-inspector-badges');
+    if (signals.isTier1) badges.appendChild(badge('Tier 1 coverage', 'sources'));
+    if (signals.travelAdvisoryMaxLevel) {
+      badges.appendChild(badge(
+        `Advisory: ${sentence(signals.travelAdvisoryMaxLevel.replace(/-/g, ' '))}`,
+        advisoryBadgeModifier(signals.travelAdvisoryMaxLevel),
+      ));
+    }
+    if (badges.childElementCount > 0) host.appendChild(badges);
+
+    const entries: Array<[string, string]> = [];
+    const count = (label: string, value: number): void => {
+      if (value > 0) entries.push([label, String(value)]);
+    };
+    count('Critical news', signals.criticalNews);
+    count('Active strikes', signals.activeStrikes);
+    count('Conflict events', signals.conflictEvents);
+    count('Protests', signals.protests);
+    count('Mil flights near', signals.militaryFlights);
+    count('Mil vessels near', signals.militaryVessels);
+    count('Mil flights inside', signals.militaryFlightsInCountry);
+    count('Mil vessels inside', signals.militaryVesselsInCountry);
+    count('Net outages', signals.outages);
+    count('AIS disruptions', signals.aisDisruptions);
+    count('Satellite fires', signals.satelliteFires);
+    count('Radiation anomalies', signals.radiationAnomalies);
+    count('Temporal anomalies', signals.temporalAnomalies);
+    count('Cyber threats', signals.cyberThreats);
+    count('Earthquakes', signals.earthquakes);
+    count('GPS jamming hexes', signals.gpsJammingHexes);
+    count('Thermal escalations', signals.thermalEscalations);
+    count('Aviation disruptions', signals.aviationDisruptions);
+    count('Travel advisories', signals.travelAdvisories);
+    count('Sanctions entries', signals.sanctionsDesignations);
+    count('New sanctions', signals.sanctionsNewDesignations);
+    count('Oref sirens live', signals.orefSirens);
+    count('Oref sirens 24h', signals.orefHistory24h);
+    if (signals.displacementOutflow > 0) {
+      entries.push(['Displacement out', formatCompactCount(signals.displacementOutflow)]);
+    }
+    if (signals.climateStress > 0) {
+      entries.push(['Climate stress', String(Math.round(signals.climateStress))]);
+    }
+
+    if (entries.length === 0) {
+      const quiet = el('p', 'ops-inspector-copy');
+      quiet.textContent = 'No active signals tracked for this country in the current caches.';
+      host.appendChild(quiet);
+      return;
+    }
+    const facts = el('div', 'ops-inspector-facts');
+    for (const [label, value] of entries) facts.appendChild(fact(label, value));
+    host.appendChild(facts);
+  }
+
+  private renderCountrySignalDetails(host: HTMLElement, details: CountryDeepDiveSignalDetails): void {
+    const total = details.critical + details.high + details.medium + details.low;
+    if (total === 0 && details.recentHigh.length === 0) return;
+    const heading = el('h3', 'ops-inspector-section-title');
+    heading.textContent = 'Signal severity';
+    host.appendChild(heading);
+
+    const facts = el('div', 'ops-inspector-facts');
+    facts.append(
+      fact('Critical', String(details.critical)),
+      fact('High', String(details.high)),
+      fact('Medium', String(details.medium)),
+      fact('Low', String(details.low)),
+    );
+    host.appendChild(facts);
+
+    if (details.recentHigh.length > 0) {
+      const list = el('div', 'ops-country-recent');
+      for (const signal of details.recentHigh) {
+        const row = el('div', 'ops-country-recent-row');
+        row.appendChild(badge(sentence(signal.severity), `level-${signal.severity}`));
+        const text = el('span', 'ops-country-recent-text');
+        text.textContent = signal.description;
+        const when = el('span', 'ops-country-recent-when');
+        when.textContent = formatTimeAgo(coerceDate(signal.timestamp));
+        row.append(text, when);
+        list.appendChild(row);
+      }
+      host.appendChild(list);
+    }
+  }
+
+  // ---- watchlist strip + alerts ----
+
+  private renderWatchlistStrip(): void {
+    const row = this.watchlistRow;
+    if (!row) return;
+    if (this.watchFilter && !isWatched(this.watchFilter.kind, this.watchFilter.value)) {
+      this.watchFilter = null;
+    }
+    const list = getWatchlist();
+    const prefs = getAlertPrefs();
+    this.watchBell?.setAttribute('aria-pressed', this.watchSettingsOpen ? 'true' : 'false');
+    row.replaceChildren();
+
+    const entries: Array<{ kind: 'country' | 'topic'; value: string; label: string }> = [
+      ...list.countries.map((code) => ({
+        kind: 'country' as const,
+        value: code,
+        label: `${toFlagEmoji(code)} ${regionName(code)}`,
+      })),
+      ...list.topics.map((topic) => ({ kind: 'topic' as const, value: topic, label: `#${topic}` })),
+    ];
+    row.hidden = entries.length === 0 && !this.watchSettingsOpen;
+    if (row.hidden) return;
+
+    for (const entry of entries) {
+      const active = this.watchFilter?.kind === entry.kind && this.watchFilter.value === entry.value;
+      const chip = el('span', 'ops-watch-chip');
+      chip.dataset.active = active ? 'true' : 'false';
+      const labelButton = el('button', 'ops-watch-chip-label') as HTMLButtonElement;
+      labelButton.type = 'button';
+      labelButton.textContent = entry.label;
+      labelButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+      labelButton.title = active ? 'Clear feed filter' : 'Filter the feed to matching reports';
+      labelButton.addEventListener('click', () => {
+        this.watchFilter = active ? null : { kind: entry.kind, value: entry.value };
+        this.renderWatchlistStrip();
+        this.renderFeed();
+      });
+      const remove = el('button', 'ops-watch-remove') as HTMLButtonElement;
+      remove.type = 'button';
+      remove.textContent = '×';
+      remove.setAttribute('aria-label', `Stop watching ${entry.label}`);
+      remove.addEventListener('click', () => {
+        if (entry.kind === 'country') toggleCountry(entry.value);
+        else toggleTopic(entry.value);
+      });
+      chip.append(labelButton, remove);
+      row.appendChild(chip);
+    }
+
+    if (this.watchFilter) {
+      const clear = el('button', 'ops-watch-clear') as HTMLButtonElement;
+      clear.type = 'button';
+      clear.textContent = 'Clear';
+      clear.setAttribute('aria-label', 'Clear the watchlist feed filter');
+      clear.addEventListener('click', () => {
+        this.watchFilter = null;
+        this.renderWatchlistStrip();
+        this.renderFeed();
+      });
+      row.appendChild(clear);
+    }
+
+    if (this.watchSettingsOpen) row.appendChild(this.buildAlertSettings(prefs));
+  }
+
+  private buildAlertSettings(prefs: AlertPrefs): HTMLElement {
+    const wrap = el('div', 'ops-watch-settings');
+    const supported = typeof Notification !== 'undefined';
+
+    const toggleLabel = el('label', 'ops-watch-setting');
+    const checkbox = el('input') as HTMLInputElement;
+    checkbox.type = 'checkbox';
+    checkbox.checked = prefs.enabled;
+    checkbox.disabled = !supported;
+    checkbox.addEventListener('change', () => {
+      setAlertPrefs({ enabled: checkbox.checked });
+      // Permission is only ever requested on an explicit toggle-on.
+      if (checkbox.checked && supported && Notification.permission === 'default') {
+        void Notification.requestPermission().then(() => this.renderWatchlistStrip());
+      }
+    });
+    toggleLabel.append(checkbox, document.createTextNode(' Browser alerts'));
+
+    const thresholdLabel = el('label', 'ops-watch-setting');
+    const threshold = el('input') as HTMLInputElement;
+    threshold.type = 'number';
+    threshold.min = '0';
+    threshold.max = '100';
+    threshold.step = '1';
+    threshold.value = String(prefs.escalationThreshold);
+    threshold.setAttribute('aria-label', 'Escalation alert threshold');
+    threshold.addEventListener('change', () => {
+      const parsed = Number.parseInt(threshold.value, 10);
+      if (Number.isFinite(parsed)) setAlertPrefs({ escalationThreshold: parsed });
+    });
+    thresholdLabel.append(document.createTextNode('Threshold '), threshold);
+
+    wrap.append(toggleLabel, thresholdLabel);
+    const note = el('span', 'ops-watch-note');
+    note.textContent = !supported
+      ? 'Notifications unsupported in this browser'
+      : Notification.permission === 'denied'
+        ? 'Notifications blocked by the browser'
+        : Notification.permission === 'default'
+          ? 'Permission is requested when enabled'
+          : '';
+    if (note.textContent) wrap.appendChild(note);
+    return wrap;
+  }
+
+  /**
+   * Runs on the 30s HUD cadence. Fires at most one browser notification per
+   * five minutes per kind: escalation-threshold upward crossings and new
+   * (previously unseen) feed items matching the watchlist. No-ops entirely
+   * when the Notification API is missing (e2e/webviews).
+   */
+  private checkWatchlistAlerts(): void {
+    if (typeof Notification === 'undefined') return;
+    const prefs = getAlertPrefs();
+    const canNotify = prefs.enabled && Notification.permission === 'granted';
+    const now = Date.now();
+
+    const scores = getCachedScores();
+    const score = scores?.strategicRisk ? Math.round(scores.strategicRisk.score) : null;
+    if (score !== null) {
+      const previous = this.lastAlertScore;
+      this.lastAlertScore = score;
+      if (
+        canNotify
+        && previous !== null
+        && previous < prefs.escalationThreshold
+        && score >= prefs.escalationThreshold
+        && now - this.lastNotifiedAt.escalation >= ALERT_COOLDOWN_MS
+      ) {
+        fireNotification(
+          'Escalation index crossed threshold',
+          `Escalation index is ${score} (threshold ${prefs.escalationThreshold}).`,
+        );
+        this.lastNotifiedAt.escalation = now;
+      }
+    }
+
+    const fresh: OpsFeedItem[] = [];
+    for (const item of this.collectFeedItems(false)) {
+      if (this.seenAlertIds.has(item.id)) continue;
+      this.seenAlertIds.add(item.id);
+      fresh.push(item);
+    }
+    if (this.seenAlertIds.size > SEEN_ALERT_LIMIT) {
+      this.seenAlertIds = new Set([...this.seenAlertIds].slice(-SEEN_ALERT_LIMIT));
+    }
+    // First pass only seeds the seen-id set so a page load never alert-storms.
+    const seeded = this.alertsSeeded;
+    this.alertsSeeded = true;
+    if (!seeded || !canNotify) return;
+    const list = getWatchlist();
+    if (list.countries.length === 0 && list.topics.length === 0) return;
+    if (now - this.lastNotifiedAt.watchlist < ALERT_COOLDOWN_MS) return;
+    const match = fresh.find((item) => matchesWatchlist(item, list));
+    if (match) {
+      fireNotification('Watchlist match', match.title);
+      this.lastNotifiedAt.watchlist = now;
+    }
+  }
+
   private async inspectBrief(): Promise<void> {
     const loading = this.beginInspector('AI synthesis', 'Compiling the current picture', 'Cited · cached · public');
-    const loadingCopy = el('p', 'ops-inspector-copy');
+    const loadingCopy = el('p', 'ops-inspector-copy ops-skeleton');
     loadingCopy.textContent = 'Loading the latest validated brief and its evidence trail…';
     loading.appendChild(loadingCopy);
     this.selection = { kind: 'brief', brief: null };
@@ -917,6 +1383,7 @@ export class OpsShell {
       const copy = el('p', 'ops-inspector-copy');
       copy.textContent = 'The cited snapshot is not fresh enough to display. Live reporting remains available in the feed while the next synthesis run completes.';
       unavailable.appendChild(copy);
+      this.renderBriefHistory(unavailable);
       return;
     }
 
@@ -938,11 +1405,11 @@ export class OpsShell {
     const changedHeading = el('h3', 'ops-inspector-section-title');
     changedHeading.textContent = 'What changed';
     const changed = el('p', 'ops-inspector-copy ops-brief-copy');
-    changed.textContent = brief.whatChanged;
+    this.appendTextWithCitations(changed, brief.whatChanged, brief);
     const whyHeading = el('h3', 'ops-inspector-section-title');
     whyHeading.textContent = 'Why it matters';
     const why = el('p', 'ops-inspector-copy');
-    why.textContent = brief.whyItMatters;
+    this.appendTextWithCitations(why, brief.whyItMatters, brief);
     content.append(changedHeading, changed, whyHeading, why);
 
     if (brief.threads.length > 0) {
@@ -951,7 +1418,7 @@ export class OpsShell {
       const threadList = el('ol', 'ops-brief-threads');
       for (const thread of brief.threads) {
         const item = el('li');
-        item.textContent = thread.text;
+        this.appendTextWithCitations(item, thread.text, brief);
         threadList.appendChild(item);
       }
       content.append(threadHeading, threadList);
@@ -971,11 +1438,380 @@ export class OpsShell {
         link.href = source.url;
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
+        link.dataset.sourceIndex = String(source.index);
         link.textContent = `[${source.index}] ${source.source} — ${source.title}`;
         list.appendChild(link);
       }
       content.append(evidenceTitle, list);
     }
+
+    this.renderBriefHistory(content);
+  }
+
+  // ---- brief history & diffs ----
+
+  /** Lazy "History" section appended to the brief inspector view. */
+  private renderBriefHistory(content: HTMLElement): void {
+    const heading = el('h3', 'ops-inspector-section-title');
+    heading.textContent = 'History';
+    const box = el('div', 'ops-brief-history');
+    const status = el('p', 'ops-history-status ops-skeleton');
+    status.textContent = 'Loading archived briefs…';
+    box.appendChild(status);
+    content.append(heading, box);
+
+    void fetchBriefHistory().then((history) => {
+      if (this.destroyed || this.selection?.kind !== 'brief' || !box.isConnected) return;
+      box.replaceChildren();
+      if (history.entries.length === 0) {
+        const empty = el('p', 'ops-history-status');
+        empty.textContent = 'No archived briefs yet — history builds up as the 5-minute refresh runs.';
+        box.appendChild(empty);
+        return;
+      }
+      for (const entry of history.entries.slice(0, BRIEF_HISTORY_LIMIT)) {
+        const row = el('button', 'ops-history-entry') as HTMLButtonElement;
+        row.type = 'button';
+        const when = el('span', 'ops-history-when');
+        when.textContent = formatTimeAgo(coerceDate(entry.generatedAt));
+        when.title = formatAbsoluteTime(coerceDate(entry.generatedAt));
+        const headline = el('span', 'ops-history-headline');
+        headline.textContent = entry.headline
+          || (entry.clusterCount !== null ? `${entry.clusterCount} clusters` : 'Archived brief');
+        row.append(when, headline);
+        row.addEventListener('click', () => { void this.inspectArchivedBrief(entry.generatedAt); });
+        box.appendChild(row);
+      }
+      const diffHost = el('div', 'ops-diff');
+      box.appendChild(actionButton('What changed vs yesterday', () => this.renderBriefDiff(diffHost)));
+      box.appendChild(diffHost);
+    }).catch(() => {
+      if (this.destroyed || !box.isConnected) return;
+      box.replaceChildren();
+      const failed = el('p', 'ops-history-status');
+      failed.textContent = 'History unavailable';
+      box.appendChild(failed);
+    });
+  }
+
+  /**
+   * Diff of the latest archived brief against the entry closest to 24h before
+   * it. Selector order matters: added/kept describe snapshot `b`, so
+   * a='yesterday', b='latest' makes `added` the lines new in today's brief.
+   */
+  private renderBriefDiff(host: HTMLElement): void {
+    host.replaceChildren();
+    const status = el('p', 'ops-history-status ops-skeleton');
+    status.textContent = 'Comparing against yesterday…';
+    host.appendChild(status);
+
+    void fetchBriefDiff('yesterday', 'latest').then((diff) => {
+      if (this.destroyed || !host.isConnected) return;
+      host.replaceChildren();
+      const baseline = diff.a.generatedAt
+        ? `Baseline ${formatAbsoluteTime(coerceDate(diff.a.generatedAt))}`
+        : 'Baseline unavailable';
+      const meta = el('p', 'ops-history-status');
+      meta.textContent = baseline;
+      host.appendChild(meta);
+
+      let lines = 0;
+      for (const text of diff.added) {
+        host.appendChild(diffLine('added', `+ ${text}`));
+        lines++;
+      }
+      for (const text of diff.removed) {
+        host.appendChild(diffLine('removed', `− ${text}`));
+        lines++;
+      }
+      for (const kept of diff.kept) {
+        if (!kept.changed) continue;
+        const line = diffLine('changed', `~ ${kept.text}`);
+        line.title = `Was: ${kept.previousText}`;
+        host.appendChild(line);
+        lines++;
+      }
+      if (lines === 0) {
+        const same = el('p', 'ops-history-status');
+        same.textContent = 'No substantive line changes vs yesterday.';
+        host.appendChild(same);
+      }
+    }).catch(() => {
+      if (this.destroyed || !host.isConnected) return;
+      host.replaceChildren();
+      const failed = el('p', 'ops-history-status');
+      failed.textContent = 'History unavailable';
+      host.appendChild(failed);
+    });
+  }
+
+  private async inspectArchivedBrief(at: string): Promise<void> {
+    const selection: InspectorSelection = { kind: 'brief', brief: null };
+    this.selection = selection;
+    const loading = this.beginInspector(
+      'AI synthesis · archive',
+      'Loading archived brief',
+      formatAbsoluteTime(coerceDate(at)),
+    );
+    const copy = el('p', 'ops-inspector-copy ops-skeleton');
+    copy.textContent = 'Fetching the archived snapshot…';
+    loading.appendChild(copy);
+    this.openInspector();
+
+    let snapshot: ArchivedBriefSnapshot;
+    try {
+      snapshot = await fetchBriefSnapshot(at);
+    } catch {
+      if (this.destroyed || this.selection !== selection) return;
+      const failed = this.beginInspector('AI synthesis · archive', 'History unavailable', formatAbsoluteTime(coerceDate(at)));
+      const note = el('p', 'ops-inspector-copy');
+      note.textContent = 'This archived snapshot could not be loaded. The live brief remains available.';
+      failed.appendChild(note);
+      const actions = el('div', 'ops-inspector-actions');
+      actions.appendChild(actionButton('Back to live', () => { void this.inspectBrief(); }, true));
+      failed.appendChild(actions);
+      return;
+    }
+    if (this.destroyed || this.selection !== selection) return;
+
+    const generated = coerceDate(snapshot.generatedAt);
+    const content = this.beginInspector(
+      'AI synthesis · archive',
+      'Global situation brief (archived)',
+      `Generated ${formatAbsoluteTime(generated)}`,
+    );
+    const label = el('p', 'ops-brief-provenance');
+    label.textContent = `Archived snapshot from ${formatAbsoluteTime(generated)} — not the live picture.`;
+    content.appendChild(label);
+
+    if (snapshot.briefStoryLines && snapshot.briefStoryLines.length > 0) {
+      const list = el('ol', 'ops-brief-threads');
+      for (const line of snapshot.briefStoryLines) {
+        const item = el('li');
+        item.textContent = line.text;
+        list.appendChild(item);
+      }
+      content.appendChild(list);
+    } else {
+      const body = el('p', 'ops-inspector-copy ops-brief-copy');
+      body.textContent = snapshot.worldBrief;
+      content.appendChild(body);
+    }
+
+    const facts = el('div', 'ops-inspector-facts');
+    facts.appendChild(fact('Clusters', snapshot.clusterCount !== null ? String(snapshot.clusterCount) : 'n/a'));
+    if (snapshot.provenance) {
+      facts.appendChild(fact('Stories', String(snapshot.provenance.storiesConsidered)));
+      facts.appendChild(fact('Sources', String(snapshot.provenance.sourcesConsidered)));
+    }
+    content.appendChild(facts);
+
+    if (snapshot.worldBriefSources.length > 0) {
+      const evidenceTitle = el('h3', 'ops-inspector-section-title');
+      evidenceTitle.textContent = 'Numbered evidence';
+      const list = el('div', 'ops-source-list');
+      for (const source of snapshot.worldBriefSources) {
+        const link = el('a', 'ops-source-link') as HTMLAnchorElement;
+        link.href = source.url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = `[${source.index}] ${source.source} — ${source.title}`;
+        list.appendChild(link);
+      }
+      content.append(evidenceTitle, list);
+    }
+
+    const actions = el('div', 'ops-inspector-actions');
+    actions.appendChild(actionButton('Back to live', () => { void this.inspectBrief(); }, true));
+    content.appendChild(actions);
+  }
+
+  /**
+   * Renders brief prose as text nodes interleaved with [n] citation buttons.
+   * Markers with no matching numbered source stay literal text.
+   */
+  private appendTextWithCitations(target: HTMLElement, text: string, brief: VantageSynthesis): void {
+    let cursor = 0;
+    for (const match of text.matchAll(CITATION_PATTERN)) {
+      const index = Number(match[1]);
+      if (!brief.sources.some((source) => source.index === index)) continue;
+      const matchIndex = match.index ?? 0;
+      if (matchIndex > cursor) target.appendChild(document.createTextNode(text.slice(cursor, matchIndex)));
+      const citation = el('button', 'ops-citation') as HTMLButtonElement;
+      citation.type = 'button';
+      citation.textContent = `[${index}]`;
+      citation.setAttribute('aria-label', `Show evidence source ${index}`);
+      citation.addEventListener('click', () => this.focusBriefSource(index, brief));
+      target.appendChild(citation);
+      cursor = matchIndex + match[0].length;
+    }
+    if (cursor < text.length) target.appendChild(document.createTextNode(text.slice(cursor)));
+  }
+
+  /** Citation click: reveal the numbered evidence entry, then the matching feed row if any. */
+  private focusBriefSource(index: number, brief: VantageSynthesis): void {
+    const entry = this.inspector?.querySelector<HTMLElement>(
+      `.ops-source-list [data-source-index="${index}"]`,
+    );
+    if (entry) {
+      entry.scrollIntoView({ block: 'nearest' });
+      flashElement(entry, 'ops-source-flash');
+    }
+    const source = brief.sources.find((candidate) => candidate.index === index);
+    if (!source) return;
+    const wantedTitle = source.title.trim().toLowerCase();
+    const item = this.collectFeedItems(true).find((candidate) => (
+      candidate.link === source.url
+      || candidate.title.trim().toLowerCase() === wantedTitle
+      || candidate.allItems.some((news) => (
+        news.link === source.url || news.title.trim().toLowerCase() === wantedTitle
+      ))
+    ));
+    if (item) this.highlightFeedRow(item);
+  }
+
+  private inspectEscalation(): void {
+    this.selection = { kind: 'signal' };
+    this.setFocus(null);
+    const scores = getCachedScores();
+    const risk = scores && scores.cii.length > 0 ? scores.strategicRisk : null;
+
+    if (!scores || !risk) {
+      const content = this.beginInspector('SIGNAL', 'Escalation index', 'Provenance');
+      const empty = el('p', 'ops-inspector-copy');
+      empty.textContent = 'No cached risk snapshot yet. The breakdown appears once the intelligence backend returns its first scored snapshot.';
+      content.appendChild(empty);
+      this.openInspector();
+      this.syncFeedSelection();
+      return;
+    }
+
+    const content = this.beginInspector(
+      'SIGNAL',
+      'Escalation index',
+      scores.computedAt ? `Computed ${formatAbsoluteTime(new Date(scores.computedAt))}` : 'Computation time unavailable',
+    );
+
+    const badges = el('div', 'ops-inspector-badges');
+    badges.appendChild(badge(sentence(risk.level), `level-${risk.level}`));
+    badges.appendChild(badge(`Trend ${risk.trend}`, 'location'));
+    content.appendChild(badges);
+
+    const facts = el('div', 'ops-inspector-facts');
+    facts.append(
+      fact('Score', `${Math.round(risk.score)} / 100`),
+      fact('Level', sentence(risk.level)),
+    );
+    content.appendChild(facts);
+
+    if (risk.contributors.length > 0) {
+      const heading = el('h3', 'ops-inspector-section-title');
+      heading.textContent = 'Contributing signals';
+      const list = el('div', 'ops-contrib-list');
+      for (const contributor of risk.contributors) {
+        const row = el('div', 'ops-contrib-row');
+        const name = el('span', 'ops-contrib-name');
+        name.textContent = contributor.country;
+        const bar = el('div', 'ops-contrib-bar');
+        const fill = el('i');
+        fill.style.width = `${Math.max(2, Math.min(100, Math.round(contributor.score)))}%`;
+        bar.appendChild(fill);
+        const value = el('span', 'ops-contrib-value');
+        value.textContent = String(Math.round(contributor.score));
+        row.append(name, bar, value);
+        list.appendChild(row);
+      }
+      content.append(heading, list);
+    }
+
+    const regionHeading = el('h3', 'ops-inspector-section-title');
+    regionHeading.textContent = 'Regions';
+    content.appendChild(regionHeading);
+    const regions = scores.cii
+      .filter((entry) => entry.level === 'elevated' || entry.level === 'high' || entry.level === 'critical')
+      .sort((a, b) => b.score - a.score);
+    if (regions.length === 0) {
+      const none = el('p', 'ops-inspector-copy');
+      none.textContent = 'No countries are currently at elevated instability or above.';
+      content.appendChild(none);
+    } else {
+      const list = el('div', 'ops-region-list');
+      for (const region of regions) {
+        const row = el('div', 'ops-region-row');
+        const name = el('span', 'ops-region-name');
+        name.textContent = region.name;
+        const level = el('span', 'ops-region-level');
+        level.dataset.level = region.level;
+        level.textContent = sentence(region.level);
+        const value = el('span', 'ops-contrib-value');
+        value.textContent = String(Math.round(region.score));
+        row.append(name, level, value);
+        list.appendChild(row);
+      }
+      content.appendChild(list);
+    }
+
+    const trendHeading = el('h3', 'ops-inspector-section-title');
+    trendHeading.textContent = 'Trend';
+    content.appendChild(trendHeading);
+    const history = this.loadEscalationHistory();
+    if (history.length >= 2) content.appendChild(buildSparkline(history));
+    const delta = el('p', 'ops-trend-delta');
+    const deltaLabel = el('span');
+    deltaLabel.textContent = 'Δ vs 24h ago: ';
+    const deltaValue = el('b');
+    const change = escalationDelta24h(history);
+    deltaValue.textContent = change === null ? 'n/a' : `${change > 0 ? '+' : ''}${change}`;
+    delta.append(deltaLabel, deltaValue);
+    content.appendChild(delta);
+    if (history.length < 2) {
+      const note = el('p', 'ops-inspector-copy');
+      note.textContent = 'Trend history accumulates in this browser as new snapshots arrive.';
+      content.appendChild(note);
+    }
+
+    this.openInspector();
+    this.syncFeedSelection();
+  }
+
+  private loadEscalationHistory(): EscalationSample[] {
+    if (this.escalationHistory) return this.escalationHistory;
+    let samples: EscalationSample[] = [];
+    try {
+      const raw = localStorage.getItem(ESCALATION_HISTORY_KEY);
+      const parsed: unknown = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(parsed)) {
+        samples = parsed
+          .filter((entry): entry is EscalationSample => (
+            typeof entry === 'object' && entry !== null
+            && Number.isFinite((entry as EscalationSample).t)
+            && Number.isFinite((entry as EscalationSample).score)
+          ))
+          .map((entry) => ({ t: entry.t, score: entry.score }));
+      }
+    } catch { /* corrupt or unavailable storage — start fresh */ }
+    samples.sort((a, b) => a.t - b.t);
+    this.escalationHistory = samples.slice(-ESCALATION_HISTORY_LIMIT);
+    return this.escalationHistory;
+  }
+
+  private recordEscalationHistory(score: number): void {
+    const history = this.loadEscalationHistory();
+    const now = Date.now();
+    const bucket = Math.floor(now / ESCALATION_BUCKET_MS);
+    const last = history[history.length - 1];
+    if (last && Math.floor(last.t / ESCALATION_BUCKET_MS) === bucket) {
+      last.t = now;
+      last.score = score;
+    } else {
+      history.push({ t: now, score });
+      if (history.length > ESCALATION_HISTORY_LIMIT) {
+        history.splice(0, history.length - ESCALATION_HISTORY_LIMIT);
+      }
+    }
+    try {
+      localStorage.setItem(ESCALATION_HISTORY_KEY, JSON.stringify(history));
+    } catch { /* quota exceeded — in-memory history still serves this session */ }
   }
 
   private beginInspector(kicker: string, titleText: string, metaText?: string): HTMLElement {
@@ -1097,6 +1933,9 @@ export class OpsShell {
       const fraction = risk ? Math.max(0, Math.min(1, risk.score / 100)) : 0;
       this.hudBar.style.transform = `scaleX(${fraction})`;
     }
+    if (risk && scores && scores.cii.length > 0) {
+      this.recordEscalationHistory(Math.round(risk.score));
+    }
 
     const militaryFlights = this.ctx.intelligenceCache.military?.flights?.length ?? 0;
     const ais = safeAisStatus();
@@ -1114,6 +1953,7 @@ export class OpsShell {
     if (this.countShips) setCount(this.countShips, VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : ais.vessels, 'ships');
     if (this.countEvents) setCount(this.countEvents, events, 'events');
     this.updateStatusLine();
+    this.checkWatchlistAlerts();
   }
 
   private toggleShortcuts(open: boolean): void {
@@ -1274,7 +2114,163 @@ function safeAisStatus(): { connected: boolean; vessels: number } {
   }
 }
 
+/** Restartable one-shot flash: CSS animates the class, JS only adds/removes it. */
+function flashElement(node: HTMLElement, className: string): void {
+  node.classList.remove(className);
+  requestAnimationFrame(() => node.classList.add(className));
+  window.setTimeout(() => {
+    if (node.isConnected) node.classList.remove(className);
+  }, FLASH_MS);
+}
+
+/** Score change vs ~24h ago; null until a sample exists within ±3h of that mark. */
+function escalationDelta24h(history: EscalationSample[]): number | null {
+  const latest = history[history.length - 1];
+  if (!latest) return null;
+  const target = Date.now() - 24 * 60 * 60_000;
+  let baseline: EscalationSample | null = null;
+  for (const sample of history) {
+    if (baseline === null || Math.abs(sample.t - target) < Math.abs(baseline.t - target)) {
+      baseline = sample;
+    }
+  }
+  if (!baseline || Math.abs(baseline.t - target) > 3 * 60 * 60_000) return null;
+  return Math.round(latest.score - baseline.score);
+}
+
+function buildSparkline(history: EscalationSample[]): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'ops-spark');
+  svg.setAttribute('viewBox', '0 0 240 40');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Escalation index history over the recorded window');
+  const first = history[0];
+  const last = history[history.length - 1];
+  if (!first || !last) return svg;
+  const timeSpan = Math.max(1, last.t - first.t);
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  for (const sample of history) {
+    min = Math.min(min, sample.score);
+    max = Math.max(max, sample.score);
+  }
+  const scoreSpan = Math.max(1, max - min);
+  const points = history
+    .map((sample) => {
+      const x = ((sample.t - first.t) / timeSpan) * 240;
+      const y = 36 - ((sample.score - min) / scoreSpan) * 32;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+  const line = document.createElementNS(SVG_NS, 'polyline');
+  line.setAttribute('points', points);
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke-width', '1.5');
+  line.setAttribute('vector-effect', 'non-scaling-stroke');
+  line.style.stroke = 'var(--ops-accent)';
+  svg.appendChild(line);
+  return svg;
+}
+
 function isEditableTarget(target: HTMLElement | null): boolean {
   if (!target) return false;
   return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+}
+
+// ---- watchlist helpers ----
+
+type RegionDisplayNamesCtor = new (
+  locales: string[],
+  options: { type: 'region' },
+) => { of(code: string): string | undefined };
+
+/** ISO2 → English region name via Intl.DisplayNames; falls back to the code. */
+function regionName(code: string): string {
+  const iso = code.trim().toUpperCase();
+  try {
+    const ctor = (Intl as unknown as { DisplayNames?: RegionDisplayNamesCtor }).DisplayNames;
+    const resolved = ctor ? new ctor(['en'], { type: 'region' }).of(iso) : undefined;
+    if (resolved && resolved.toUpperCase() !== iso) return resolved;
+  } catch {
+    // Intl.DisplayNames unavailable — the bare code still identifies the chip.
+  }
+  return iso;
+}
+
+const TOPIC_STOPWORDS = new Set([
+  'about', 'after', 'again', 'against', 'ahead', 'amid', 'among', 'been', 'before',
+  'being', 'between', 'breaking', 'could', 'down', 'during', 'first', 'former',
+  'from', 'have', 'here', 'into', 'just', 'latest', 'live', 'more', 'near', 'news',
+  'over', 'report', 'reported', 'reportedly', 'reports', 'said', 'says', 'should',
+  'some', 'than', 'that', 'their', 'them', 'then', 'there', 'these', 'they', 'this',
+  'those', 'today', 'under', 'update', 'updates', 'were', 'what', 'when',
+  'where', 'which', 'while', 'will', 'with', 'would', 'year', 'years',
+]);
+
+/**
+ * Dumb, predictable topic derivation for the "Watch topic" action: prefer the
+ * item's resolved location name, otherwise the first title token of 4+ chars
+ * that is not a stopword.
+ */
+function deriveWatchTopic(item: OpsFeedItem): string | null {
+  const location = item.locationName?.trim().toLowerCase();
+  if (location) return location;
+  const token = item.title
+    .toLowerCase()
+    .split(/[^a-z0-9-]+/)
+    .find((word) => word.length >= 4 && !TOPIC_STOPWORDS.has(word));
+  return token ?? null;
+}
+
+function syncWatchButton(button: HTMLButtonElement, kind: 'country' | 'topic', value: string): void {
+  const watched = isWatched(kind, value);
+  if (kind === 'country') {
+    button.textContent = watched ? 'Unwatch country' : 'Watch country';
+  } else {
+    button.textContent = watched ? `Unwatch "${value}"` : `Watch "${value}"`;
+  }
+  button.setAttribute('aria-pressed', watched ? 'true' : 'false');
+}
+
+/** Text match against a feed item: country by resolved name, topic verbatim. */
+function watchEntryMatches(item: OpsFeedItem, kind: 'country' | 'topic', value: string): boolean {
+  const haystack = `${item.locationName ?? ''} ${item.title}`.toLowerCase();
+  if (kind === 'topic') return haystack.includes(value.toLowerCase());
+  const name = regionName(value).toLowerCase();
+  return name.length > 0 && haystack.includes(name);
+}
+
+function matchesWatchlist(item: OpsFeedItem, list: Watchlist): boolean {
+  return list.countries.some((code) => watchEntryMatches(item, 'country', code))
+    || list.topics.some((topic) => watchEntryMatches(item, 'topic', topic));
+}
+
+/** Title-only browser notification; never throws (platforms without page-scope Notification). */
+function fireNotification(title: string, body: string): void {
+  try {
+    new Notification(title, { body });
+  } catch {
+    // Some platforms (e.g. Android Chrome) require a service-worker registration.
+  }
+}
+
+function advisoryBadgeModifier(level: string): string {
+  if (level === 'do-not-travel') return 'level-critical';
+  if (level === 'reconsider') return 'level-high';
+  if (level === 'caution') return 'level-medium';
+  return 'location';
+}
+
+function formatCompactCount(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)}K`;
+  return String(value);
+}
+
+function diffLine(kind: 'added' | 'removed' | 'changed', text: string): HTMLElement {
+  const line = el('div', 'ops-diff-line');
+  line.dataset.kind = kind;
+  line.textContent = text;
+  return line;
 }

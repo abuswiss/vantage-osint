@@ -68,16 +68,17 @@ function buildChart(points: FaoFoodPricePoint[]): string {
     const v = yMin + ((yMax - yMin) / 3) * i;
     const y = yPos(v, yMin, yMax);
     return `
-      <line x1="${ML}" y1="${y.toFixed(1)}" x2="${SVG_W - MR}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
-      <text x="${(ML - 3).toFixed(0)}" y="${y.toFixed(1)}" text-anchor="end" fill="rgba(255,255,255,0.35)" font-size="8" dominant-baseline="middle">${v.toFixed(0)}</text>`;
+      <line x1="${ML}" y1="${y.toFixed(1)}" x2="${SVG_W - MR}" y2="${y.toFixed(1)}" stroke="var(--border-subtle)" stroke-width="1"/>
+      <text x="${(ML - 3).toFixed(0)}" y="${y.toFixed(1)}" text-anchor="end" fill="var(--text-dim)" font-size="11" dominant-baseline="middle">${v.toFixed(0)}</text>`;
   }).join('');
 
-  // X-axis labels (show every 3rd month to avoid crowding)
+  // X-axis labels — cadence keeps at most ~6 labels so the 11px type never crowds
+  const labelStep = Math.max(3, Math.ceil(points.length / 6));
   const xAxis = points.map((p, i) => {
-    if (i % 3 !== 0 && i !== points.length - 1) return '';
+    if (i % labelStep !== 0 && i !== points.length - 1) return '';
     const x = xPos(i, points.length);
     const label = p.date;
-    return `<text x="${x.toFixed(1)}" y="${SVG_H - MB + 12}" text-anchor="middle" fill="rgba(255,255,255,0.4)" font-size="7">${escapeHtml(label)}</text>`;
+    return `<text x="${x.toFixed(1)}" y="${SVG_H - MB + 14}" text-anchor="middle" fill="var(--text-dim)" font-size="11">${escapeHtml(label)}</text>`;
   }).join('');
 
   // Series lines

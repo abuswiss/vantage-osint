@@ -1,5 +1,6 @@
 import type { MapLayers } from '@/types';
 import { CURATED_COUNTRIES } from '@/config/countries';
+import { LAYER_SYNONYMS } from '@/config/map-layer-definitions';
 // boundary-ignore: commands are built lazily at runtime via getAllCommands()
 import { getCurrentLanguage, t } from '@/services/i18n';
 import { toFlagEmoji } from '@/utils/country-flag';
@@ -221,12 +222,14 @@ export const COMMANDS: Command[] = [
   { id: 'view:resilience', keywords: ['resilience', 'resilience score', 'baseline', 'stress', 'country resilience'], label: 'Toggle resilience score', icon: '\u{1F6E1}\uFE0F', category: 'view' },
   { id: 'view:route-explorer', keywords: ['route', 'explorer', 'ship', 'shipping', 'freight', 'cargo', 'lane', 'hs code', 'hs2', 'import', 'export', 'plan a shipment'], label: 'Route Explorer \u2014 plan a shipment', icon: '\u{1F6A2}', category: 'view' },
 
-  // Time range
-  { id: 'time:1h', keywords: ['1h', 'last hour', '1 hour'], label: 'Show events from last hour', icon: '\u{1F550}', category: 'actions' },
-  { id: 'time:6h', keywords: ['6h', 'last 6 hours', '6 hours'], label: 'Show events from last 6 hours', icon: '\u{1F555}', category: 'actions' },
-  { id: 'time:24h', keywords: ['24h', 'last 24 hours', 'today'], label: 'Show events from last 24 hours', icon: '\u{1F55B}', category: 'actions' },
-  { id: 'time:48h', keywords: ['48h', '2 days', 'last 2 days'], label: 'Show events from last 48 hours', icon: '\u{1F4C5}', category: 'actions' },
-  { id: 'time:7d', keywords: ['7d', 'week', 'last week', '7 days'], label: 'Show events from last 7 days', icon: '\u{1F5D3}\uFE0F', category: 'actions' },
+  // Time range \u2014 every entry carries the generic 'time'/'time range' keywords so
+  // typing "time" in CMD+K lists all range switches at once.
+  { id: 'time:1h', keywords: ['1h', 'last hour', '1 hour', 'time', 'time range'], label: 'Show events from last hour', icon: '\u{1F550}', category: 'actions' },
+  { id: 'time:6h', keywords: ['6h', 'last 6 hours', '6 hours', 'time', 'time range'], label: 'Show events from last 6 hours', icon: '\u{1F555}', category: 'actions' },
+  { id: 'time:24h', keywords: ['24h', 'last 24 hours', 'today', 'last day', 'time', 'time range'], label: 'Show events from last 24 hours', icon: '\u{1F55B}', category: 'actions' },
+  { id: 'time:48h', keywords: ['48h', '2 days', 'last 2 days', 'time', 'time range'], label: 'Show events from last 48 hours', icon: '\u{1F4C5}', category: 'actions' },
+  { id: 'time:7d', keywords: ['7d', 'week', 'last week', '7 days', 'time', 'time range'], label: 'Show events from last 7 days', icon: '\u{1F5D3}\uFE0F', category: 'actions' },
+  { id: 'time:all', keywords: ['all time', 'no time filter', 'time', 'time range'], label: 'Show events from all time', icon: '\u{1F551}', category: 'actions' },
 ];
 
 // All ISO 3166-1 alpha-2 codes — Intl.DisplayNames resolves human-readable names at runtime
@@ -284,6 +287,26 @@ function injectLocalizedKeywords(commands: Command[]): Command[] {
   });
 }
 
+/**
+ * Folds the map-layer search synonyms (LAYER_SYNONYMS — the same aliases the
+ * Layers popover search box honors) into each `layer:*` command's keywords so
+ * CMD+K matches e.g. "riot" → protests, "nuke" → nuclear.
+ */
+function injectLayerSynonyms(commands: Command[]): Command[] {
+  return commands.map(cmd => {
+    if (!cmd.id.startsWith('layer:')) return cmd;
+    const action = cmd.id.slice(6);
+    const layerKey = (LAYER_KEY_MAP[action] || action) as keyof MapLayers;
+    const extra: string[] = [];
+    for (const [alias, keys] of Object.entries(LAYER_SYNONYMS)) {
+      if (keys.includes(layerKey) && !cmd.keywords.includes(alias) && !extra.includes(alias)) {
+        extra.push(alias);
+      }
+    }
+    return extra.length > 0 ? { ...cmd, keywords: [...cmd.keywords, ...extra] } : cmd;
+  });
+}
+
 function buildCountryCommands(): Command[] {
   const lang = getCurrentLanguage();
   if (lang === _cachedLang && _cachedCountryCommands.length > 0) {
@@ -318,7 +341,7 @@ function buildCountryCommands(): Command[] {
 
   _cachedLang = lang;
   _cachedCountryCommands = result;
-  _cachedAllCommands = [...injectLocalizedKeywords(COMMANDS), ...result];
+  _cachedAllCommands = [...injectLayerSynonyms(injectLocalizedKeywords(COMMANDS)), ...result];
   return result;
 }
 

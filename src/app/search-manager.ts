@@ -45,6 +45,14 @@ export interface SearchManagerCallbacks {
   openCountryBriefByCode: (code: string, country: string) => void;
   /** Enables a currently-disabled panel (CMD+K "Add"). Returns false if blocked (unknown / free-tier cap). */
   enablePanel: (panelId: string) => boolean;
+  /**
+   * Applies a single layer toggle through the same funnel the Layers popover /
+   * ops-shell chips use (event-handlers.applyMapLayerChange: mutate + persist +
+   * URL sync + freshness + data load + opsShell.syncLayerChips), then pushes the
+   * resulting layer set into the renderer. Gating (variant / renderer /
+   * entitlement) happens in handleCommand before this is called.
+   */
+  applyMapLayerChange: (layer: keyof MapLayers, enabled: boolean) => void;
 }
 
 export class SearchManager implements AppModule {
@@ -233,6 +241,12 @@ export class SearchManager implements AppModule {
         isDeckGL,
         !VANTAGE_PUBLIC_MODE && hasPremiumAccess(getAuthState()),
       );
+    });
+    // Live layer state for CMD+K rows: lets the palette render
+    // "Toggle <layer> — On/Off" against the current map state.
+    this.ctx.searchModal.setLayerStateFn((layerKey) => {
+      const key = (LAYER_KEY_MAP[layerKey] || layerKey) as keyof MapLayers;
+      return key in this.ctx.mapLayers ? this.ctx.mapLayers[key] : undefined;
     });
     this.ctx.searchModal.setOnSelect((result) => this.handleSearchResult(result));
     this.ctx.searchModal.setOnCommand((cmd) => this.handleCommand(cmd));
@@ -543,6 +557,9 @@ export class SearchManager implements AppModule {
         }
         saveToStorage(STORAGE_KEYS.mapLayers, this.ctx.mapLayers);
         this.ctx.map?.setLayers(this.ctx.mapLayers);
+        // Presets mutate ctx.mapLayers in bulk (not via the per-layer funnel),
+        // so reflect the new state into the ops-shell layer chips explicitly.
+        this.ctx.opsShell?.syncLayerChips();
         break;
       }
 
@@ -570,13 +587,9 @@ export class SearchManager implements AppModule {
         if (newValue && layerKey === 'resilienceScore' && !this.ctx.map?.isDeckGLActive?.()) {
           newValue = false;
         }
-        this.ctx.mapLayers[layerKey] = newValue;
-        saveToStorage(STORAGE_KEYS.mapLayers, this.ctx.mapLayers);
-        if (newValue) {
-          this.ctx.map?.enableLayer(layerKey);
-        } else {
-          this.ctx.map?.setLayers(this.ctx.mapLayers);
-        }
+        // Same funnel as the Layers popover / ops chips (persist, freshness,
+        // data load, syncLayerChips) — wired from App.ts.
+        this.callbacks.applyMapLayerChange(layerKey, newValue);
         break;
       }
 
@@ -635,13 +648,7 @@ export class SearchManager implements AppModule {
           )) break;
           let newValue = !currentValue;
           if (newValue && !this.ctx.map?.isDeckGLActive?.()) newValue = false;
-          this.ctx.mapLayers[layerKey] = newValue;
-          saveToStorage(STORAGE_KEYS.mapLayers, this.ctx.mapLayers);
-          if (newValue) {
-            this.ctx.map?.enableLayer(layerKey);
-          } else {
-            this.ctx.map?.setLayers(this.ctx.mapLayers);
-          }
+          this.callbacks.applyMapLayerChange(layerKey, newValue);
         } else if (action === 'route-explorer') {
           void import('@/components/RouteExplorer/RouteExplorer').then((m) => {
             const explorer = m.getRouteExplorer();
@@ -718,6 +725,10 @@ export class SearchManager implements AppModule {
   }
 
   private scrollToPanel(panelId: string): void {
+    // Synchronous, matches BreakingNewsBanner: lets the mobile category nav
+    // clear a filter that would leave the target display:none (scrollIntoView
+    // would silently no-op on a hidden panel).
+    window.dispatchEvent(new CustomEvent('wm:reveal-panel', { detail: { panelId } }));
     const panel = document.querySelector(`[data-panel="${panelId}"]`);
     if (panel) {
       panel.scrollIntoView({ behavior: 'smooth', block: 'center' });

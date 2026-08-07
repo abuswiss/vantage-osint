@@ -168,6 +168,12 @@ export class SearchModal {
    * not set (back-compat for any instantiator that doesn't wire it).
    */
   private layerExecutableFn: (layerKey: string) => boolean = () => true;
+  /**
+   * Caller-supplied lookup for a layer's current on/off state so `layer:*`
+   * command rows can render "— On/Off". Returns undefined for unknown keys
+   * (state suffix omitted). Wired from SearchManager, which owns ctx.mapLayers.
+   */
+  private layerStateFn: ((layerKey: string) => boolean | undefined) | null = null;
   private isMobile: boolean;
   /** When true, results area shows the full command list (opt-in). Sourced from getAllCommands(); no separate list to maintain. */
   private showingAllCommands = false;
@@ -236,6 +242,22 @@ export class SearchModal {
   public setLayerExecutableFn(fn: (layerKey: string) => boolean): void {
     this.layerExecutableFn = fn;
     this.updateIndexMetrics();
+  }
+
+  public setLayerStateFn(fn: (layerKey: string) => boolean | undefined): void {
+    this.layerStateFn = fn;
+  }
+
+  /** Command label plus a live "— On/Off" suffix for layer toggles. */
+  private commandDisplayLabel(cmd: Command): string {
+    const label = resolveCommandLabel(cmd);
+    if (cmd.id.startsWith('layer:') && this.layerStateFn) {
+      const state = this.layerStateFn(cmd.id.slice(6));
+      if (typeof state === 'boolean') {
+        return `${label} — ${state ? t('modals.search.layerOn', { defaultValue: 'On' }) : t('modals.search.layerOff', { defaultValue: 'Off' })}`;
+      }
+    }
+    return label;
   }
 
   public open(replaceOverlayId?: OverlayId): void {
@@ -602,7 +624,10 @@ export class SearchModal {
         const subtitleLower = item.subtitle?.toLowerCase() || '';
 
         if (titleLower.includes(query) || subtitleLower.includes(query)) {
-          const isPrefix = titleLower.startsWith(query) || subtitleLower.startsWith(query);
+          // Strip leading emoji/flag glyphs so e.g. "🇷🇺 Russia" counts as a
+          // prefix match for "russia" (drives country promotion below).
+          const titleNorm = titleLower.replace(/^[^a-z0-9]+/, '');
+          const isPrefix = titleLower.startsWith(query) || titleNorm.startsWith(query) || subtitleLower.startsWith(query);
           const result = {
             type: source.type,
             id: item.id,
@@ -630,11 +655,25 @@ export class SearchModal {
 
     const maxResults = this.isMobile ? 5 : MAX_RESULTS;
     this.results = [];
+
+    // A bare country name should surface the country above news/markets:
+    // promote exact/prefix-matched countries to the head of the list (right
+    // after commands). Substring-only country matches keep their old slot so
+    // e.g. "us" doesn't push Russia/Belarus above actual news hits.
+    const countryLimit = this.isMobile ? 2 : 4;
+    const countryMatches = (byType.get('country') || []).sort((a, b) => b._score - a._score);
+    const promotedCountries = countryMatches.filter(m => m._score >= 2).slice(0, countryLimit);
+    if (promotedCountries.length > 0) {
+      byType.set('country', countryMatches.filter(m => m._score < 2));
+      this.results.push(...promotedCountries);
+    }
+
     for (const type of priority) {
       const matches = byType.get(type) || [];
       matches.sort((a, b) => b._score - a._score);
       const limit = this.isMobile ? 2 : (type === 'news' ? 6 : type === 'country' ? 4 : 3);
-      this.results.push(...matches.slice(0, limit));
+      const remaining = type === 'country' ? Math.max(0, limit - promotedCountries.length) : limit;
+      this.results.push(...matches.slice(0, remaining));
       if (this.results.length >= maxResults) break;
     }
     this.results = this.results.slice(0, maxResults);
@@ -693,7 +732,38 @@ export class SearchModal {
       this.resultsList?.appendChild(item);
     });
 
+    this.appendCommandHints();
     this.appendSeeAllCommandsLink();
+  }
+
+  /**
+   * Small command hint row for the empty-query state: a few example commands
+   * (layer toggle, time range, country, panel) the operator can tap to run.
+   * Rendered as chips outside the .search-result-item flow so keyboard
+   * selection over recents stays index-aligned. textContent/createElement only.
+   */
+  private appendCommandHints(): void {
+    if (!this.resultsList) return;
+    const examples = ['toggle bases', '24h', 'ukraine', 'markets'];
+
+    const row = document.createElement('div');
+    row.className = 'search-hint-row';
+
+    const label = document.createElement('span');
+    label.className = 'search-hint-label';
+    label.textContent = t('modals.search.commands', { defaultValue: 'Commands' });
+    row.appendChild(label);
+
+    for (const example of examples) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'search-chip';
+      chip.textContent = example;
+      chip.addEventListener('click', () => this.applyProgrammaticQuery(example));
+      row.appendChild(chip);
+    }
+
+    this.resultsList.appendChild(row);
   }
 
   private renderEmpty(): void {
@@ -851,12 +921,12 @@ export class SearchModal {
       for (const cmd of list) {
         const addable = this.isAddablePanel(cmd);
         const addLabel = t('modals.search.addPanel', { defaultValue: 'Add' });
-        const ariaLabel = addable ? ` aria-label="${escapeHtml(`${addLabel}: ${resolveCommandLabel(cmd)}`)}"` : '';
+        const ariaLabel = addable ? ` aria-label="${escapeHtml(`${addLabel}: ${this.commandDisplayLabel(cmd)}`)}"` : '';
         html += `
           <div class="search-result-item command-item ${addable ? 'command-addable' : ''}" data-command="${escapeHtml(cmd.id)}"${ariaLabel}>
             <span class="search-result-icon">${escapeHtml(cmd.icon)}</span>
             <div class="search-result-content">
-              <div class="search-result-title">${escapeHtml(resolveCommandLabel(cmd))}</div>
+              <div class="search-result-title">${escapeHtml(this.commandDisplayLabel(cmd))}</div>
             </div>
             ${addable ? `<span class="search-result-type search-result-type-add">${escapeHtml(addLabel)}</span>` : ''}
           </div>`;
@@ -952,12 +1022,12 @@ export class SearchModal {
         const addable = this.isAddablePanel(command);
         const addLabel = t('modals.search.addPanel', { defaultValue: 'Add' });
         const typeLabel = addable ? addLabel : resolveCategoryLabel(command);
-        const ariaLabel = addable ? ` aria-label="${escapeHtml(`${addLabel}: ${resolveCommandLabel(command)}`)}"` : '';
+        const ariaLabel = addable ? ` aria-label="${escapeHtml(`${addLabel}: ${this.commandDisplayLabel(command)}`)}"` : '';
         html += `
           <div class="search-result-item command-item ${addable ? 'command-addable' : ''} ${globalIndex === this.selectedIndex ? 'selected' : ''}" data-index="${globalIndex}" data-command="${escapeHtml(command.id)}"${ariaLabel}>
             <span class="search-result-icon">${escapeHtml(command.icon)}</span>
             <div class="search-result-content">
-              <div class="search-result-title">${escapeHtml(resolveCommandLabel(command))}</div>
+              <div class="search-result-title">${escapeHtml(this.commandDisplayLabel(command))}</div>
             </div>
             <span class="search-result-type${addable ? ' search-result-type-add' : ''}">${escapeHtml(typeLabel)}</span>
           </div>`;

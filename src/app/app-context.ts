@@ -77,6 +77,11 @@ export interface AppContext {
       subtitle?: string;
       type: 'market' | 'prediction';
     }): void;
+    inspectCountry(
+      code: string,
+      name: string,
+      intel: import('@/app/ops-shell').OpsCountryIntel,
+    ): void;
     destroy(): void;
   } | null;
   readonly isMobile: boolean;

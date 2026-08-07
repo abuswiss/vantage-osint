@@ -1,6 +1,7 @@
 import { acquireLockSafely, releaseLock } from '../scripts/_seed-utils.mjs';
 import { seedInsightsOnce } from '../scripts/seed-insights.mjs';
 import { timingSafeEqualSecret } from './_crypto.js';
+import { redisPipeline } from './_upstash-json.js';
 
 export const config = { maxDuration: 300 };
 
@@ -218,6 +219,79 @@ export function verifyInsightsSnapshot(snapshot, freshAfterMs, nowMs) {
   };
 }
 
+// Sorted-set archive of verified world-brief snapshots, consumed by
+// api/brief-history.js (which duplicates this key on purpose: importing this
+// module there would drag the seed scripts into an edge bundle).
+// Member = trimmed JSON snapshot, score = Date.parse(generatedAt).
+const INSIGHTS_HISTORY_KEY = 'news:insights:history:v1';
+const INSIGHTS_HISTORY_MAX_ENTRIES = 400;
+
+/** Trim a verified insights payload down to what brief history/diffs need. */
+export function buildBriefArchiveEntry(payload) {
+  return {
+    generatedAt: payload.generatedAt,
+    worldBrief: payload.worldBrief,
+    ...(Array.isArray(payload.briefStoryLines) && payload.briefStoryLines.length > 0
+      ? { briefStoryLines: payload.briefStoryLines.map((line) => (
+        typeof line === 'string' ? line : { n: line?.n ?? null, text: line?.text ?? '' }
+      )) }
+      : {}),
+    worldBriefSources: (Array.isArray(payload.worldBriefSources) ? payload.worldBriefSources : [])
+      .map((source, i) => ({
+        index: Number.isFinite(source?.index) ? source.index : i + 1,
+        source: source?.source ?? '',
+        title: source?.title ?? '',
+        url: source?.url ?? '',
+      })),
+    clusterCount: Number.isFinite(payload.clusterCount) ? payload.clusterCount : null,
+    ...(payload.provenance && typeof payload.provenance === 'object'
+      ? { provenance: payload.provenance }
+      : {}),
+  };
+}
+
+/**
+ * Best-effort archive of a verified snapshot into the history sorted set.
+ * Dedupes on generatedAt (skips when the newest archived score matches) and
+ * caps the set at INSIGHTS_HISTORY_MAX_ENTRIES by dropping the oldest.
+ * MUST never throw: an archive failure cannot be allowed to fail the refresh.
+ */
+export async function archiveBriefSnapshot(payload, pipeline = redisPipeline) {
+  try {
+    const generatedAtMs = Date.parse(payload?.generatedAt);
+    if (!Number.isFinite(generatedAtMs)) {
+      console.warn('[vantage-refresh] brief archive skipped: snapshot has no parseable generatedAt');
+      return { archived: false, reason: 'invalid_generated_at' };
+    }
+
+    const latest = await pipeline([['ZRANGE', INSIGHTS_HISTORY_KEY, '-1', '-1', 'WITHSCORES']]);
+    if (!latest) {
+      console.warn('[vantage-refresh] brief archive skipped: Redis pipeline unavailable');
+      return { archived: false, reason: 'redis_unavailable' };
+    }
+    const latestEntry = latest[0]?.result;
+    const latestScore = Array.isArray(latestEntry) && latestEntry.length >= 2
+      ? Number(latestEntry[1])
+      : null;
+    if (latestScore === generatedAtMs) return { archived: false, reason: 'duplicate' };
+
+    const member = JSON.stringify(buildBriefArchiveEntry(payload));
+    const results = await pipeline([
+      ['ZADD', INSIGHTS_HISTORY_KEY, String(generatedAtMs), member],
+      // Keep only the newest INSIGHTS_HISTORY_MAX_ENTRIES members.
+      ['ZREMRANGEBYRANK', INSIGHTS_HISTORY_KEY, '0', String(-(INSIGHTS_HISTORY_MAX_ENTRIES + 1))],
+    ]);
+    if (!results || results.some((entry) => entry && Object.prototype.hasOwnProperty.call(entry, 'error'))) {
+      console.warn('[vantage-refresh] brief archive write failed');
+      return { archived: false, reason: 'write_failed' };
+    }
+    return { archived: true };
+  } catch (error) {
+    console.warn('[vantage-refresh] brief archive failed', error);
+    return { archived: false, reason: 'exception' };
+  }
+}
+
 export async function runVantageRefresh(dependencies = {}) {
   const env = dependencies.env || process.env;
   const fetchFn = dependencies.fetch || globalThis.fetch;
@@ -268,6 +342,9 @@ export async function runVantageRefresh(dependencies = {}) {
     }
     if (!insights) throw new Error('Cited insights did not publish a fresh grounded snapshot');
     if (now() > deadlineAt) throw new Error('Refresh exceeded its execution deadline');
+
+    // Best-effort history archive of the verified snapshot; never fails the refresh.
+    await archiveBriefSnapshot(snapshot?.payload, dependencies.pipeline || redisPipeline);
 
     return {
       status: 'ok',
