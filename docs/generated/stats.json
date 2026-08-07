@@ -17,8 +17,8 @@
   },
   "variantCount": 6,
   "componentTopLevelTsFiles": 181,
-  "serviceTopLevelEntries": 221,
-  "apiEndpointEntries": 91,
+  "serviceTopLevelEntries": 222,
+  "apiEndpointEntries": 92,
   "panelClasses": 107,
   "protoFiles": 290,
   "protoServices": 35,
@@ -80,9 +80,10 @@
     "test-linux-app.yml",
     "test.yml",
     "typecheck.yml",
-    "umami-storage-monitor.yml"
+    "umami-storage-monitor.yml",
+    "vantage-intelligence-refresh.yml"
   ],
-  "workflowCount": 26,
+  "workflowCount": 27,
   "freshnessSources": 35,
   "freshnessRequiredForRisk": 2,
   "feedDefinitions": 297,

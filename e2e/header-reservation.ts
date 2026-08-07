@@ -23,6 +23,13 @@ const expectBoxesToMatch = (actual: Box, expected: Box, message: string): void =
 };
 
 export const assertSignedOutAuthHydrationKeepsHeaderStable = async (page: Page): Promise<void> => {
+  const opsShell = page.locator('.ops-shell');
+  if (await opsShell.isVisible()) {
+    await expect(opsShell).toBeVisible();
+    await expect(page.locator('.header')).toBeHidden();
+    return;
+  }
+
   await page.locator('.header').waitFor();
   const result = await page.evaluate(() => {
     const header = document.querySelector<HTMLElement>('.header');

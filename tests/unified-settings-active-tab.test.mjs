@@ -75,6 +75,7 @@ function extractOpen() {
     'track',
     'isMobileDevice',
     'overlayHistory',
+    'VANTAGE_PUBLIC_MODE',
     `${js}\nreturn __UnifiedSettingsOpenHarness;`,
   );
 }
@@ -92,6 +93,7 @@ const Harness = extractOpen()(
   () => {},
   () => false,
   { open() {}, replace() {} },
+  false,
 );
 
 function makeInstance(initialTab = 'settings') {

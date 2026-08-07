@@ -61,6 +61,8 @@ export const EXCLUDED_DESKTOP_BUILD_ENV = {
   VITE_HORMUZ_CRISIS_START_DATE: 'editorial re-pin override; default pinned in code',
   VITE_TELEGRAM_BOT_USERNAME: "defaults to 'WorldMonitorBot' in code",
   VITE_E2E: 'test-harness flag, never set in real builds',
+  VITE_VANTAGE_PUBLIC_MODE: 'Vantage web product policy; the upstream desktop app retains its account and provider model',
+  VITE_VANTAGE_RELAY_ENABLED: 'Vantage web relay availability flag; desktop uses its own relay and keyring gates',
 };
 
 // Workflow files are discovered rather than hand-listed so a new release or

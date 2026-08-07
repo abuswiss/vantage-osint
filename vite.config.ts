@@ -6,7 +6,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import { brotliCompress } from 'zlib';
 import { promisify } from 'util';
 import pkg from './package.json';
-import { VARIANT_META, type VariantMeta } from './src/config/variant-meta';
+import { VANTAGE_PUBLIC_META, VARIANT_META, type VariantMeta } from './src/config/variant-meta';
 // Single source of truth for the RSS proxy allowlist — the dev-server proxy
 // below reuses the SAME www-tolerant predicate the Edge handler enforces
 // (api/rss-proxy.js) so dev and prod agree on allow/deny. Previously a
@@ -837,14 +837,7 @@ export default defineConfig(({ mode }) => {
   const publicVantageMode = ['1', 'true'].includes((process.env.VITE_VANTAGE_PUBLIC_MODE || '').toLowerCase());
   const baseMeta = VARIANT_META[activeVariant] || VARIANT_META.full;
   const activeMeta: VariantMeta = publicVantageMode
-    ? {
-        ...baseMeta,
-        title: 'Vantage - Real-Time Global Intelligence Dashboard',
-        description: 'Open-source global intelligence with live news, map signals, risk context, and citation-backed AI synthesis in one public view.',
-        url: 'https://vantage-osint.vercel.app/',
-        siteName: 'Vantage',
-        shortName: 'Vantage',
-      }
+    ? VANTAGE_PUBLIC_META
     : baseMeta;
 
   return {

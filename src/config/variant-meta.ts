@@ -40,3 +40,17 @@ export const VARIANT_META: { full: VariantMeta; [k: string]: VariantMeta } = {
     ],
   },
 };
+
+/**
+ * Public metadata for the Vantage fork. Keep this beside the upstream variant
+ * metadata so source index.html, Vite's HTML transform, and the PWA manifest
+ * all share one contract.
+ */
+export const VANTAGE_PUBLIC_META: VariantMeta = {
+  ...VARIANT_META.full,
+  title: 'Vantage - Real-Time Global Intelligence Dashboard',
+  description: 'Open-source global intelligence with live news, map signals, risk context, and citation-backed AI synthesis in one public view.',
+  url: 'https://vantage-osint.vercel.app/',
+  siteName: 'Vantage',
+  shortName: 'Vantage',
+};

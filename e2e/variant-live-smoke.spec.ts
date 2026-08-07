@@ -144,6 +144,13 @@ test.describe('variant live reliability smoke', () => {
 
     await page.waitForTimeout(10_000);
     await assertSignedOutAuthHydrationKeepsHeaderStable(page);
+    const opsShell = page.locator('.ops-shell');
+    if (await opsShell.isVisible()) {
+      await expect(opsShell).toBeVisible();
+      await expect(page.locator('.ops-top')).toBeVisible();
+      await expect(page.locator('.ops-top')).not.toContainText(/sign in|create account|upgrade|subscribe/i);
+      await expect(opsShell.locator('#authWidgetMount, .auth-header-widget')).toHaveCount(0);
+    }
 
     const panelDiagnostics = await page.evaluate((ids) => {
       const expected = new Set(ids);
@@ -183,9 +190,10 @@ test.describe('variant live reliability smoke', () => {
         };
       });
 
-      const missingExpected = ids.filter(
-        (id) => !panels.some((panel) => panel.id === id && panel.visible)
-      );
+      const opsMode = document.body.classList.contains('ops-mode');
+      const missingExpected = ids.filter((id) => !panels.some(
+        (panel) => panel.id === id && (opsMode || panel.visible)
+      ));
       const panelStates: PanelDiagnostic[] = [];
       for (const panel of panels) {
         if (!panel.visible) continue;
@@ -229,6 +237,7 @@ test.describe('variant live reliability smoke', () => {
 
       return {
         activeVariant: document.documentElement.dataset.variant || 'full',
+        opsMode,
         missingExpected,
         panelCount: panels.filter((panel) => panel.visible).length,
         panelStates,
@@ -255,6 +264,7 @@ test.describe('variant live reliability smoke', () => {
       {
         variant,
         activeVariant: panelDiagnostics.activeVariant,
+        opsMode: panelDiagnostics.opsMode,
         unexpected401,
         api401s: apiResponses.filter((response) => response.status === 401),
         responseCaptureErrors: responseCaptureErrors.slice(0, 20),
