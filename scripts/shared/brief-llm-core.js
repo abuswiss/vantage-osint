@@ -643,6 +643,29 @@ function normalizeSequence(sequence) {
 }
 
 /**
+ * Models sometimes compress a grounded relationship such as "US and China"
+ * into one hyphenated proper-noun token ("US-China"). The ordinary
+ * contiguous-sequence check correctly rejects that token because the exact
+ * compound is absent from the headline. Accept it only when every meaningful
+ * component is independently present in the cited headline text.
+ *
+ * Requiring every component to contain at least two characters preserves the
+ * stricter behavior for names such as "Mar-a-Lago": they still need an exact
+ * match and cannot be reconstructed from unrelated words.
+ */
+function groundedHyphenatedComponents(summarySeq, headlineSequences) {
+  const components = summarySeq
+    .flatMap((token) => token.split(/[-–—]/u))
+    .filter(Boolean)
+    .map(normalizeToken);
+  if (components.length <= summarySeq.length || components.some((component) => component.length < 2)) {
+    return false;
+  }
+  return components.every((component) =>
+    headlineSequences.some((headlineSeq) => headlineSeq.includes(component)));
+}
+
+/**
  * Validate that every proper noun in `summary` has a matching
  * contiguous subsequence in `headline` (after acronym + demonym
  * normalization). The validator catches LLM-introduced invention.
@@ -693,6 +716,9 @@ export function validateNoHallucinatedProperNouns(summary, headline) {
         found = true;
         break;
       }
+    }
+    if (!found && groundedHyphenatedComponents(summarySeq, headlineSequences)) {
+      found = true;
     }
     if (!found) {
       return { ok: false, hallucinated: summarySeq };

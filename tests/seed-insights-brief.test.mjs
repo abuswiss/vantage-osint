@@ -5,6 +5,7 @@ import {
   briefSystemPrompt,
   briefUserPrompt,
   composeSynthesizedBrief,
+  splitCitedLeadSentences,
 } from '../scripts/_insights-brief.mjs';
 
 describe('pickBriefCluster', () => {
@@ -113,6 +114,22 @@ describe('briefUserPrompt', () => {
   });
 });
 
+describe('splitCitedLeadSentences', () => {
+  it('keeps citations after punctuation attached to the preceding sentence', () => {
+    assert.deepEqual(splitCitedLeadSentences('Claim one.[1] Claim two.[2]'), [
+      'Claim one.[1]',
+      'Claim two.[2]',
+    ]);
+  });
+
+  it('keeps citations after a closing quote attached to the preceding sentence', () => {
+    assert.deepEqual(splitCitedLeadSentences('Claim one.\u201d [1] Claim two. [2]'), [
+      'Claim one.\u201d [1]',
+      'Claim two. [2]',
+    ]);
+  });
+});
+
 // #5947 (second failure mode): the lead's own sentence splitter used a bare
 // /(?<=[.!?])\s+/, so a dotted acronym broke the lead mid-clause. Production
 // leads citing "U.S. embassies" split into a fragment ending at "U.S.", which
@@ -160,6 +177,17 @@ describe('composeSynthesizedBrief lead sentence boundaries (#5947)', () => {
       ],
     });
     assert.equal(composeSynthesizedBrief(uncited, topStories, { validatorMode: 'enforce' }), null);
+  });
+
+  it('rejects post-punctuation citations that misattribute the next sentence', () => {
+    const misattributed = JSON.stringify({
+      lead: 'The GCC condemned Iranian attacks on Kuwait.[1] U.S. embassies urged citizens to leave.[1]',
+      lines: [
+        { n: 1, text: 'GCC condemns Iranian attacks on Kuwait [1]' },
+        { n: 2, text: 'U.S. embassies urge citizens to consider leaving the region [2]' },
+      ],
+    });
+    assert.equal(composeSynthesizedBrief(misattributed, topStories, { validatorMode: 'enforce' }), null);
   });
 
   it('still rejects a hallucinated proper noun in a cited sentence', () => {

@@ -525,6 +525,20 @@ describe('validateNoHallucinatedProperNouns — May 19 regression + class', () =
     assert.equal(r.ok, false);
   });
 
+  it('accepts a hyphenated relationship when every entity is grounded', () => {
+    const headline = 'US and China restart trade talks after Trump meets Xi';
+    const summary = 'US-China talks resumed after a Trump-Xi meeting.';
+    const r = validateNoHallucinatedProperNouns(summary, headline);
+    assert.equal(r.ok, true, `grounded relational compounds should pass: ${JSON.stringify(r)}`);
+  });
+
+  it('rejects a hyphenated relationship when any entity is invented', () => {
+    const headline = 'US and China restart trade talks after Trump meets Xi';
+    const summary = 'US-Narnia talks resumed after a Trump-Xi meeting.';
+    const r = validateNoHallucinatedProperNouns(summary, headline);
+    assert.equal(r.ok, false, 'every component of a relational compound must be grounded');
+  });
+
   it('REGRESSION (PR #3836 review): dotted-acronym summary against bare headline → ok', () => {
     // "U.S." tokenized as ['U', 'S'] — single-char tokens fail the
     // 2–6-char acronym rule. Preprocessing pass `normalizeDottedAcronyms`

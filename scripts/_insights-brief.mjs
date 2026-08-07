@@ -73,6 +73,7 @@ Rules:
 - "lines": exactly one entry per numbered story, in order. Each "text" is ONE sentence under 30 words restating that story, ending with its citation [n].
 - Use ONLY facts present in the numbered story text. Do not add names, places, dates, numbers, or context that are not explicitly there.
 - Do not invent proper nouns (people, organizations, countries) that are not in the story text.
+- Preserve exact proper-noun wording when possible; do not turn "US and China" into "US-China".
 - Two numbered stories can describe the SAME event in different words. A lead claim may combine them, but it MUST carry the citation of EVERY story it drew from — write [3][7], not just [3]. Any name, place, or number you take from a story you did not cite counts as invented.
 - NEVER start with "Breaking news", "Good evening", "Tonight", or TV-style openings.`;
 }
@@ -150,6 +151,30 @@ export function parseBriefSynthesis(rawText, storyCount) {
 }
 
 /**
+ * Split a synthesized lead into citation-scoped validation units while
+ * keeping citations attached to the sentence they support. Models commonly
+ * put citations after terminal punctuation ("claim.[1]") or after a closing
+ * quote ("claim.\u201d [1]"); a whitespace-only splitter merges those claims and
+ * accidentally pools their evidence.
+ */
+export function splitCitedLeadSentences(text) {
+  if (typeof text !== 'string' || text.trim().length === 0) return [];
+  const sentences = [];
+  const boundary = /[.!?](?:["'\u2019\u201d])?(?:\s*\[\d{1,3}\])*(?=\s+|$)/g;
+  let start = 0;
+  for (const match of text.matchAll(boundary)) {
+    const end = (match.index ?? 0) + match[0].length;
+    const sentence = text.slice(start, end).trim();
+    if (sentence) sentences.push(sentence);
+    start = end;
+    while (/\s/.test(text[start] ?? '')) start++;
+  }
+  const tail = text.slice(start).trim();
+  if (tail) sentences.push(tail);
+  return sentences;
+}
+
+/**
  * #4921/#4928: assemble the synthesized brief from a raw LLM response —
  * pure and fully unit-testable. Applies the whole contract:
  *   - parse (fence-tolerant JSON, ≥half the stories lined)
@@ -218,10 +243,9 @@ export function composeSynthesizedBrief(rawText, topStories, opts = {}) {
   // the misattribution #4928 closed and letting an uncited sentence ride inside
   // a cited one. Ambiguity must fail closed. Only the gate's view changes — the
   // published lead below stays leadCheck.text, punctuation intact.
-  const leadSentences = leadCheck.text
-    .replace(MIDSENTENCE_DOTTED_ACRONYM, (acronym) => acronym.replace(/\./g, ''))
-    .split(/(?<=[.!?])\s+/)
-    .filter((sentence) => sentence.trim().length > 0);
+  const leadSentences = splitCitedLeadSentences(
+    leadCheck.text.replace(MIDSENTENCE_DOTTED_ACRONYM, (acronym) => acronym.replace(/\./g, '')),
+  );
   if (leadSentences.length === 0) return null;
   for (const sentence of leadSentences) {
     const cited = [...sentence.matchAll(/\[(\d{1,3})\]/g)]
