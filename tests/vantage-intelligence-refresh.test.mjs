@@ -8,10 +8,16 @@ const workflow = readFileSync(
 );
 
 describe('Vantage intelligence refresh workflow', () => {
-  it('bypasses the public CDN when warming the short-lived Redis digest', () => {
+  it('refreshes more often than the ten-minute news freshness window', () => {
+    assert.match(workflow, /cron: "\*\/5 \* \* \* \*"/);
+  });
+
+  it('bypasses the public CDN and proves the origin recomputed the digest', () => {
     assert.match(workflow, /--header 'Cache-Control: no-cache'/);
     assert.match(workflow, /--header "X-WorldMonitor-Key: \$WORLDMONITOR_RELAY_KEY"/);
     assert.match(workflow, /public=1&refresh=\$\{GITHUB_RUN_ID\}/);
+    assert.match(workflow, /started_at=/);
+    assert.match(workflow, /generated < started-5000/);
   });
 
   it('rejects a stale fallback response even when it still has categories', () => {

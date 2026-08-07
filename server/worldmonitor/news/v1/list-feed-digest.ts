@@ -37,6 +37,7 @@ import {
   DIGEST_ACCUMULATOR_TTL,
 } from '../../../_shared/cache-keys';
 import { getRelayBaseUrl, getRelayHeaders } from '../../../_shared/relay';
+import { timingSafeEqual } from '../../../_shared/timing-safe';
 import diplomacyKeywordsData from '../../../../shared/diplomacy-keywords.json';
 
 const RSS_ACCEPT = 'application/rss+xml, application/xml, text/xml, */*';
@@ -56,6 +57,13 @@ const POST_FETCH_HEADROOM_MS = 15_000;
 const RESPONSE_GUARD_BAND_MS = 3_000;
 const OVERALL_DEADLINE_MS = VERCEL_INITIAL_RESPONSE_LIMIT_MS - POST_FETCH_HEADROOM_MS;
 const BATCH_CONCURRENCY = 20;
+// The internal Vantage refresh runs every five minutes. Keep the last complete
+// digest for 30 minutes so a delayed or failed scheduler tick degrades to a
+// stale snapshot instead of deleting the product's last-known-good news plane.
+// Authenticated scheduler requests bypass this read cache and replace it only
+// after a non-empty rebuild succeeds.
+const DIGEST_CACHE_TTL_S = 30 * 60;
+const DIGEST_NEGATIVE_TTL_S = 120;
 
 // U3 — hard freshness floor (default 96h, env override NEWS_MAX_AGE_HOURS).
 // Items older than this are dropped before scoring. The 24h `recencyScore`
@@ -1067,6 +1075,26 @@ function toProtoItem(item: ParsedItem, storyMeta?: ProtoStoryMeta): ProtoNewsIte
   };
 }
 
+function isAuthorizedDigestRefresh(request: Request): boolean {
+  const expected = process.env.WORLDMONITOR_RELAY_KEY?.trim() ?? '';
+  const candidate = request.headers.get('X-WorldMonitor-Key')?.trim() ?? '';
+  if (!expected || !candidate || !timingSafeEqual(candidate, expected)) return false;
+  try {
+    return Boolean(new URL(request.url).searchParams.get('refresh')?.trim());
+  } catch {
+    return false;
+  }
+}
+
+function hasDigestItems(value: unknown): value is ListFeedDigestResponse {
+  if (!value || typeof value !== 'object') return false;
+  const categories = (value as { categories?: unknown }).categories;
+  if (!categories || typeof categories !== 'object') return false;
+  return Object.values(categories as Record<string, { items?: unknown }>).some(
+    (bucket) => Array.isArray(bucket?.items) && bucket.items.length > 0,
+  );
+}
+
 export async function listFeedDigest(
   ctx: ServerContext,
   req: ListFeedDigestRequest,
@@ -1080,19 +1108,45 @@ export async function listFeedDigest(
   const empty = (): ListFeedDigestResponse => ({ categories: {}, feedStatuses: {}, generatedAt: new Date().toISOString() });
 
   try {
+    // A trusted refresh must recompute even while the longer last-known-good
+    // cache is present. Read the prior snapshot first and never delete it: if
+    // the rebuild is empty or fails, the scheduler receives the preserved
+    // snapshot and its generatedAt freshness gate fails closed.
+    if (isAuthorizedDigestRefresh(ctx.request)) {
+      const prior = await getCachedJson(digestCacheKey);
+      try {
+        const rebuilt = await buildDigest(variant, lang);
+        if (!hasDigestItems(rebuilt)) {
+          markNoCacheResponse(ctx.request);
+          return hasDigestItems(prior)
+            ? prior
+            : fallbackDigestCache.get(fallbackKey)?.data ?? empty();
+        }
+        await setCachedJson(digestCacheKey, rebuilt, DIGEST_CACHE_TTL_S);
+        if (fallbackDigestCache.size > 50) fallbackDigestCache.clear();
+        fallbackDigestCache.set(fallbackKey, { data: rebuilt, ts: Date.now() });
+        return rebuilt;
+      } catch {
+        markNoCacheResponse(ctx.request);
+        return hasDigestItems(prior)
+          ? prior
+          : fallbackDigestCache.get(fallbackKey)?.data ?? empty();
+      }
+    }
+
     // cachedFetchJson coalesces concurrent cold-path calls: concurrent requests
     // for the same key share a single buildDigest() run instead of fanning out
     // across all RSS feeds. Returning null skips the Redis write and caches a
     // neg-sentinel (120s) to absorb the request storm during degraded periods.
     const fresh = await cachedFetchJson<ListFeedDigestResponse>(
       digestCacheKey,
-      120,
+      DIGEST_CACHE_TTL_S,
       async () => {
         const result = await buildDigest(variant, lang);
         const totalItems = Object.values(result.categories).reduce((sum, b) => sum + b.items.length, 0);
         return totalItems > 0 ? result : null;
       },
-      120,
+      DIGEST_NEGATIVE_TTL_S,
       { timeoutMs: DIGEST_RESPONSE_TIMEOUT_MS },
     );
 
@@ -1643,6 +1697,8 @@ export const __testing__ = {
   capLlmUpgrade,
   parseClassifyCacheHit,
   mapSettledWithConcurrency,
+  isAuthorizedDigestRefresh,
+  DIGEST_CACHE_TTL_S,
   VERCEL_INITIAL_RESPONSE_LIMIT_MS,
   DIGEST_RESPONSE_TIMEOUT_MS,
   POST_FETCH_HEADROOM_MS,

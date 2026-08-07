@@ -18,6 +18,8 @@ const {
   RESPONSE_GUARD_BAND_MS,
   OVERALL_DEADLINE_MS,
   mapSettledWithConcurrency,
+  isAuthorizedDigestRefresh,
+  DIGEST_CACHE_TTL_S,
 } = __testing__;
 
 const DIGEST_SRC = readFileSync(
@@ -59,6 +61,36 @@ function isRedisSet(init: RequestInit | undefined): boolean {
 }
 
 describe('news digest timeout budget', () => {
+  it('retains last-known-good data beyond the health freshness window', () => {
+    assert.ok(
+      DIGEST_CACHE_TTL_S > 10 * 60,
+      'complete digest TTL must outlive the 10-minute Vantage health freshness window',
+    );
+  });
+
+  it('only allows the dedicated scheduler secret to force a digest rebuild', () => {
+    const restoreEnv = withEnv({ WORLDMONITOR_RELAY_KEY: 'scheduler-secret' });
+    try {
+      assert.equal(isAuthorizedDigestRefresh(new Request(
+        'https://vantage-osint.vercel.app/api/news/v1/list-feed-digest?refresh=123',
+      )), false);
+      assert.equal(isAuthorizedDigestRefresh(new Request(
+        'https://vantage-osint.vercel.app/api/news/v1/list-feed-digest?refresh=123',
+        { headers: { 'X-WorldMonitor-Key': 'wrong-secret' } },
+      )), false);
+      assert.equal(isAuthorizedDigestRefresh(new Request(
+        'https://vantage-osint.vercel.app/api/news/v1/list-feed-digest',
+        { headers: { 'X-WorldMonitor-Key': 'scheduler-secret' } },
+      )), false);
+      assert.equal(isAuthorizedDigestRefresh(new Request(
+        'https://vantage-osint.vercel.app/api/news/v1/list-feed-digest?refresh=123',
+        { headers: { 'X-WorldMonitor-Key': 'scheduler-secret' } },
+      )), true);
+    } finally {
+      restoreEnv();
+    }
+  });
+
   it('keeps cold cache misses below Vercel initial-response timeout', () => {
     assert.equal(VERCEL_INITIAL_RESPONSE_LIMIT_MS, 25_000);
     assert.ok(
