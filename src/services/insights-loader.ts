@@ -6,7 +6,12 @@ export interface ServerInsightStory {
   primarySource: string;
   primaryLink: string;
   pubDate: string;
+  /** Number of mentions grouped into the cluster (not publisher diversity). */
   sourceCount: number;
+  /** Canonical publisher families represented in this exact story cluster. */
+  uniqueSourceCount?: number;
+  sources?: string[];
+  publisherSources?: string[];
   importanceScore: number;
   velocity: { level: string; sourcesPerHour: number };
   isAlert: boolean;
@@ -73,6 +78,10 @@ function isInsightStory(value: unknown): value is ServerInsightStory {
     && typeof story.primaryLink === 'string'
     && typeof story.sourceCount === 'number'
     && Number.isFinite(story.sourceCount)
+    && (story.uniqueSourceCount === undefined
+      || (typeof story.uniqueSourceCount === 'number'
+        && Number.isFinite(story.uniqueSourceCount)
+        && story.uniqueSourceCount >= 0))
     && typeof story.category === 'string'
     && typeof story.threatLevel === 'string';
 }

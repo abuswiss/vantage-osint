@@ -18,8 +18,9 @@ const MIDSENTENCE_DOTTED_ACRONYM = /\b[A-Z]\.(?:[A-Z]\.?)+(?=\s+\p{Ll})/gu;
 /**
  * Choose which clustered story to summarize for the WORLD BRIEF.
  *
- * Returns the first entry in `topStories` with either publisher diversity
- * (`sources.length >= 2`) or entity corroboration across related clusters.
+ * Returns the first entry in `topStories` with publisher diversity inside the
+ * exact story cluster (`uniqueSourceCount >= 2`). Related issue coverage can
+ * help ranking, but it cannot corroborate the specific claim being briefed.
  * Callers should treat null as "publish status=degraded, no brief" — the
  * top-stories list itself is still published; only the brief paragraph is
  * suppressed.
@@ -145,9 +146,13 @@ Rules:
 
 export function synthesisUserPrompt(stories) {
   const lines = stories.map((story, i) => {
-    const sources = Array.isArray(story.sources) && story.sources.length > 0
-      ? story.sources.length
-      : (story.sourceCount ?? 1);
+    const sources = Number.isFinite(story.uniqueSourceCount) && story.uniqueSourceCount > 0
+      ? story.uniqueSourceCount
+      : Array.isArray(story.publisherSources) && story.publisherSources.length > 0
+        ? story.publisherSources.length
+        : Array.isArray(story.sources) && story.sources.length > 0
+          ? story.sources.length
+          : (story.sourceCount ?? 1);
     return `${i + 1}. ${story.primaryTitle} (${story.primarySource}, ${sources} source${sources === 1 ? '' : 's'})`;
   });
   return `Stories:\n${lines.join('\n')}\n\nCompile the world brief JSON.`;
@@ -243,8 +248,8 @@ export function splitCitedLeadSentences(text) {
  * #4921/#4928: assemble the synthesized brief from a raw LLM response —
  * pure and fully unit-testable. Applies the whole contract:
  *   - parse (fence-tolerant JSON, ≥half the stories lined)
- *   - editorial gate: at least one top story must be corroborated
- *     (≥2 sources / entity corroboration) — the synthesis path must not
+ *   - editorial gate: at least one top story must be reported by at least two
+ *     publishers in the exact cluster — the synthesis path must not
  *     lower the legacy corroboration bar on all-single-source days
  *   - lead: proper-noun validation against ALL story titles (enforce →
  *     reject to fallback), anchor grounding, citation-index verification
@@ -285,8 +290,10 @@ export function composeSynthesizedBrief(rawText, topStories, opts = {}) {
   if (!parsed) return null;
 
   const groundingStories = topStories.map((story) => ({ headline: story.primaryTitle }));
-  const storyGroundText = (story) =>
-    [story.primaryTitle, ...(Array.isArray(story.memberTitles) ? story.memberTitles : [])].join(' — ');
+  // One citation index maps to one primary URL. Ground it only against that
+  // URL's primary headline: pooling fuzzy-cluster member titles allowed a
+  // misclustered Iran/Taiwan title to validate under a Russian-report link.
+  const storyGroundText = (story) => story.primaryTitle;
 
   // Lead gates (#4928 external review — citation-SCOPED, not corpus-wide):
   // every lead sentence must carry at least one citation, and its proper

@@ -128,7 +128,7 @@ export function candidateTokens(text) {
 // list-feed-digest's normalizeTitle suffix rules, but case-preserving.
 const ATTRIBUTION_SUFFIX_RES = [
   /\s*[-\u2013\u2014|]\s*[\w\s.]+\.(?:com|org|net|co\.uk)\s*$/i,
-  /\s*[-\u2013\u2014|]\s*(?:reuters|ap news|bbc|cnn|al jazeera|france 24|dw news|pbs newshour|cbs news|nbc|abc|associated press|the guardian|nos nieuws|tagesschau|cnbc|the national)\s*$/i,
+  /\s*[-\u2013\u2014|]\s*(?:reuters|ap news|bbc|cnn|al jazeera|france 24|dw news|pbs newshour|cbs news|nbc|abc|associated press|the guardian|nos nieuws|tagesschau|cnbc|the national|institute for the study of war)\s*$/i,
 ];
 
 // Unbounded feed titles feed char-4gram loops inside a 25s serverless
@@ -140,6 +140,28 @@ export function stripAttributionSuffix(text) {
   let out = text || '';
   for (const re of ATTRIBUTION_SUFFIX_RES) out = out.replace(re, '');
   return out;
+}
+
+/**
+ * Canonical publisher identity for corroboration counts. Feed names describe
+ * sections and transports, not independent newsrooms: `Reuters US` and
+ * `Reuters Energy`, for example, can expose the exact same Reuters article.
+ * Keep this mapping deliberately conservative and limited to known aliases;
+ * unknown names retain their normalized value instead of being guessed.
+ *
+ * @param {string} source
+ * @returns {string}
+ */
+export function normalizePublisherName(source) {
+  const normalized = normalizeStoryText(source);
+  if (!normalized) return '';
+  if (/^reuters(?:\s|$)/.test(normalized)) return 'reuters';
+  if (/^(?:bbc)(?:\s|$)/.test(normalized)) return 'bbc';
+  if (/^(?:the\s+)?guardian(?:\s|$)/.test(normalized)) return 'guardian';
+  if (/^the\s+verge(?:\s|$)/.test(normalized)) return 'the verge';
+  if (/^layoffs(?:\s|$)/.test(normalized)) return 'layoffs';
+  if (/^(?:ap\s+news|associated\s+press)$/.test(normalized)) return 'associated press';
+  return normalized;
 }
 
 /**
@@ -345,18 +367,16 @@ export function isSameStory(textA, textB, threshold = STORY_SIMILARITY_THRESHOLD
 const MAX_CANDIDATE_BUCKET = 250;
 
 /**
- * Cluster texts into same-story groups: connected components over the
- * "similarity ≥ threshold" edge set (union-find), with inverted-index
- * candidate generation so only pairs sharing ≥1 token are scored.
+ * Cluster texts into same-story groups. Candidate components are built over
+ * the "similarity ≥ threshold" edge set (union-find), then conservatively
+ * split with a deterministic complete-link pass so every pair in an emitted
+ * cluster clears the threshold. The second pass prevents a bridge title from
+ * merging unrelated reports (A~B, B~C, A≁C) into one provenance unit.
  *
- * Connected components — NOT the greedy first-seed pass the legacy
- * _clustering.mjs used — because component membership is independent of
- * input order: feed arrival order varies run to run, and under greedy
- * assignment a chain (A~B, B~C, A≁C) could land C in or out of A's
- * cluster depending on which seeded first, churning the canonical
- * story:track identity downstream (cross-model review finding,
- * PR #4924). Transitive chains merge by design; the threshold's
- * precision bounds chain length in practice.
+ * The complete-link pass uses normalized-title ordering, not feed arrival
+ * order, so the result remains deterministic while refusing transitive
+ * provenance. Under-clustering is safer than allowing a citation for one URL
+ * to ground facts taken from a different report.
  * @param {string[]} texts
  * @param {{ threshold?: number }} [opts]
  * @returns {number[][]} clusters of indices into `texts`, ordered by
@@ -437,7 +457,47 @@ export function clusterTexts(texts, opts = {}) {
     if (members) members.push(i);
     else byRoot.set(root, [i]);
   }
-  return Array.from(byRoot.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([, members]) => members);
+
+  const coherent = [];
+  for (const [, component] of Array.from(byRoot.entries()).sort((a, b) => a[0] - b[0])) {
+    if (component.length <= 1) {
+      coherent.push(component);
+      continue;
+    }
+
+    // Stable text order makes the complete-link assignment independent of
+    // feed arrival order. Original index is only a tie-break for exact copies,
+    // which are interchangeable for membership purposes.
+    const ordered = [...component].sort((a, b) => {
+      const keyA = normalizeStoryText(stripAttributionSuffix(texts[a]));
+      const keyB = normalizeStoryText(stripAttributionSuffix(texts[b]));
+      return keyA.localeCompare(keyB) || a - b;
+    });
+    const groups = [];
+    for (const idx of ordered) {
+      let bestGroup = null;
+      let bestFloor = -1;
+      for (const group of groups) {
+        let floor = 1;
+        let qualifies = true;
+        for (const member of group) {
+          const similarity = cosineSimilarity(vectors[idx], vectors[member]);
+          if (similarity < threshold) {
+            qualifies = false;
+            break;
+          }
+          floor = Math.min(floor, similarity);
+        }
+        if (qualifies && floor > bestFloor) {
+          bestGroup = group;
+          bestFloor = floor;
+        }
+      }
+      if (bestGroup) bestGroup.push(idx);
+      else groups.push([idx]);
+    }
+    coherent.push(...groups.map((group) => group.sort((a, b) => a - b)));
+  }
+
+  return coherent.sort((a, b) => a[0] - b[0]);
 }

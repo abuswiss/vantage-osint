@@ -8,7 +8,9 @@ export const config = { runtime: 'edge' };
 const CACHE_CHECKS = Object.freeze([
   { id: 'news', key: 'news:digest:v1:full:en', maxAgeMs: 10 * 60_000 },
   { id: 'insights', key: BOOTSTRAP_CACHE_KEYS.insights, maxAgeMs: 45 * 60_000 },
-  { id: 'risk', key: BOOTSTRAP_CACHE_KEYS.riskScores, maxAgeMs: 45 * 60_000 },
+  // The risk payload intentionally has no response-level timestamp; freshness
+  // is published separately by its writer and is the only authoritative clock.
+  { id: 'risk', key: 'seed-meta:intelligence:risk-scores', maxAgeMs: 45 * 60_000 },
 ]);
 
 function parseRedisValue(value) {
@@ -87,9 +89,15 @@ export function summarizeRelayHealth(payload) {
   const aviationCoverage = payload.ingestion?.aviation?.coverage?.status;
   const air = aviationCoverage === 'degraded'
     ? 'degraded'
-    : payload.status === 'ok' ? 'ready' : 'unavailable';
-  const aisConnected = payload.ingestion?.aisSnapshot?.connected ?? payload.connected;
-  const ships = aisConnected === true
+    : aviationCoverage === 'ok' || aviationCoverage === 'ready'
+      ? 'ready'
+      : payload.status === 'ok' ? 'waiting' : 'unavailable';
+  const ais = payload.ingestion?.aisSnapshot ?? {};
+  const aisConnected = ais.connected ?? payload.connected;
+  const legacyPositionReady = ais.currentPositionReady == null
+    && Number(ais.vessels) > 0
+    && Number(ais.messages) > 0;
+  const ships = aisConnected === true && (ais.currentPositionReady === true || legacyPositionReady)
     ? 'ready'
     : payload.status === 'ok' ? 'waiting' : 'unavailable';
   return { status: relayStatus, air, ships };

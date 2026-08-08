@@ -358,11 +358,21 @@ export class OpsShell {
         }
         const enabled = this.ctx.mapLayers[key] === true;
         const relayPending = this.isRelayPendingLayer(key);
+        const runtimeUnavailable = this.isRuntimeUnavailableLayer(key);
         button.setAttribute('aria-pressed', enabled && !relayPending ? 'true' : 'false');
         button.disabled = !this.canToggleLayer(key);
+        if (runtimeUnavailable) {
+          button.title = 'Live AIS and aggregate maritime traffic are currently unavailable';
+          button.setAttribute('aria-label', `${key === 'ais' ? 'Ships' : sentence(key)} layer unavailable`);
+        } else if (key === 'ais') {
+          button.removeAttribute('title');
+          button.setAttribute('aria-label', 'Toggle Ships layer');
+        }
         const state = button.querySelector<HTMLElement>('.ops-layer-state');
         if (state) state.textContent = relayPending
           ? 'pending'
+          : runtimeUnavailable
+            ? 'unavailable'
           : enabled
             ? 'ON'
           : !VANTAGE_PUBLIC_MODE && state.dataset.locked === 'true'
@@ -373,10 +383,19 @@ export class OpsShell {
 
     if (this.moreLayersButton) {
       const active = this.getAvailableLayerDefinitions().filter((definition) => (
-        this.ctx.mapLayers[definition.key] && !this.isRelayPendingLayer(definition.key)
+        this.ctx.mapLayers[definition.key]
+          && !this.isRelayPendingLayer(definition.key)
+          && !this.isRuntimeUnavailableLayer(definition.key)
       )).length;
       this.moreLayersButton.textContent = active > 0 ? `Layers ${active}` : 'Layers';
     }
+    const ais = safeAisStatus();
+    if (this.countShips && !this.countShips.hidden) {
+      if (ais.availability === 'traffic') setCount(this.countShips, ais.zones, 'maritime zones');
+      else if (ais.availability === 'unavailable') this.countShips.textContent = 'ships unavailable';
+      else setCount(this.countShips, ais.vessels, 'ships');
+    }
+    this.updateStatusLine();
   }
 
   /** Search-result bridge: hidden classic news panels cannot be scrolled in ops mode. */
@@ -504,7 +523,7 @@ export class OpsShell {
       button.type = 'button';
       button.textContent = sentence(mode);
       button.title = mode === 'priority'
-        ? 'Rank by current brief, severity, corroboration and freshness'
+        ? 'Rank by current brief, severity, outlet diversity and freshness'
         : 'Show newest reporting first';
       button.addEventListener('click', () => {
         this.feedOrder = mode;
@@ -818,6 +837,7 @@ export class OpsShell {
 
   private canToggleLayer(key: keyof MapLayers): boolean {
     if (this.isRelayPendingLayer(key)) return false;
+    if (this.isRuntimeUnavailableLayer(key) && !this.ctx.mapLayers[key]) return false;
     return isLayerCommandAllowed(
       key,
       this.ctx.mapLayers[key],
@@ -829,6 +849,10 @@ export class OpsShell {
 
   private isRelayPendingLayer(key: keyof MapLayers): boolean {
     return VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED && (key === 'military' || key === 'ais');
+  }
+
+  private isRuntimeUnavailableLayer(key: keyof MapLayers): boolean {
+    return key === 'ais' && safeAisStatus().availability === 'unavailable';
   }
 
   private toggleLayer(key: keyof MapLayers): void {
@@ -999,7 +1023,7 @@ export class OpsShell {
       const when = el('span');
       when.textContent = formatTimeAgo(item.when);
       const corroboration = el('span', 'corroboration');
-      corroboration.textContent = item.sourceCount > 1 ? `${item.sourceCount} sources` : '';
+      corroboration.textContent = item.sourceCount > 1 ? `${item.sourceCount} outlets` : '';
       meta.append(source, when, corroboration);
       const title = el('div', 'title');
       title.textContent = item.title;
@@ -1067,7 +1091,7 @@ export class OpsShell {
     const summary = el('span', 'ops-brief-preview-copy');
     summary.textContent = stripCitations(brief.whatChanged);
     const evidence = el('span', 'ops-brief-preview-evidence');
-    evidence.textContent = `${brief.sources.length} sources · ${corroborationLabel(brief)}`;
+    evidence.textContent = `${brief.sources.length} cited reports · ${corroborationLabel(brief)}`;
     button.replaceChildren(meta, summary, evidence);
   }
 
@@ -1135,7 +1159,7 @@ export class OpsShell {
 
     const badges = el('div', 'ops-inspector-badges');
     if (item.threat) badges.appendChild(badge(sentence(item.threat.level), `level-${item.threat.level}`));
-    if (item.sourceCount > 1) badges.appendChild(badge(`${item.sourceCount} sources`, 'sources'));
+    if (item.sourceCount > 1) badges.appendChild(badge(`${item.sourceCount} outlets`, 'sources'));
     if (item.locationName) badges.appendChild(badge(item.locationName, 'location'));
     if (badges.childElementCount > 0) content.appendChild(badges);
 
@@ -1152,7 +1176,7 @@ export class OpsShell {
     const facts = el('div', 'ops-inspector-facts');
     facts.append(
       fact('Updated', formatAbsoluteTime(item.when)),
-      fact('Sources', String(item.sourceCount)),
+      fact('Outlets', String(item.sourceCount)),
       fact('Signal', item.threat?.category ? sentence(item.threat.category) : (item.alert ? 'Priority' : 'Reporting')),
       fact('Confidence', item.threat ? `${Math.round(item.threat.confidence * 100)}%` : 'Unscored'),
     );
@@ -1703,7 +1727,7 @@ export class OpsShell {
     );
     const badges = el('div', 'ops-inspector-badges');
     badges.appendChild(badge(corroborationLabel(brief), brief.confidence === 'HIGH' ? 'sources' : 'location'));
-    badges.appendChild(badge(`${brief.sources.length} sources`, 'sources'));
+    badges.appendChild(badge(`${brief.sources.length} cited reports`, 'sources'));
     content.appendChild(badges);
 
     const changedHeading = el('h3', 'ops-inspector-section-title');
@@ -1969,7 +1993,7 @@ export class OpsShell {
     facts.appendChild(fact('Clusters', snapshot.clusterCount !== null ? String(snapshot.clusterCount) : 'n/a'));
     if (snapshot.provenance) {
       facts.appendChild(fact('Stories', String(snapshot.provenance.storiesConsidered)));
-      facts.appendChild(fact('Sources', String(snapshot.provenance.sourcesConsidered)));
+      facts.appendChild(fact('Named feeds', String(snapshot.provenance.sourcesConsidered)));
     }
     content.appendChild(facts);
 
@@ -2316,7 +2340,14 @@ export class OpsShell {
       return;
     }
     const ais = safeAisStatus();
-    this.statusLine.textContent = `Window ${range} · AIS ${ais.connected ? 'live' : 'idle'}`;
+    const maritime = ais.availability === 'live'
+      ? 'AIS live'
+      : ais.availability === 'traffic'
+        ? 'Maritime traffic'
+        : ais.availability === 'unavailable'
+          ? 'Maritime unavailable'
+          : 'Maritime checking';
+    this.statusLine.textContent = `Window ${range} · ${maritime}`;
   }
 
   private updateHud(): void {
@@ -2342,7 +2373,11 @@ export class OpsShell {
     }
     if (this.countShips) {
       this.countShips.hidden = VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED;
-      if (!this.countShips.hidden) setCount(this.countShips, ais.vessels, 'ships');
+      if (!this.countShips.hidden) {
+        if (ais.availability === 'traffic') setCount(this.countShips, ais.zones, 'maritime zones');
+        else if (ais.availability === 'unavailable') this.countShips.textContent = 'ships unavailable';
+        else setCount(this.countShips, ais.vessels, 'ships');
+      }
     }
     if (this.countEvents) setCount(this.countEvents, events, 'events');
     this.updateStatusLine();
@@ -2423,7 +2458,7 @@ function stripCitations(text: string): string {
 
 function corroborationLabel(brief: VantageSynthesis): string {
   const match = brief.confidenceDetail.match(/^(\d+) of (\d+)/);
-  return match ? `${match[1]}/${match[2]} corroborated` : `${sentence(brief.confidence)} evidence`;
+  return match ? `${match[1]}/${match[2]} multi-outlet` : `${sentence(brief.confidence)} evidence`;
 }
 
 function normalizedTitle(value: string): string {
@@ -2469,7 +2504,7 @@ function priorityReasons(item: OpsFeedItem, brief: VantageSynthesis | null, watc
   if (item.threat && (item.threat.level === 'critical' || item.threat.level === 'high')) {
     reasons.push(`${item.threat.level} severity`);
   }
-  if (item.sourceCount > 1) reasons.push(`${item.sourceCount}-source corroboration`);
+  if (item.sourceCount > 1) reasons.push(`${item.sourceCount}-outlet reporting`);
   if (reasons.length === 0) reasons.push('report freshness');
   return reasons;
 }
@@ -2635,11 +2670,16 @@ function uniqueSources(item: OpsFeedItem): Array<{ name: string; url: string }> 
   });
 }
 
-function safeAisStatus(): { connected: boolean; vessels: number } {
+function safeAisStatus(): {
+  connected: boolean;
+  vessels: number;
+  availability: 'unknown' | 'live' | 'traffic' | 'unavailable';
+  zones: number;
+} {
   try {
     return getAisStatus();
   } catch {
-    return { connected: false, vessels: 0 };
+    return { connected: false, vessels: 0, availability: 'unavailable', zones: 0 };
   }
 }
 

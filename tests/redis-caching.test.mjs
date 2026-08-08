@@ -1747,6 +1747,9 @@ describe('military flights bbox behavior', { concurrency: 1 }, () => {
     globalThis.fetch = async (url) => {
       const raw = String(url);
       fetchUrls.push(raw);
+      if (raw === 'https://api.adsb.lol/v2/mil') {
+        return jsonResponse({ ac: [] });
+      }
       if (!raw.includes('opensky-network.org/api/states/all')) {
         throw new Error(`Unexpected fetch URL: ${raw}`);
       }
@@ -1767,8 +1770,9 @@ describe('military flights bbox behavior', { concurrency: 1 }, () => {
         'response should not include out-of-viewport flights (hex_code canonical form is uppercase)',
       );
 
-      assert.equal(fetchUrls.length, 1);
-      const params = new URL(fetchUrls[0]).searchParams;
+      const openskyUrls = fetchUrls.filter((url) => url.includes('opensky-network.org/api/states/all'));
+      assert.equal(openskyUrls.length, 1);
+      const params = new URL(openskyUrls[0]).searchParams;
       assert.equal(params.get('lamin'), '9.5');
       assert.equal(params.get('lamax'), '11.5');
       assert.equal(params.get('lomin'), '9.5');

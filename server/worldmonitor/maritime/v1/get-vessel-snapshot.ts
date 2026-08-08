@@ -11,6 +11,8 @@ import type {
 } from '../../../../src/generated/server/worldmonitor/maritime/v1/service_server';
 
 import { getRelayBaseUrl, getRelayHeaders } from '../../../_shared/relay';
+import { getCachedJson } from '../../../_shared/redis';
+import { CHOKEPOINT_REGISTRY } from '../../../../src/config/chokepoint-registry';
 
 // ========================================================================
 // Helpers
@@ -26,6 +28,90 @@ const SEVERITY_MAP: Record<string, AisDisruptionSeverity> = {
   elevated: 'AIS_DISRUPTION_SEVERITY_ELEVATED',
   high: 'AIS_DISRUPTION_SEVERITY_HIGH',
 };
+
+const TRANSIT_SUMMARIES_KEY = 'supply_chain:transit-summaries:v1';
+const PORTWATCH_TRAFFIC_KEY = 'supply_chain:portwatch-traffic:v1';
+
+interface TransitSummary {
+  todayTotal?: number;
+  wowChangePct?: number;
+  dataAvailable?: boolean;
+}
+
+interface TransitSummariesPayload {
+  fetchedAt?: number;
+  summaries?: Record<string, TransitSummary>;
+}
+
+/** A socket-shaped payload is not usable maritime coverage on its own. */
+export function isUsableLiveVesselSnapshot(snapshot: VesselSnapshot | undefined): boolean {
+  return Boolean(
+    snapshot?.status?.connected
+      && Number(snapshot.status.vessels) > 0
+      && Number(snapshot.status.messages) > 0,
+  );
+}
+
+/**
+ * When live AIS is unavailable, retain a useful and honest maritime surface
+ * from the already-cached PortWatch transit summaries. These are aggregate
+ * daily traffic observations, never individual vessel positions; the note and
+ * disconnected status preserve that distinction for every consumer.
+ */
+export function buildPortWatchTrafficSnapshot(
+  payload: TransitSummariesPayload | null,
+): VesselSnapshot | undefined {
+  const summaries = payload?.summaries;
+  if (!summaries || typeof summaries !== 'object') return undefined;
+
+  const covered = CHOKEPOINT_REGISTRY.flatMap((chokepoint) => {
+    const summary = summaries[chokepoint.id];
+    const todayTotal = Number(summary?.todayTotal);
+    if (!summary || summary.dataAvailable === false || !Number.isFinite(todayTotal) || todayTotal < 0) return [];
+    return [{ chokepoint, todayTotal, wowChangePct: Number(summary.wowChangePct) }];
+  });
+  if (covered.length === 0) return undefined;
+
+  const maxTotal = Math.max(1, ...covered.map(({ todayTotal }) => todayTotal));
+  const densityZones: AisDensityZone[] = covered.map(({ chokepoint, todayTotal, wowChangePct }) => ({
+    id: `portwatch-${chokepoint.id}`,
+    name: chokepoint.displayName,
+    location: { latitude: chokepoint.lat, longitude: chokepoint.lon },
+    intensity: todayTotal > 0
+      ? Math.max(8, Math.round((Math.log1p(todayTotal) / Math.log1p(maxTotal)) * 100))
+      : 0,
+    deltaPct: Number.isFinite(wowChangePct) ? wowChangePct : 0,
+    shipsPerDay: Math.round(todayTotal),
+    note: 'PortWatch daily transit coverage · live AIS positions unavailable',
+  }));
+
+  const snapshotAt = Number(payload?.fetchedAt);
+  return {
+    snapshotAt: Number.isFinite(snapshotAt) && snapshotAt > 0 ? snapshotAt : Date.now(),
+    densityZones,
+    disruptions: [],
+    sequence: 0,
+    status: { connected: false, vessels: 0, messages: 0 },
+    candidateReports: [],
+    tankerReports: [],
+  };
+}
+
+async function fetchPortWatchTrafficSnapshot(): Promise<VesselSnapshot | undefined> {
+  try {
+    // Prefer the compact daily artifact written by the PortWatch seeder. The
+    // full 180-day history is ~500 KB and is intentionally never pulled into a
+    // latency-sensitive Edge request.
+    const traffic = await getCachedJson(PORTWATCH_TRAFFIC_KEY, true) as TransitSummariesPayload | null;
+    const trafficSnapshot = buildPortWatchTrafficSnapshot(traffic);
+    if (trafficSnapshot) return trafficSnapshot;
+
+    const summaries = await getCachedJson(TRANSIT_SUMMARIES_KEY, true) as TransitSummariesPayload | null;
+    return buildPortWatchTrafficSnapshot(summaries);
+  } catch {
+    return undefined;
+  }
+}
 
 // In-process cache TTLs.
 //
@@ -135,7 +221,14 @@ async function fetchVesselSnapshot(
 
   slot.inFlight = fetchVesselSnapshotFromRelay(includeCandidates, includeTankers, bbox);
   try {
-    const result = await slot.inFlight;
+    let result = await slot.inFlight;
+    if (!isUsableLiveVesselSnapshot(result)) {
+      // Aggregate traffic is a valid fallback only for the global map surface.
+      // Bbox/tanker callers require actual position reports and must fail closed.
+      result = !includeTankers && !bbox
+        ? await fetchPortWatchTrafficSnapshot()
+        : undefined;
+    }
     if (result) {
       slot.snapshot = result;
       slot.timestamp = Date.now();
@@ -333,10 +426,14 @@ export async function getVesselSnapshot(
       Boolean(req.includeTankers),
       bbox,
     );
+    const dataAvailable = Boolean(
+      snapshot
+        && (isUsableLiveVesselSnapshot(snapshot) || snapshot.densityZones.length > 0),
+    );
     return {
       snapshot,
-      fetchedAt: snapshot?.snapshotAt ?? 0,
-      dataAvailable: Boolean(snapshot),
+      fetchedAt: dataAvailable ? snapshot?.snapshotAt ?? 0 : 0,
+      dataAvailable,
     };
   } catch (err) {
     // BboxValidationError carries statusCode=400; rethrowing lets the

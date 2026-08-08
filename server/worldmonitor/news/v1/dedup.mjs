@@ -13,6 +13,7 @@ import {
   cosineSimilarity,
   clusterTexts,
   STORY_SIMILARITY_THRESHOLD,
+  normalizePublisherName,
 } from '../../../../shared/story-identity.js';
 
 /** @param {string[]} headlines */
@@ -90,7 +91,8 @@ export async function assignStoryIdentity(items, normalizeTitle, sha256Hex) {
 
     const sources = new Set();
     for (const i of indices) {
-      if (items[i].source) sources.add(items[i].source);
+      const publisher = normalizePublisherName(items[i].source);
+      if (publisher) sources.add(publisher);
     }
     const corroborationCount = Math.max(1, sources.size);
 

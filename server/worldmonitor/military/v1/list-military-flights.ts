@@ -13,8 +13,9 @@ import { markNoCacheResponse } from '../../../_shared/response-headers';
 import { getRelayBaseUrl, getRelayHeaders } from '../../../_shared/relay';
 
 const REDIS_CACHE_KEY = 'military:flights:v1';
-const REDIS_CACHE_TTL = 600; // 10 min — reduce upstream API pressure
+const REDIS_CACHE_TTL = 120; // 2 min — positions stay useful without hammering the shared upstream
 const REDIS_STALE_KEY = 'military:flights:stale:v1';
+const ADSB_LOL_MILITARY_URL = 'https://api.adsb.lol/v2/mil';
 
 /** Snap a coordinate to a grid step so nearby bbox values share cache entries. */
 const quantize = (v: number, step: number) => Math.round(v / step) * step;
@@ -157,6 +158,101 @@ interface StalePayload {
   fetchedAt?: number;
 }
 
+interface AdsbLolAircraft {
+  hex?: string;
+  flight?: string;
+  r?: string;
+  t?: string;
+  lat?: number;
+  lon?: number;
+  alt_baro?: number | 'ground';
+  gs?: number;
+  track?: number;
+  baro_rate?: number;
+  geom_rate?: number;
+  squawk?: string;
+  seen?: number;
+}
+
+interface AdsbLolMilitaryPayload {
+  ac?: AdsbLolAircraft[];
+}
+
+/**
+ * Convert ADSB.lol's dedicated military feed into the canonical flight shape.
+ * The endpoint already filters to aircraft carrying its military database flag;
+ * local callsign/type heuristics enrich the row but do not second-guess that
+ * upstream membership. Units on ADSB.lol are feet, knots and feet/minute, which
+ * match the protobuf contract directly.
+ */
+export function mapAdsbLolMilitaryAircraft(
+  aircraft: AdsbLolAircraft[],
+  nowMs = Date.now(),
+): ListMilitaryFlightsResponse['flights'] {
+  const flights: ListMilitaryFlightsResponse['flights'] = [];
+  const seenHex = new Set<string>();
+  for (const raw of aircraft) {
+    const hex = String(raw?.hex || '').replace(/~/g, '').trim().toUpperCase();
+    const lat = Number(raw?.lat);
+    const lon = Number(raw?.lon);
+    if (!hex || seenHex.has(hex) || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180 || raw.alt_baro === 'ground') continue;
+    seenHex.add(hex);
+
+    const callsign = String(raw.flight || '').trim();
+    const aircraftType = detectAircraftType(callsign);
+    const seenSeconds = Number(raw.seen);
+    const lastSeenAt = Number.isFinite(seenSeconds)
+      ? Math.max(0, nowMs - Math.max(0, seenSeconds) * 1_000)
+      : nowMs;
+    const isInteresting = ['bomber', 'reconnaissance', 'awacs', 'drone'].includes(aircraftType);
+
+    flights.push({
+      id: `adsblol-${hex}`,
+      callsign: callsign || `UNKN-${hex.slice(0, 4)}`,
+      hexCode: hex,
+      registration: String(raw.r || ''),
+      aircraftType: (AIRCRAFT_TYPE_MAP[aircraftType] || 'MILITARY_AIRCRAFT_TYPE_UNKNOWN') as MilitaryAircraftType,
+      aircraftModel: String(raw.t || ''),
+      operator: 'MILITARY_OPERATOR_OTHER',
+      operatorCountry: '',
+      location: { latitude: lat, longitude: lon },
+      altitude: typeof raw.alt_baro === 'number' ? raw.alt_baro : 0,
+      heading: Number.isFinite(Number(raw.track)) ? Number(raw.track) : 0,
+      speed: Number.isFinite(Number(raw.gs)) ? Number(raw.gs) : 0,
+      verticalRate: Number.isFinite(Number(raw.baro_rate ?? raw.geom_rate))
+        ? Number(raw.baro_rate ?? raw.geom_rate)
+        : 0,
+      onGround: false,
+      squawk: String(raw.squawk || ''),
+      origin: '',
+      destination: '',
+      lastSeenAt,
+      firstSeenAt: 0,
+      confidence: 'MILITARY_CONFIDENCE_MEDIUM',
+      isInteresting,
+      note: 'ADSB.lol military feed',
+      enrichment: undefined,
+    });
+  }
+  return flights;
+}
+
+async function fetchAdsbLolMilitaryFlights(): Promise<ListMilitaryFlightsResponse['flights'] | null> {
+  try {
+    const response = await fetch(ADSB_LOL_MILITARY_URL, {
+      headers: { Accept: 'application/json', 'User-Agent': 'WorldMonitor/1.0' },
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!response.ok) return null;
+    const payload = await response.json() as AdsbLolMilitaryPayload;
+    const flights = mapAdsbLolMilitaryAircraft(Array.isArray(payload.ac) ? payload.ac : []);
+    return flights.length > 0 ? flights : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Convert the seed cron's app-shape flight (flat lat/lon, lowercase enums,
  * lastSeenMs) into the proto shape (nested GeoCoordinates, enum strings,
@@ -259,6 +355,15 @@ export async function listMilitaryFlights(
       cacheKey,
       REDIS_CACHE_TTL,
       async () => {
+        // ADSB.lol's military-only feed is the resilient public source for the
+        // map. It avoids coupling Air availability to the persistent relay's
+        // ability to reach OpenSky's OAuth host. OpenSky remains the secondary
+        // path so existing deployments continue to work if ADSB.lol is down.
+        const adsbLolFlights = await fetchAdsbLolMilitaryFlights();
+        if (adsbLolFlights) {
+          return { flights: adsbLolFlights, clusters: [], pagination: undefined };
+        }
+
         const isSidecar = (process.env.LOCAL_API_MODE || '').includes('sidecar');
         const relayBase = isSidecar ? null : getRelayBaseUrl();
         const baseUrl = isSidecar ? 'https://opensky-network.org/api/states/all' : relayBase ? relayBase + '/opensky' : null;

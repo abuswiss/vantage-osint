@@ -43,6 +43,19 @@ describe('_clustering.mjs', () => {
       assert.equal(clusters.length, 1);
       assert.equal(clusters[0].primarySource, 'Reuters');
     });
+
+    it('keeps mention count separate from canonical publisher diversity', () => {
+      const clusters = clusterItems([
+        { title: 'Guardian report on ceasefire talks', source: 'Guardian World', link: 'http://a' },
+        { title: 'Guardian report on ceasefire talks', source: 'Guardian ME', link: 'http://b' },
+      ]);
+
+      assert.equal(clusters.length, 1);
+      assert.equal(clusters[0].sourceCount, 2, 'both feed mentions remain visible');
+      assert.equal(clusters[0].uniqueSourceCount, 1, 'one newsroom is one publisher');
+      assert.deepEqual(clusters[0].publisherSources, ['guardian']);
+      assert.equal(isBriefLeadEligible(clusters[0]), false);
+    });
   });
 
   describe('scoreImportance', () => {
@@ -69,6 +82,20 @@ describe('_clustering.mjs', () => {
       const alert = { primaryTitle: 'Earthquake hits region', sourceCount: 1, isAlert: true };
       assert.equal(scoreImportance(alert), scoreImportance(noAlert));
       assert.equal(isBriefLeadEligible(alert), false);
+    });
+
+    it('preserves an upstream digest score without re-adding the same signals', () => {
+      const cluster = {
+        primaryTitle: 'Iran missile attack kills troops during emergency escalation',
+        primarySource: 'Reuters',
+        sources: ['Reuters', 'AP News', 'BBC World'],
+        uniqueSourceCount: 3,
+        sourceTier: 1,
+        upstreamImportanceScore: 75,
+        entityCorroboration: true,
+        threat: { level: 'critical', source: 'llm', category: 'conflict' },
+      };
+      assert.equal(scoreImportance(cluster), 75);
     });
 
     it('does not treat generic business deals as diplomacy', () => {
@@ -128,81 +155,55 @@ describe('_clustering.mjs', () => {
       assert.ok(top.length <= 3);
     });
 
-    it('elevates split US-Iran deal coverage into top 5 and brief lead via entity corroboration', () => {
+    it('does not apply recency a second time to upstream-scored stories', () => {
+      const old = new Date(Date.now() - 14 * 3600_000).toISOString();
+      const top = selectTopStories([{
+        primaryTitle: 'Old but still canonical digest alert',
+        primarySource: 'Reuters',
+        primaryLink: 'http://canonical',
+        sources: ['Reuters'],
+        uniqueSourceCount: 1,
+        sourceCount: 1,
+        upstreamImportanceScore: 75,
+        isAlert: true,
+        pubDate: old,
+        lastUpdated: old,
+      }], 8);
+      assert.equal(top[0].importanceScore, 75);
+      assert.equal(top[0].effectiveImportanceScore, 75);
+    });
+
+    it('keeps issue-level entity corroboration as ranking context, not Brief eligibility', () => {
       const now = Date.now();
-      const fresh = new Date(now - 30 * 60_000).toISOString();
-      const stale = new Date(now - 30 * 3600_000).toISOString();
+      const fresh = new Date(now - 60 * 60_000).toISOString();
       const items = [
         {
-          title: 'US and Iran close deal to ease Hormuz tensions',
+          title: 'Iran deal talks resume in Geneva',
           source: 'Reuters',
           link: 'http://deal-1',
           pubDate: fresh,
-          importanceScore: 62,
+          importanceScore: 120,
           threat: { level: 'medium', source: 'llm', category: 'geopolitical' },
         },
         {
-          title: 'Iran deal could calm oil markets after Hormuz alarm',
+          title: 'Officials say Iran deal framework is close',
           source: 'AP News',
           link: 'http://deal-2',
           pubDate: fresh,
-          importanceScore: 60,
+          importanceScore: 115,
           threat: { level: 'medium', source: 'llm', category: 'geopolitical' },
-        },
-        {
-          title: 'Axios: US-Iran deal averts immediate Hormuz disruption',
-          source: 'Axios',
-          link: 'http://deal-3',
-          pubDate: fresh,
-          importanceScore: 59,
-          threat: { level: 'medium', source: 'llm', category: 'geopolitical' },
-        },
-        {
-          title: 'BBC World reports Iran deal talks lower Gulf risk',
-          source: 'BBC World',
-          link: 'http://deal-4',
-          pubDate: fresh,
-          importanceScore: 58,
-          threat: { level: 'medium', source: 'llm', category: 'geopolitical' },
-        },
-        {
-          title: 'Reuters World: Iran deal framework discussed with US officials',
-          source: 'Reuters World',
-          link: 'http://deal-5',
-          pubDate: fresh,
-          importanceScore: 57,
-          threat: { level: 'medium', source: 'llm', category: 'geopolitical' },
-        },
-        {
-          title: 'Missile attack kills dozens as troops strike border city',
-          source: 'Unknown Wire',
-          link: 'http://stale-1',
-          pubDate: stale,
-          importanceScore: 75,
-          isAlert: true,
-          threat: { level: 'critical', source: 'keyword', category: 'conflict' },
-        },
-        {
-          title: 'Iran missile attack kills dozens in airstrike',
-          source: 'Unknown Wire 2',
-          link: 'http://stale-2',
-          pubDate: stale,
-          importanceScore: 74,
-          isAlert: true,
-          threat: { level: 'critical', source: 'keyword', category: 'conflict' },
         },
       ];
 
       const clusters = clusterItems(items);
-      const top = selectTopStories(clusters, 5);
-      const deal = top.find(story => /iran/i.test(story.primaryTitle) && /deal/i.test(story.primaryTitle));
-      assert.ok(deal, 'expected at least one US-Iran deal cluster in the top 5');
-      assert.equal(deal.entityCorroboration, true);
+      computeEntityCorroboration(clusters, now);
+      assert.ok(clusters.every(cluster => cluster.entityCorroboration === true));
+      assert.ok(clusters.every(cluster => cluster.uniqueSourceCount === 1));
+      assert.ok(clusters.every(cluster => !isBriefLeadEligible(cluster)));
 
-      const lead = pickBriefCluster(top);
-      assert.ok(lead, 'expected a corroborated brief lead');
-      assert.match(lead.primaryTitle, /iran/i);
-      assert.match(lead.primaryTitle, /deal/i);
+      const top = selectTopStories(clusters, 5);
+      assert.equal(top.length, 2, 'entity signal may keep the related issue visible');
+      assert.equal(pickBriefCluster(top), null, 'related coverage cannot corroborate either exact claim');
     });
 
     it('does not entity-corroborate Reuters-only reposts', () => {
@@ -372,11 +373,9 @@ describe('_clustering.mjs', () => {
       assert.equal(top[0].primarySource, 'BBC World');
     });
 
-    it('reserves a slot for an entity-corroborated single-source cluster', () => {
-      // isBriefLeadEligible has two arms; the >=2-sources arm is covered above.
-      // Corroboration must be EARNED through computeEntityCorroboration (which
-      // selectTopStories recomputes, resetting any hand-set flag), so these two
-      // single-source clusters share the iran+deal bigram inside the 24h window.
+    it('does not reserve a Brief slot for entity-related single-source clusters', () => {
+      // These clusters earn issue-level context across two publishers, but each
+      // exact claim is still single-source and must not unlock generation.
       const entityPair = [
         {
           primaryTitle: 'Iran deal talks resume in Geneva',
@@ -403,11 +402,10 @@ describe('_clustering.mjs', () => {
       ];
       const stats = {};
       const top = selectTopStories([...alertClusters, ...entityPair], 8, stats);
-      assert.equal(stats.briefEligiblePromoted, true);
-      const lead = pickBriefCluster(top);
-      assert.notEqual(lead, null, 'entity corroboration alone must satisfy the reservation');
-      assert.equal(lead.entityCorroboration, true);
-      assert.equal(lead.sources.length, 1, 'this arm covers single-source entity corroboration');
+      assert.ok(entityPair.every(cluster => cluster.entityCorroboration === true));
+      assert.equal(stats.briefEligibleConsidered, 0);
+      assert.equal(stats.briefEligiblePromoted, false);
+      assert.equal(pickBriefCluster(top), null);
     });
   });
 });

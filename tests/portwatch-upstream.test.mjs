@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildHistory } from '../scripts/seed-portwatch.mjs';
+import { buildHistory, buildTrafficSummary } from '../scripts/seed-portwatch.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = resolve(__dirname, 'fixtures');
@@ -77,6 +77,12 @@ describe('PortWatch standalone seeder (seed-portwatch.mjs)', () => {
 
   it('writes to supply_chain:portwatch:v1 Redis key', () => {
     assert.match(seederSrc, /supply_chain:portwatch:v1/);
+  });
+
+  it('publishes a compact latest-day traffic key for the public Ships fallback', () => {
+    assert.match(seederSrc, /supply_chain:portwatch-traffic:v1/);
+    assert.match(seederSrc, /extraKeys:\s*\[\{/);
+    assert.match(seederSrc, /transform:\s*buildTrafficSummary/);
   });
 
   it('fetches all 5 vessel type count fields', () => {
@@ -251,5 +257,25 @@ describe('golden fixture (PortWatch ArcGIS JSON)', () => {
     const entry = history.find(e => e.date === '2024-05-01');
     assert.ok(entry != null, 'entry for 2024-05-01 missing');
     assert.equal(entry.total, expected.n_total);
+  });
+
+  it('projects only the latest daily row into the compact maritime traffic artifact', () => {
+    const summary = buildTrafficSummary({
+      suez: {
+        wowChangePct: -4.2,
+        history: [
+          { date: '2026-08-05', total: 35 },
+          { date: '2026-08-07', total: 41 },
+          { date: '2026-08-06', total: 39 },
+        ],
+      },
+    });
+
+    assert.equal(summary.fetchedAt, Date.parse('2026-08-07T23:59:59.000Z'));
+    assert.deepEqual(summary.summaries.suez, {
+      todayTotal: 41,
+      wowChangePct: -4.2,
+      dataAvailable: true,
+    });
   });
 });

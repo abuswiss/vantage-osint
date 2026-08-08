@@ -22,19 +22,19 @@ function makeInsights(): ServerInsights {
     topStories: [
       {
         primaryTitle: 'First report', primarySource: 'Reuters', primaryLink: 'https://example.com/one',
-        pubDate: '2026-08-07T10:00:00.000Z', sourceCount: 3, importanceScore: 90,
+        pubDate: '2026-08-07T10:00:00.000Z', sourceCount: 3, uniqueSourceCount: 3, importanceScore: 90,
         velocity: { level: 'normal', sourcesPerHour: 0 }, isAlert: true,
         category: 'conflict', threatLevel: 'high', countryCode: 'TH',
       },
       {
         primaryTitle: 'Second report', primarySource: 'Local', primaryLink: 'https://example.com/two',
-        pubDate: '2026-08-07T10:01:00.000Z', sourceCount: 1, importanceScore: 70,
+        pubDate: '2026-08-07T10:01:00.000Z', sourceCount: 1, uniqueSourceCount: 1, importanceScore: 70,
         velocity: { level: 'normal', sourcesPerHour: 0 }, isAlert: false,
         category: 'political', threatLevel: 'moderate', countryCode: null,
       },
       {
         primaryTitle: 'Third report', primarySource: 'BBC', primaryLink: 'https://example.com/three',
-        pubDate: '2026-08-07T10:02:00.000Z', sourceCount: 2, importanceScore: 80,
+        pubDate: '2026-08-07T10:02:00.000Z', sourceCount: 2, uniqueSourceCount: 2, importanceScore: 80,
         velocity: { level: 'normal', sourcesPerHour: 0 }, isAlert: true,
         category: 'geopolitical', threatLevel: 'critical', countryCode: null,
       },
@@ -54,8 +54,8 @@ describe('Vantage cited synthesis view model', () => {
     assert.ok(brief);
     assert.equal(brief.confidence, 'HIGH');
     assert.equal(brief.freshness, 'Updated 5m ago');
-    assert.match(brief.whyItMatters, /2 lead stories are independently corroborated/);
-    assert.match(brief.provenance, /282 stories across 74 sources/);
+    assert.match(brief.whyItMatters, /2 lead stories are reported by multiple named outlets/);
+    assert.match(brief.provenance, /282 stories across 74 named feeds/);
     assert.deepEqual(brief.sources.map((source) => source.index), [1, 3]);
     assert.equal(brief.sources.some((source) => source.url.startsWith('javascript:')), false);
     assert.equal('briefProvider' in brief, false);
@@ -89,6 +89,19 @@ describe('Vantage cited synthesis view model', () => {
     assert.ok(brief);
     assert.equal(brief.whatChanged, 'First report [1]');
     assert.equal(brief.threads[0]?.index, 1);
+  });
+
+  it('fails closed on old mention counts when exact outlet diversity is one', () => {
+    const input = makeInsights();
+    input.topStories.forEach((story, index) => {
+      story.sourceCount = 5 + index;
+      story.uniqueSourceCount = 1;
+    });
+
+    const brief = buildVantageSynthesis(input);
+    assert.equal(brief?.confidence, 'DEVELOPING');
+    assert.match(brief?.confidenceDetail ?? '', /0 of 3 lead stories/);
+    assert.match(brief?.whyItMatters ?? '', /leading reports are still developing/);
   });
 
   it('rejects an empty insight snapshot', () => {

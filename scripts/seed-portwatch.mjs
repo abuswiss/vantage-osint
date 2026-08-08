@@ -5,6 +5,7 @@ import { loadEnvFile, runSeed, CHROME_UA } from './_seed-utils.mjs';
 loadEnvFile(import.meta.url);
 
 export const CANONICAL_KEY = 'supply_chain:portwatch:v1';
+export const TRAFFIC_KEY = 'supply_chain:portwatch-traffic:v1';
 const TTL = 43_200; // 12h — 2× the 6h cron interval
 
 const ARCGIS_BASE =
@@ -203,6 +204,26 @@ export function validateFn(data) {
   return data && typeof data === 'object' && Object.keys(data).length >= 5;
 }
 
+/** Compact latest-day projection for latency-sensitive public map reads. */
+export function buildTrafficSummary(data) {
+  const summaries = {};
+  let fetchedAt = 0;
+  for (const [id, entry] of Object.entries(data ?? {})) {
+    const latest = (Array.isArray(entry?.history) ? entry.history : [])
+      .filter((row) => typeof row?.date === 'string' && Number.isFinite(Number(row.total)))
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
+    if (!latest) continue;
+    summaries[id] = {
+      todayTotal: Number(latest.total),
+      wowChangePct: Number(entry.wowChangePct) || 0,
+      dataAvailable: true,
+    };
+    const observedAt = Date.parse(`${latest.date}T23:59:59.000Z`);
+    if (Number.isFinite(observedAt)) fetchedAt = Math.max(fetchedAt, observedAt);
+  }
+  return { fetchedAt, summaries };
+}
+
 const isMain = process.argv[1]?.endsWith('seed-portwatch.mjs');
 export function declareRecords(data) {
   return data && typeof data === "object" ? Object.keys(data).length : 0;
@@ -212,6 +233,13 @@ if (isMain) {
   runSeed('supply_chain', 'portwatch', CANONICAL_KEY, fetchAll, {
     validateFn,
     ttlSeconds: TTL,
+    extraKeys: [{
+      key: TRAFFIC_KEY,
+      ttl: TTL,
+      transform: buildTrafficSummary,
+      declareRecords: (payload) => Object.keys(payload?.summaries ?? {}).length,
+      skipWhenEmpty: true,
+    }],
     sourceVersion: 'imf-portwatch-arcgis-v1',
     recordCount: (data) => Object.keys(data).length,
   

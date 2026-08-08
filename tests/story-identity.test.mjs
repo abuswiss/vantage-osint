@@ -8,6 +8,7 @@ import { describe, it, afterEach } from 'node:test';
 import {
   STORY_SIMILARITY_THRESHOLD,
   normalizeStoryText,
+  normalizePublisherName,
   stripAttributionSuffix,
   candidateTokens,
   storyVector,
@@ -165,6 +166,46 @@ describe('clusterTexts', () => {
     assert.equal(clusterTexts(texts, { threshold: 0.999 }).length, 2);
     assert.equal(clusterTexts(texts).length, 1);
   });
+
+  it('splits transitive bridge components so every emitted pair clears the threshold', () => {
+    // A~B and B~C, but A!~C. Connected-components clustering would merge all
+    // three and let C's facts ride under A's URL; complete-link clustering must
+    // keep the provenance unit pairwise coherent.
+    const vectors = new Map([
+      ['Bridge alpha report', { u: new Float64Array([1, 0]), b: new Float64Array([1, 0]) }],
+      ['Bridge beta report', { u: new Float64Array([Math.SQRT1_2, Math.SQRT1_2]), b: new Float64Array([Math.SQRT1_2, Math.SQRT1_2]) }],
+      ['Bridge gamma report', { u: new Float64Array([0, 1]), b: new Float64Array([0, 1]) }],
+    ]);
+    setStoryVectorProvider((text) => vectors.get(text) ?? null);
+    const texts = [...vectors.keys()];
+    const clusters = clusterTexts(texts);
+
+    assert.deepEqual(clusters, [[0, 1], [2]]);
+    for (const cluster of clusters) {
+      for (let i = 0; i < cluster.length; i++) {
+        for (let j = i + 1; j < cluster.length; j++) {
+          assert.ok(storySimilarity(texts[cluster[i]], texts[cluster[j]]) >= STORY_SIMILARITY_THRESHOLD);
+        }
+      }
+    }
+  });
+
+  it('keeps unrelated ISW products out of one production-shaped story cluster', () => {
+    const texts = [
+      'Russian Offensive Campaign Assessment, August 7, 2026 - Institute for the Study of War',
+      'China and Taiwan Update, August 7, 2026 - Institute for the Study of War',
+      'Russian Offensive Campaign Assessment, August 6, 2026 - Institute for the Study of War',
+      'Iran Update Special Report, August 6, 2026 - Institute for the Study of War',
+      'Russian Occupation Update, August 6, 2026 - Institute for the Study of War',
+    ];
+    const clusters = clusterTexts(texts);
+
+    assert.deepEqual(clusters.map((cluster) => cluster.length).sort((a, b) => b - a), [2, 1, 1, 1]);
+    for (const cluster of clusters) {
+      const titles = cluster.map((index) => texts[index]).join(' | ');
+      assert.ok(!(/Russian Offensive/.test(titles) && /(China and Taiwan|Iran Update)/.test(titles)), titles);
+    }
+  });
 });
 
 describe('candidateTokens / normalizeStoryText', () => {
@@ -244,6 +285,17 @@ describe('assignStoryIdentity (#4919 acceptance)', () => {
     assert.equal(assignment.get(items[0]).corroborationCount, 1, 'same outlet republishing is not corroboration');
   });
 
+  it('section aliases from one publisher count as one corroborating outlet', async () => {
+    const items = [
+      { title: 'Oil prices rise after OPEC production decision', source: 'Reuters US' },
+      { title: 'Oil prices rise after OPEC production decision', source: 'Reuters Energy' },
+    ];
+    const assignment = await assignStoryIdentity(items, normalizeTitle, sha256Hex);
+    assert.equal(assignment.get(items[0]).corroborationCount, 1);
+    assert.equal(normalizePublisherName('Guardian World'), normalizePublisherName('Guardian ME'));
+    assert.equal(normalizePublisherName('AP News'), normalizePublisherName('Associated Press'));
+  });
+
   it('every item receives an assignment', async () => {
     const items = [
       { title: 'A completely unique story about lunar mining', source: 'X' },
@@ -292,11 +344,9 @@ describe('canonical identity stability (#4924 review)', () => {
     assert.equal(assignment.get(a).titleHash, await sha256Hex(normalizeTitle(b.title)));
   });
 
-  it('cluster membership is input-order independent (union-find, not greedy seed)', () => {
-    // Bridge case: A~B and B~C above threshold, A~C possibly below —
-    // greedy first-seed clustering could split this differently
-    // depending on which item arrived first; connected components
-    // cannot.
+  it('cluster membership is input-order independent after complete-link splitting', () => {
+    // Text-order assignment, rather than feed-arrival assignment, keeps the
+    // conservative complete-link result stable across batch permutations.
     const texts = [
       'Turkey central bank hikes interest rates to 50% in surprise move',
       'Turkey central bank hikes interest rates to 50%',
@@ -336,6 +386,10 @@ describe('attribution suffixes and length clamp (#4924 review)', () => {
     assert.equal(stripAttributionSuffix('Iran threatens Hormuz - Reuters'), 'Iran threatens Hormuz');
     assert.equal(stripAttributionSuffix('Iran threatens Hormuz - example.com'), 'Iran threatens Hormuz');
     assert.equal(stripAttributionSuffix('Iran-Iraq talks resume'), 'Iran-Iraq talks resume', 'mid-title hyphens untouched');
+    assert.equal(
+      stripAttributionSuffix('Russian Offensive Campaign Assessment - Institute for the Study of War'),
+      'Russian Offensive Campaign Assessment',
+    );
   });
 
   it('a pathologically long title does not change identity behavior (clamped, still vectorizes)', () => {
@@ -366,9 +420,11 @@ describe('list-feed-digest story-identity wiring (#4924 review)', () => {
     assert.ok(assignAt < enrichAt, 'identity must be assigned before enrichment/scoring consumes it');
   });
 
-  it('both corroboration consumers read the cluster-wide count from the item', () => {
-    assert.match(digestSrc, /Math\.max\(item\.corroborationCount, item\.entityCorroborationCount\)/,
-      'importance scoring must consume the cluster-wide corroboration');
+  it('importance uses exact-story corroboration rather than issue-level entity coverage', () => {
+    assert.match(digestSrc, /const scoringCorroboration = item\.corroborationCount;/,
+      'importance scoring must consume exact-story publisher count');
+    assert.doesNotMatch(digestSrc, /Math\.max\(item\.corroborationCount, item\.entityCorroborationCount\)/,
+      'issue-level entity coverage must not be counted a second time as exact corroboration');
     assert.match(digestSrc, /const sourceCount = item\.corroborationCount \?\? 1;/,
       'per-category slice must consume the cluster-wide corroboration');
   });

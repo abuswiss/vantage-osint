@@ -11,6 +11,8 @@ const LEGACY_DASHBOARD_ROOT_QUERY_KEYS = ['lat', 'lon', 'zoom', 'view', 'timeRan
 // auth (API key, shared secret, or intentionally-public semantics) because
 // this list disables the middleware's generic bot gate.
 // - /api/version, /api/health: intentionally public, monitoring-friendly.
+// - /api/vantage-health: public Vantage readiness contract used by monitors
+//   and the no-auth reader; it must remain reachable from curl/health bots.
 // - /api/seed-contract-probe: requires RELAY_SHARED_SECRET header; called by
 //   UptimeRobot + ops curl. Was blocked by the curl/bot UA regex before this
 //   exception landed (Vercel log 2026-04-15: "Middleware 403 Forbidden" on
@@ -36,6 +38,7 @@ const LEGACY_DASHBOARD_ROOT_QUERY_KEYS = ['lat', 'lon', 'zoom', 'view', 'timeRan
 const PUBLIC_API_PATHS = new Set([
   '/api/version',
   '/api/health',
+  '/api/vantage-health',
   '/api/seed-contract-probe',
   '/api/internal/brief-why-matters',
   '/api/llms.txt',

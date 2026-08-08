@@ -3347,14 +3347,21 @@ export class DataLoaderManager implements AppModule {
       this.ctx.statusPanel?.updateFeed('Shipping', {
         status: shippingStatus,
         itemCount: shippingCount,
-        errorMessage: !aisStatus.connected && shippingCount === 0 ? 'AIS snapshot unavailable' : undefined,
+        errorMessage: shippingCount === 0
+          ? 'Live AIS and aggregate maritime traffic unavailable'
+          : aisStatus.availability === 'traffic'
+            ? 'Aggregate traffic only · live AIS positions unavailable'
+            : undefined,
       });
       this.ctx.statusPanel?.updateApi('AISStream', {
-        status: aisStatus.connected ? 'ok' : 'warning',
+        status: aisStatus.availability === 'live' ? 'ok' : aisStatus.availability === 'traffic' ? 'warning' : 'error',
       });
       if (hasData) {
         dataFreshness.recordUpdate('ais', shippingCount);
+      } else {
+        dataFreshness.recordError('ais', 'Maritime traffic coverage unavailable');
       }
+      this.ctx.opsShell?.syncLayerChips();
     } catch (error) {
       this.ctx.map?.setLayerReady('ais', false);
       this.ctx.statusPanel?.updateFeed('Shipping', { status: 'error', errorMessage: String(error) });
@@ -3372,9 +3379,20 @@ export class DataLoaderManager implements AppModule {
       attempts++;
       const status = getAisStatus();
 
-      if (status.vessels > 0 || status.connected) {
+      if (status.availability === 'live' || status.availability === 'traffic') {
         this.loadAisSignals();
         this.ctx.map?.setLayerLoading('ais', false);
+        return;
+      }
+
+      if (status.availability === 'unavailable') {
+        this.ctx.map?.setLayerLoading('ais', false);
+        this.ctx.map?.setLayerReady('ais', false);
+        this.ctx.statusPanel?.updateFeed('Shipping', {
+          status: 'error',
+          errorMessage: 'Maritime traffic coverage unavailable',
+        });
+        this.ctx.opsShell?.syncLayerChips();
         return;
       }
 
@@ -3552,9 +3570,9 @@ export class DataLoaderManager implements AppModule {
       this.ctx.statusPanel?.updateFeed('Military', {
         status: militaryCount > 0 ? 'ok' : 'warning',
         itemCount: militaryCount,
-        errorMessage: militaryCount === 0 ? 'No military activity in view' : undefined,
+        errorMessage: militaryCount === 0 ? 'Military ADS-B coverage unavailable' : undefined,
       });
-      this.ctx.statusPanel?.updateApi('OpenSky', { status: 'ok' });
+      this.ctx.statusPanel?.updateApi('Military ADS-B', { status: flights.length > 0 ? 'ok' : 'error' });
       return;
     }
     try {
@@ -3610,17 +3628,21 @@ export class DataLoaderManager implements AppModule {
       this.ctx.statusPanel?.updateFeed('Military', {
         status: militaryCount > 0 ? 'ok' : 'warning',
         itemCount: militaryCount,
-        errorMessage: militaryCount === 0 ? 'No military activity in view' : undefined,
+        errorMessage: militaryCount === 0 ? 'Military ADS-B coverage unavailable' : undefined,
       });
-      this.ctx.statusPanel?.updateApi('OpenSky', { status: 'ok' });
-      dataFreshness.recordUpdate('opensky', flightData.flights.length);
+      this.ctx.statusPanel?.updateApi('Military ADS-B', { status: flightData.flights.length > 0 ? 'ok' : 'error' });
+      if (flightData.flights.length > 0) {
+        dataFreshness.recordUpdate('opensky', flightData.flights.length);
+      } else {
+        dataFreshness.recordError('opensky', 'Military ADS-B coverage unavailable');
+      }
     } catch (error) {
       // A teardown that races an in-flight vessel load is a deliberate
       // cancellation, not a real fetch failure — leave feed/api state intact.
       if (isVesselRuntimeStoppedError(error)) return;
       this.ctx.map?.setLayerReady('military', false);
       this.ctx.statusPanel?.updateFeed('Military', { status: 'error', errorMessage: String(error) });
-      this.ctx.statusPanel?.updateApi('OpenSky', { status: 'error' });
+      this.ctx.statusPanel?.updateApi('Military ADS-B', { status: 'error' });
       dataFreshness.recordError('opensky', String(error));
     }
   }

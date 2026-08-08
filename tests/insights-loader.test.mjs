@@ -60,7 +60,7 @@ describe('insights-loader', () => {
         status: 'ok',
         topStories: [{
           primaryTitle: 'Test', primarySource: 's', primaryLink: 'https://example.com/test',
-          pubDate: new Date().toISOString(), sourceCount: 2, importanceScore: 1,
+          pubDate: new Date().toISOString(), sourceCount: 2, uniqueSourceCount: 2, importanceScore: 1,
           velocity: { level: 'low', sourcesPerHour: 1 }, isAlert: false,
           category: 'general', threatLevel: 'low', countryCode: null,
         }],
@@ -74,6 +74,16 @@ describe('insights-loader', () => {
 
     it('validates required fields', () => {
       assert.ok(validateInsights(makeValid()));
+    });
+
+    it('keeps uniqueSourceCount backward compatible but rejects invalid exact counts', () => {
+      const legacy = makeValid();
+      delete legacy.topStories[0].uniqueSourceCount;
+      assert.ok(validateInsights(legacy), 'pre-rollout cached payload remains readable');
+
+      const invalid = makeValid();
+      invalid.topStories[0].uniqueSourceCount = -1;
+      assert.equal(validateInsights(invalid), null);
     });
 
     it('allows degraded status with empty brief', () => {
@@ -110,7 +120,7 @@ describe('insights-loader', () => {
         status: 'ok',
         topStories: [{
           primaryTitle: 'Test', primarySource: 's', primaryLink: 'l', pubDate: '',
-          sourceCount: 2, importanceScore: 1, velocity: { level: 'low', sourcesPerHour: 1 },
+          sourceCount: 2, uniqueSourceCount: 2, importanceScore: 1, velocity: { level: 'low', sourcesPerHour: 1 },
           isAlert: false, category: 'general', threatLevel: 'low', countryCode: null,
         }],
         generatedAt: new Date().toISOString(),

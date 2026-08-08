@@ -54,31 +54,40 @@ function relativeFreshness(generatedAt: string, nowMs: number): string {
   return `Updated ${hours}h ago`;
 }
 
+function exactOutletCount(story: ServerInsightStory): number {
+  const count = story.uniqueSourceCount;
+  // Older cached payloads did not distinguish cluster mentions from outlets.
+  // Fail closed rather than relabeling duplicate mentions as corroboration.
+  return typeof count === 'number' && Number.isFinite(count) && count > 0
+    ? Math.floor(count)
+    : 1;
+}
+
 function confidenceFor(stories: ServerInsightStory[]): Pick<VantageSynthesis, 'confidence' | 'confidenceDetail'> {
-  const corroborated = stories.filter((story) => story.sourceCount >= 2).length;
+  const multiOutlet = stories.filter((story) => exactOutletCount(story) >= 2).length;
   const total = stories.length;
-  const ratio = total > 0 ? corroborated / total : 0;
+  const ratio = total > 0 ? multiOutlet / total : 0;
   const confidence: VantageSynthesis['confidence'] = ratio >= 0.6
     ? 'HIGH'
     : ratio >= 0.25
       ? 'MEDIUM'
       : 'DEVELOPING';
   const confidenceDetail = total > 0
-    ? `${corroborated} of ${total} lead stories have multi-source corroboration.`
-    : 'No lead-story corroboration metadata is available.';
+    ? `${multiOutlet} of ${total} lead stories are reported by multiple named outlets.`
+    : 'No lead-story outlet-diversity metadata is available.';
   return { confidence, confidenceDetail };
 }
 
 function buildWhyItMatters(insights: ServerInsights): string {
   const stories = insights.topStories;
-  const corroborated = stories.filter((story) => story.sourceCount >= 2).length;
+  const multiOutlet = stories.filter((story) => exactOutletCount(story) >= 2).length;
   const severe = stories.filter((story) => story.threatLevel === 'critical' || story.threatLevel === 'high').length;
   const categories = [...new Set(stories.map((story) => story.category).filter(Boolean))]
     .slice(0, 3)
     .map((category) => category.replace(/_/g, ' '));
 
-  const evidence = corroborated > 0
-    ? `${corroborated} lead ${corroborated === 1 ? 'story is' : 'stories are'} independently corroborated`
+  const evidence = multiOutlet > 0
+    ? `${multiOutlet} lead ${multiOutlet === 1 ? 'story is' : 'stories are'} reported by multiple named outlets`
     : 'the leading reports are still developing';
   const severity = severe > 0
     ? `, including ${severe} high-severity ${severe === 1 ? 'signal' : 'signals'}`
@@ -130,7 +139,7 @@ export function buildVantageSynthesis(
     generatedAt: insights.generatedAt,
     freshness: relativeFreshness(insights.generatedAt, nowMs),
     ...confidence,
-    provenance: `Compiled from ${storiesConsidered} stories across ${sourcesConsidered} sources.`,
+    provenance: `Compiled from ${storiesConsidered} stories across ${sourcesConsidered} named feeds.`,
     degraded: insights.status === 'degraded',
     generationMode,
   };

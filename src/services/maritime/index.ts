@@ -106,6 +106,8 @@ interface SnapshotStatus {
   messages: number;
 }
 
+export type MaritimeAvailability = 'unknown' | 'live' | 'traffic' | 'unavailable';
+
 interface SnapshotCandidateReport extends AisPositionData {
   timestamp: number;
 }
@@ -131,6 +133,7 @@ let latestStatus: SnapshotStatus = {
   vessels: 0,
   messages: 0,
 };
+let latestAvailability: MaritimeAvailability = 'unknown';
 
 // ---- Constants ----
 
@@ -163,7 +166,7 @@ async function fetchSnapshotPayload(includeCandidates: boolean, signal?: AbortSi
   );
 
   const snapshot = response.snapshot;
-  if (!snapshot) return null;
+  if (!response.dataAvailable || !snapshot) return null;
 
   return {
     sequence: snapshot.sequence,
@@ -260,6 +263,11 @@ async function pollSnapshot(force = false, signal?: AbortSignal): Promise<void> 
     latestDensity = snapshot.density;
     latestStatus = snapshot.status;
     lastPollAt = Date.now();
+    latestAvailability = latestStatus.connected && latestStatus.vessels > 0
+      ? 'live'
+      : latestDensity.length > 0
+        ? 'traffic'
+        : 'unavailable';
 
     if (includeCandidates) {
       if (snapshot.sequence > lastSequence) {
@@ -279,6 +287,8 @@ async function pollSnapshot(force = false, signal?: AbortSignal): Promise<void> 
     }
   } catch {
     latestStatus.connected = false;
+    latestAvailability = 'unavailable';
+    lastPollAt = Date.now();
   } finally {
     inFlight = false;
   }
@@ -322,14 +332,23 @@ export function disconnectAisStream(): void {
   isPolling = false;
   inFlight = false;
   latestStatus.connected = false;
+  latestAvailability = 'unknown';
 }
 
-export function getAisStatus(): { connected: boolean; vessels: number; messages: number } {
+export function getAisStatus(): {
+  connected: boolean;
+  vessels: number;
+  messages: number;
+  availability: MaritimeAvailability;
+  zones: number;
+} {
   const isFresh = Date.now() - lastPollAt <= SNAPSHOT_STALE_MS;
   return {
     connected: latestStatus.connected && isFresh,
     vessels: latestStatus.vessels,
     messages: latestStatus.messages,
+    availability: isFresh ? latestAvailability : latestAvailability === 'unknown' ? 'unknown' : 'unavailable',
+    zones: latestDensity.length,
   };
 }
 

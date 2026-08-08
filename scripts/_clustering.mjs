@@ -5,7 +5,7 @@
 // the JSON requires below). The local Jaccard-0.5 matcher this file
 // carried was one of three inconsistent "same story?" answers in the
 // codebase; all three now share ONE definition and threshold.
-import { clusterTexts } from './shared/story-identity.js';
+import { clusterTexts, normalizePublisherName } from './shared/story-identity.js';
 import SOURCE_TIERS from './shared/source-tiers.json' with { type: 'json' };
 import DIPLOMACY_KEYWORDS_DATA from './shared/diplomacy-keywords.json' with { type: 'json' };
 
@@ -137,6 +137,7 @@ export function clusterItems(items) {
     const primary = sorted[0];
     const sources = [...new Set(group.map(i => normalizeSourceName(i.source)).filter(Boolean))]
       .sort((a, b) => sourceTierFor(a) - sourceTierFor(b) || a.localeCompare(b));
+    const publisherSources = [...new Set(sources.map(normalizePublisherName).filter(Boolean))].sort();
     const sourceTier = sourceTierForSources(sources);
     const publishedTimes = group.map(getItemPubMs).filter(ms => ms > 0);
     const lastUpdatedMs = publishedTimes.length > 0 ? Math.max(...publishedTimes) : getItemPubMs(primary);
@@ -155,7 +156,9 @@ export function clusterItems(items) {
       primaryLink: primary.link,
       pubDate: primary.pubDate,
       sourceCount: group.length,
+      uniqueSourceCount: publisherSources.length,
       sources,
+      publisherSources,
       lastUpdated: lastUpdatedMs > 0 ? new Date(lastUpdatedMs).toISOString() : primary.pubDate,
       memberTitles: group.map(i => i.title).filter(Boolean),
       sourceTier,
@@ -172,12 +175,15 @@ function countMatches(text, keywords) {
 }
 
 function publisherCount(cluster) {
-  return Math.max(
-    Array.isArray(cluster.sources) ? cluster.sources.length : 0,
-    finiteNumber(cluster.corroborationSourceCount, 0),
-    finiteNumber(cluster.corroborationCount, 0),
-    1,
-  );
+  const explicit = finiteNumber(cluster.uniqueSourceCount, 0);
+  if (explicit > 0) return explicit;
+  if (Array.isArray(cluster.sources) && cluster.sources.length > 0) {
+    return Math.max(1, new Set(cluster.sources.map(normalizePublisherName).filter(Boolean)).size);
+  }
+  // Legacy callers may not carry source names. Only then use the upstream
+  // exact-story count as a compatibility fallback; issue-level entity coverage
+  // is never a substitute for publishers of this claim.
+  return Math.max(finiteNumber(cluster.corroborationCount, 0), 1);
 }
 
 function hasStrongNonKeywordSignal(cluster) {
@@ -195,17 +201,21 @@ function hasStrongNonKeywordSignal(cluster) {
  *   seam a finance-variant insights run plugs into (tracked in #4922).
  */
 export function scoreImportance(cluster, opts = {}) {
+  const upstream = finiteNumber(cluster.upstreamImportanceScore, 0);
+  // Digest importance already incorporates threat, source tier, exact-story
+  // corroboration, issue context, and recency. Re-adding those same signals here
+  // turned a bounded upstream 68 into 330+ and made the second layer look more
+  // certain than its evidence. Preserve the canonical score verbatim; the local
+  // heuristic below exists only for legacy/incomplete payloads with no score.
+  if (upstream > 0) return upstream;
+
   let score = 0;
   const titleLower = normalizedMatchText(cluster.primaryTitle);
-  const upstream = finiteNumber(cluster.upstreamImportanceScore, 0);
-  if (upstream > 0) score += upstream * 2.2;
 
   const level = normalizeThreatLevel(cluster.threat?.level);
   const threatScores = { critical: 220, high: 150, medium: 80, low: 20, info: 0 };
   if (level && isLlmThreatSource(cluster.threat?.source)) {
     score += threatScores[level] ?? 0;
-  } else if (level && upstream > 0 && cluster.threat?.source !== 'keyword-historical-downgrade') {
-    score += (threatScores[level] ?? 0) * 0.35;
   }
 
   const sourceTier = finiteNumber(cluster.sourceTier, sourceTierFor(cluster.primarySource));
@@ -249,10 +259,13 @@ export function recencyWeight(cluster, nowMs = Date.now()) {
 }
 
 export function isBriefLeadEligible(cluster) {
-  const uniqueSources = Array.isArray(cluster?.sources)
-    ? cluster.sources.filter(s => typeof s === 'string' && s.trim().length > 0).length
-    : 0;
-  return uniqueSources >= 2 || cluster?.entityCorroboration === true;
+  const uniqueSources = publisherCount({
+    ...cluster,
+    // Eligibility must fail closed when source names/count are absent. Do not
+    // let publisherCount's legacy corroborationCount fallback unlock a Brief.
+    corroborationCount: 0,
+  });
+  return uniqueSources >= 2;
 }
 
 export function isTopStoriesAdmissible(cluster, score) {
@@ -291,7 +304,7 @@ export function computeEntityCorroboration(clusters, nowMs = Date.now()) {
       }
       bucket.clusters.push(cluster);
       for (const source of cluster.sources ?? []) {
-        const normalized = normalizeSourceName(source);
+        const normalized = normalizePublisherName(source);
         if (normalized) bucket.sources.add(normalized);
       }
     }
@@ -340,7 +353,12 @@ export function selectTopStories(clusters, maxCount = 8, stats, opts = {}) {
   for (const c of clusters) {
     const score = scoreImportance(c, opts);
     if (isTopStoriesAdmissible(c, score)) {
-      admissible.push({ cluster: c, score, effectiveScore: score * recencyWeight(c, nowMs) });
+      const upstream = finiteNumber(c.upstreamImportanceScore, 0);
+      // Upstream scores already contain recency. Applying recencyWeight again
+      // systematically demoted corroborated reports simply because a second
+      // outlet takes time to publish.
+      const effectiveScore = upstream > 0 ? score : score * recencyWeight(c, nowMs);
+      admissible.push({ cluster: c, score, effectiveScore });
     } else {
       admissibilityDropped++;
     }
@@ -365,12 +383,13 @@ export function selectTopStories(clusters, maxCount = 8, stats, opts = {}) {
     let overflowDropped = 0;
     const take = ({ cluster, score, effectiveScore }) => {
       selected.push({ ...cluster, importanceScore: score, effectiveImportanceScore: effectiveScore });
-      sourceCount.set(cluster.primarySource, (sourceCount.get(cluster.primarySource) || 0) + 1);
+      const sourceKey = normalizePublisherName(cluster.primarySource) || cluster.primarySource;
+      sourceCount.set(sourceKey, (sourceCount.get(sourceKey) || 0) + 1);
     };
     if (seed && maxCount > 0) take(seed);
     for (const entry of admissible) {
       if (entry === seed) continue;
-      const source = entry.cluster.primarySource;
+      const source = normalizePublisherName(entry.cluster.primarySource) || entry.cluster.primarySource;
       const count = sourceCount.get(source) || 0;
       if (count >= MAX_PER_SOURCE) {
         sourceCapDropped++;
@@ -390,17 +409,15 @@ export function selectTopStories(clusters, maxCount = 8, stats, opts = {}) {
 
   let result = fill(null);
 
-  // #5947: the brief lead requires a corroborated cluster (>=2 outlets or
-  // entity corroboration), but this ranking admits single-source alerts and
-  // multiplies by recencyWeight — and a cluster only becomes corroborated
-  // once a SECOND outlet publishes, so recency works against exactly the
-  // clusters the brief needs. On an alert-heavy cycle every slot went to a
-  // single-source alert, so pickBriefCluster returned null and seed-insights
-  // rejected the brief with INSIGHTS_SYNTHESIS_MISSING_CLUSTER on every run
-  // (35 consecutive in production) while corroborated clusters sat unused at
-  // rank 9+. Reserve one slot for the highest-ranked corroborated candidate
-  // rather than shipping no brief at all. This does not lower the brief's
-  // corroboration bar — it guarantees selection can satisfy it.
+  // #5947: the brief lead requires at least two canonical publishers inside
+  // the exact cluster, while this ranking also admits single-source alerts.
+  // On an alert-heavy cycle every slot went to a single-source alert, so
+  // pickBriefCluster returned null and seed-insights rejected the brief with
+  // INSIGHTS_SYNTHESIS_MISSING_CLUSTER on every run (35 consecutive in
+  // production) while exact multi-publisher clusters sat unused at rank 9+.
+  // Reserve one slot for the highest-ranked eligible candidate rather than
+  // shipping no brief at all. Related-issue entity coverage cannot satisfy
+  // this gate.
   // maxCount <= 0 selects nothing, so no slot exists to reserve — guard here
   // rather than only inside fill(), or the stats below would report a
   // promotion that never happened.

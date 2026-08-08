@@ -6,6 +6,7 @@ import {
   briefUserPrompt,
   composeDeterministicGroundedBrief,
   composeSynthesizedBrief,
+  synthesisUserPrompt,
   splitCitedLeadSentences,
 } from '../scripts/_insights-brief.mjs';
 
@@ -33,11 +34,11 @@ describe('pickBriefCluster', () => {
     assert.equal(pickBriefCluster(top).primaryTitle, 'B');
   });
 
-  it('accepts a single-cluster source when entity corroboration was established across related clusters', () => {
+  it('rejects entity-related coverage when the exact cluster has one publisher', () => {
     const top = [
       { sourceCount: 1, sources: ['Reuters'], entityCorroboration: true, primaryTitle: 'US and Iran close deal' },
     ];
-    assert.equal(pickBriefCluster(top).primaryTitle, 'US and Iran close deal');
+    assert.equal(pickBriefCluster(top), null);
   });
 
   it('skips a higher-ranked single-source rumor for a lower-ranked multi-sourced lead (regression: News24 Iran supreme leader 2026-04-23)', () => {
@@ -112,6 +113,20 @@ describe('briefUserPrompt', () => {
 
   it('instructs using only facts from the provided headline', () => {
     assert.match(briefUserPrompt('X'), /only facts from this headline/i);
+  });
+});
+
+describe('synthesisUserPrompt', () => {
+  it('reports exact publisher diversity instead of raw feed mentions', () => {
+    const prompt = synthesisUserPrompt([{
+      primaryTitle: 'Russian Offensive Campaign Assessment',
+      primarySource: 'Institute for the Study of War',
+      sourceCount: 5,
+      uniqueSourceCount: 1,
+      sources: ['ISW', 'ISW World'],
+    }]);
+    assert.match(prompt, /Institute for the Study of War, 1 source\)/);
+    assert.doesNotMatch(prompt, /5 sources/);
   });
 });
 
@@ -290,6 +305,28 @@ describe('composeSynthesizedBrief lead sentence boundaries (#5947)', () => {
     });
     const composed = composeSynthesizedBrief(crossed, topStories, { validatorMode: 'enforce' });
     assert.notEqual(composed, null, 'both sentences cite [1] and use only story 1 nouns');
+  });
+});
+
+describe('composeSynthesizedBrief exact citation grounding', () => {
+  it('does not let a fuzzy-cluster member title ground facts under the primary URL', () => {
+    const topStories = [{
+      primaryTitle: 'Russian Offensive Campaign Assessment, August 7, 2026',
+      primarySource: 'Institute for the Study of War',
+      primaryLink: 'https://example.test/russian-offensive-assessment',
+      sources: ['Institute for the Study of War', 'Reuters'],
+      uniqueSourceCount: 2,
+      memberTitles: [
+        'Russian Offensive Campaign Assessment, August 7, 2026',
+        'Iran Update Special Report, August 6, 2026',
+      ],
+    }];
+    const raw = JSON.stringify({
+      lead: 'Russian assessment incorporates Iran Update findings on attacks [1].',
+      lines: [{ n: 1, text: 'Russian assessment incorporates Iran Update findings [1]' }],
+    });
+
+    assert.equal(composeSynthesizedBrief(raw, topStories, { validatorMode: 'enforce' }), null);
   });
 });
 

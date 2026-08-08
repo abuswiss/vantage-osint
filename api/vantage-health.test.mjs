@@ -33,7 +33,7 @@ describe('Vantage public health', () => {
       ingestion: {
         status: 'ok',
         aviation: { coverage: { status: 'ok' } },
-        aisSnapshot: { connected: true },
+        aisSnapshot: { connected: true, currentPositionReady: true, vessels: 1, messages: 1 },
       },
     }), { status: 'ready', air: 'ready', ships: 'ready' });
   });
@@ -52,7 +52,7 @@ describe('Vantage public health', () => {
         ingestion: {
           status: 'ok',
           aviation: { coverage: { status: 'ok' } },
-          aisSnapshot: { connected: true },
+          aisSnapshot: { connected: true, currentPositionReady: true, vessels: 1, messages: 1 },
         },
       })),
       env: { WS_RELAY_URL: 'wss://relay.example.com' },
@@ -76,7 +76,7 @@ describe('Vantage public health', () => {
         ingestion: {
           status: 'ok',
           aviation: { coverage: { status: 'ok' } },
-          aisSnapshot: { connected: true },
+          aisSnapshot: { connected: true, currentPositionReady: true, vessels: 1, messages: 1 },
         },
       })),
       env: { WS_RELAY_URL: 'wss://relay.example.com' },
@@ -84,6 +84,17 @@ describe('Vantage public health', () => {
 
     assert.equal(health.status, 'degraded');
     assert.deepEqual(health.services.news, { status: 'unknown', ageSeconds: null });
+  });
+
+  it('does not false-green unobserved aviation or an open but silent AIS socket', () => {
+    assert.deepEqual(summarizeRelayHealth({
+      status: 'ok',
+      ingestion: {
+        status: 'degraded',
+        aviation: { coverage: { status: 'not_observed' } },
+        aisSnapshot: { connected: true, vessels: 0, messages: 0 },
+      },
+    }), { status: 'degraded', air: 'waiting', ships: 'waiting' });
   });
 
   it('is public, no-store, and fails readiness when Redis is unavailable', async () => {

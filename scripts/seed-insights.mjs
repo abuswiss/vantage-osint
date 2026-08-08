@@ -637,6 +637,25 @@ function categorizeStory(title) {
   return { category: 'general', threatLevel: 'moderate' };
 }
 
+const VALID_INSIGHT_THREAT_LEVELS = new Set(['critical', 'high', 'medium', 'low', 'info']);
+
+/** Preserve the canonical digest threat for every valid provenance source.
+ * Keyword and historical-downgrade classifications use the same taxonomy as
+ * LLM classifications; reclassifying them with a second keyword table caused
+ * analysis titles containing "war" to become Critical. */
+export function resolveStoryThreat(story) {
+  const level = typeof story?.threat?.level === 'string' ? story.threat.level.toLowerCase() : '';
+  if (VALID_INSIGHT_THREAT_LEVELS.has(level)) {
+    return {
+      category: typeof story.threat.category === 'string' && story.threat.category
+        ? story.threat.category
+        : 'general',
+      threatLevel: level,
+    };
+  }
+  return categorizeStory(story?.primaryTitle);
+}
+
 function normalizedSignalText(text) {
   return (text || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -662,7 +681,9 @@ function buildImportanceObservability(clusters, topStories) {
   const clusterSizes = clusters.map(c => Number(c.sourceCount) || 1).sort((a, b) => a - b);
   return {
     llmDrivenRanked: topStories.filter(s => s.threat?.source === 'llm').length,
-    keywordFallbackRanked: topStories.filter(s => s.threat?.source !== 'llm' && !s.upstreamImportanceScore).length,
+    // Digest importance exists for both LLM and rules-based classifications;
+    // classifier provenance, not score presence, identifies the fallback.
+    keywordFallbackRanked: topStories.filter(s => s.threat?.source !== 'llm').length,
     diplomacyHits: clusters.filter(clusterHasDiplomacySignal).length,
     corroborationHits: clusters.filter(c => c.entityCorroboration === true).length,
     clusterSizeP50: percentile(clusterSizes, 0.5),
@@ -970,16 +991,14 @@ export async function fetchInsights() {
     }
   }
 
-  const multiSourceCount = clusters.filter(c => (c.sources?.length ?? 0) >= 2 || c.entityCorroboration === true).length;
+  const multiSourceCount = clusters.filter(c => Number(c.uniqueSourceCount) >= 2).length;
   const fastMovingCount = 0; // velocity not available in digest items
 
   const enrichedStories = topStories.map(story => {
-    // Use digest threat when present and not keyword-sourced (keyword threat uses old taxonomy).
-    // Fall back to categorizeStory() for legacy/incomplete payloads.
-    const hasDigestThreat = story.threat?.level && story.threat?.source !== 'keyword';
-    const { category, threatLevel } = hasDigestThreat
-      ? { category: story.threat.category ?? 'general', threatLevel: story.threat.level }
-      : categorizeStory(story.primaryTitle);
+    // Preserve valid digest semantics regardless of whether the classifier was
+    // LLM- or keyword-backed. Only legacy/incomplete payloads use the local
+    // fallback taxonomy.
+    const { category, threatLevel } = resolveStoryThreat(story);
     const countryCode = extractCountryCode(story.primaryTitle) ?? null;
     return {
       primaryTitle: story.primaryTitle,
@@ -987,8 +1006,9 @@ export async function fetchInsights() {
       primaryLink: story.primaryLink,
       pubDate: story.pubDate,
       sourceCount: story.sourceCount,
-      uniqueSourceCount: Array.isArray(story.sources) ? story.sources.length : 0,
+      uniqueSourceCount: Number(story.uniqueSourceCount) || 0,
       sources: Array.isArray(story.sources) ? story.sources : [],
+      publisherSources: Array.isArray(story.publisherSources) ? story.publisherSources : [],
       lastUpdated: story.lastUpdated,
       memberTitles: Array.isArray(story.memberTitles) ? story.memberTitles : [story.primaryTitle],
       sourceTier: story.sourceTier,

@@ -24,6 +24,7 @@ import { classifyOpinion } from '../../../_shared/opinion-classifier.js';
 import { classifyFeelGood } from '../../../_shared/feelgood-classifier.js';
 import { classifyEphemeralLiveCoverage } from '../../../../shared/ephemeral-live-classifier.js';
 import { buildTickerDictionary, extractTickers } from '../../../../shared/ticker-extract.js';
+import { stripAttributionSuffix } from '../../../../shared/story-identity.js';
 import stocksData from '../../../../shared/stocks.json';
 import { buildClassifyCacheKey } from '../../intelligence/v1/_shared';
 import { getSourceTier } from '../../../_shared/source-tiers';
@@ -605,7 +606,10 @@ function parseRssXml(xml: string, feed: ServerFeed, variant: string): ParseResul
     }
     const publishedAt = parsedMs;
 
-    const threat = classifyByKeyword(title, variant);
+    // Publisher suffixes are transport metadata, not event text. Classifying
+    // `... - Institute for the Study of War` as HIGH solely because the
+    // publisher name contains "war" is a provenance-driven false positive.
+    const threat = classifyByKeyword(stripAttributionSuffix(title), variant);
     const isAlert = threat.level === 'critical' || threat.level === 'high';
     const description = extractDescription(block, isAtom, title);
 
@@ -1558,7 +1562,10 @@ async function buildDigest(variant: string, lang: string): Promise<ListFeedDiges
         item.isAlert = true;
         diplomacySeverityPromotionCount++;
       }
-      const scoringCorroboration = Math.max(item.corroborationCount, item.entityCorroborationCount);
+      // The weighted corroboration component is claim-level evidence only.
+      // Related issue coverage already has its own bounded context boost below;
+      // feeding it through this component as well counted the same signal twice.
+      const scoringCorroboration = item.corroborationCount;
       item.importanceScore = computeImportanceScore(
         item.level,
         item.source,

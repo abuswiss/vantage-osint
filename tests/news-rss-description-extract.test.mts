@@ -172,6 +172,20 @@ describe('extractDescription — Atom', () => {
 });
 
 describe('parseRssXml — integration with description', () => {
+  it('does not classify publisher-attribution text as an event threat', () => {
+    const xml = wrapRss(`
+      <item>
+        <title>Russian Offensive Campaign Assessment, August 7, 2026 - Institute for the Study of War</title>
+        <link>https://example.com/isw/russian-offensive-august-7</link>
+        <pubDate>Fri, 7 Aug 2026 08:01:00 GMT</pubDate>
+      </item>
+    `);
+    const result = parseRssXml(xml, FEED, 'full');
+    assert.ok(result);
+    assert.strictEqual(result!.items[0]!.level, 'info');
+    assert.strictEqual(result!.items[0]!.isAlert, false);
+  });
+
   it('every ParsedItem carries a description field (string, possibly empty)', () => {
     const xml = wrapRss(`
       <item>

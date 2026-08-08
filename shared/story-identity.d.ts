@@ -19,6 +19,7 @@ export const STORY_SIMILARITY_THRESHOLD: number;
 
 export function normalizeStoryText(text: string): string;
 export function stripAttributionSuffix(text: string): string;
+export function normalizePublisherName(source: string): string;
 export function candidateTokens(text: string): Set<string>;
 export function setStoryVectorProvider(
   provider: ((text: string) => StoryVector | null) | null,
