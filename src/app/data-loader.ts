@@ -3573,6 +3573,7 @@ export class DataLoaderManager implements AppModule {
         errorMessage: militaryCount === 0 ? 'Military ADS-B coverage unavailable' : undefined,
       });
       this.ctx.statusPanel?.updateApi('Military ADS-B', { status: flights.length > 0 ? 'ok' : 'error' });
+      this.ctx.opsShell?.syncLayerChips();
       return;
     }
     try {
@@ -3636,6 +3637,7 @@ export class DataLoaderManager implements AppModule {
       } else {
         dataFreshness.recordError('opensky', 'Military ADS-B coverage unavailable');
       }
+      this.ctx.opsShell?.syncLayerChips();
     } catch (error) {
       // A teardown that races an in-flight vessel load is a deliberate
       // cancellation, not a real fetch failure — leave feed/api state intact.
@@ -3644,6 +3646,7 @@ export class DataLoaderManager implements AppModule {
       this.ctx.statusPanel?.updateFeed('Military', { status: 'error', errorMessage: String(error) });
       this.ctx.statusPanel?.updateApi('Military ADS-B', { status: 'error' });
       dataFreshness.recordError('opensky', String(error));
+      this.ctx.opsShell?.syncLayerChips();
     }
   }
 

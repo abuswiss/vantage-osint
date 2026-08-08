@@ -389,6 +389,10 @@ export class OpsShell {
       )).length;
       this.moreLayersButton.textContent = active > 0 ? `Layers ${active}` : 'Layers';
     }
+    if (this.countAir && !this.countAir.hidden) {
+      const militaryFlights = this.ctx.intelligenceCache.military?.flights?.length ?? 0;
+      setCount(this.countAir, militaryFlights, 'air');
+    }
     const ais = safeAisStatus();
     if (this.countShips && !this.countShips.hidden) {
       if (ais.availability === 'traffic') setCount(this.countShips, ais.zones, 'maritime zones');
