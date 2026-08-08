@@ -2876,7 +2876,7 @@ export class App {
     // Panel-level refreshes (moved from panel constructors into scheduler for hidden-tab awareness + jitter)
     this.refreshScheduler.scheduleRefresh(
       'service-status',
-      () => (this.state.panels['service-status'] as ServiceStatusPanel).fetchStatus(),
+      () => (this.state.panels['service-status'] as ServiceStatusPanel | undefined)?.fetchStatus() ?? Promise.resolve(),
       REFRESH_INTERVALS.serviceStatus,
       () => this.isPanelNearViewport('service-status')
     );
