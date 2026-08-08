@@ -211,7 +211,43 @@ function brotliPrecompressPlugin(): Plugin {
   };
 }
 
-function htmlVariantPlugin(activeMeta: VariantMeta, activeVariant: string, isDesktopBuild: boolean): Plugin {
+const VANTAGE_OPS_PREHYDRATION_SHELL = `
+      <!-- Pre-rendered Vantage workspace: retained through the legacy-layout
+           plumbing pass, then faded once OpsShell has adopted the live map. -->
+      <div class="skeleton-shell skeleton-ops-shell" data-shell-surface="ops" role="status" aria-live="polite" aria-atomic="true" aria-busy="true" aria-label="Vantage intelligence workspace loading">
+        <div class="skeleton-ops-top">
+          <div class="skeleton-ops-brand"><span>Vantage</span><span class="skeleton-ops-status"><i aria-hidden="true"></i>Updating</span></div>
+          <div class="skeleton-ops-controls" aria-hidden="true"><span></span><span></span><span></span><span class="wide"></span></div>
+        </div>
+        <div class="skeleton-ops-body">
+          <aside class="skeleton-ops-feed" aria-label="Intelligence feed loading">
+            <div class="skeleton-ops-feed-head"><span>Intelligence</span><span>Preparing reports</span></div>
+            <div class="skeleton-ops-feed-list" aria-hidden="true">
+              <div class="skeleton-ops-feed-row"><i></i><b></b><span></span></div>
+              <div class="skeleton-ops-feed-row"><i></i><b></b><span></span></div>
+              <div class="skeleton-ops-feed-row"><i></i><b></b><span></span></div>
+              <div class="skeleton-ops-feed-row"><i></i><b></b><span></span></div>
+              <div class="skeleton-ops-feed-row"><i></i><b></b><span></span></div>
+            </div>
+          </aside>
+          <section class="skeleton-ops-map" aria-label="Global intelligence map loading">
+            <div class="skeleton-ops-hud" aria-hidden="true"><span></span><i></i></div>
+            <div class="skeleton-ops-ready">
+              <p>Preparing current signals</p>
+              <h2 class="skeleton-lcp-copy" data-shell-lcp>Intelligence workspace is loading</h2>
+              <span>Map, reporting, and cited context are being aligned.</span>
+            </div>
+          </section>
+        </div>
+        <div class="skeleton-ops-bottom" aria-hidden="true"><span></span><i></i><i></i><i></i><b></b></div>
+      </div>`;
+
+function htmlVariantPlugin(
+  activeMeta: VariantMeta,
+  activeVariant: string,
+  isDesktopBuild: boolean,
+  publicVantageMode: boolean,
+): Plugin {
   return {
     name: 'html-variant',
     transformIndexHtml(html) {
@@ -236,6 +272,13 @@ function htmlVariantPlugin(activeMeta: VariantMeta, activeVariant: string, isDes
         .replace(/"url": "https:\/\/worldmonitor\.app\/"/, `"url": "${activeMeta.url}"`)
         .replace(/"description": "Real-time global intelligence dashboard with live news, markets, military tracking, infrastructure monitoring, and geopolitical data."/, `"description": "${activeMeta.description}"`)
         .replace(/"featureList": \[[\s\S]*?\]/, `"featureList": ${JSON.stringify(activeMeta.features, null, 8).replace(/\n/g, '\n      ')}`);
+
+      if (publicVantageMode) {
+        result = result.replace(
+          /\s*<!-- WM_PREHYDRATION_SHELL_START -->[\s\S]*?<!-- WM_PREHYDRATION_SHELL_END -->/,
+          `\n${VANTAGE_OPS_PREHYDRATION_SHELL}`,
+        );
+      }
 
       // Theme-color meta — warm cream for happy variant
       if (activeVariant === 'happy') {
@@ -872,7 +915,7 @@ export default defineConfig(({ mode }) => {
           });
         },
       },
-      htmlVariantPlugin(activeMeta, activeVariant, isDesktopBuild),
+      htmlVariantPlugin(activeMeta, activeVariant, isDesktopBuild, publicVantageMode),
       !isDesktopBuild && dashboardHtmlOutputPlugin(),
       polymarketPlugin(),
       rssProxyPlugin(),

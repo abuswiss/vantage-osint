@@ -150,7 +150,7 @@ export const COMMANDS: Command[] = [
   { id: 'panel:windy-webcams', keywords: ['windy', 'weather cam', 'weather webcam', 'weather cameras'], label: 'Panel: Live Weather Cams', icon: '\u{1F4F9}', category: 'panels' },
   { id: 'panel:chat-analyst', keywords: ['wm analyst', 'analyst', 'ai analyst', 'chat analyst', 'ask ai', 'intelligence analyst'], label: 'Panel: WM Analyst', icon: '\u{1F916}', category: 'panels' },
   { id: 'panel:insights', keywords: ['insights', 'ai insights', 'analysis'], label: 'Panel: AI Insights', icon: '\u{1F4A1}', category: 'panels' },
-  { id: 'panel:strategic-posture', keywords: ['strategic posture', 'ai posture', 'posture assessment'], label: 'Panel: AI Strategic Posture', icon: '\u{1F3AF}', category: 'panels' },
+  { id: 'panel:strategic-posture', keywords: ['strategic posture', 'ai posture', 'posture assessment'], label: 'Panel: Strategic Posture', icon: '\u{1F3AF}', category: 'panels' },
   { id: 'panel:forecast', keywords: ['forecast', 'ai forecast', 'predictions ai'], label: 'Panel: AI Forecasts', icon: '\u{1F52E}', category: 'panels' },
   { id: 'panel:deduction', keywords: ['deduct', 'deduction', 'ai deduction', 'situation analysis', 'scenario analysis'], label: 'Panel: AI Deduction', icon: '\u{1F9E0}', category: 'panels' },
   { id: 'panel:regional-intelligence', keywords: ['regional intelligence', 'regional brief', 'region snapshot', 'balance vector', 'regime', 'mena brief', 'east asia brief', 'europe brief', 'scenarios', 'transmission paths'], label: 'Panel: Regional Intelligence', icon: '\u{1F30D}', category: 'panels' },

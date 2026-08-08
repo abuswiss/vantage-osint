@@ -16,7 +16,7 @@ type LcpEntrySnapshot = {
 const { defaultBrowserType: mobileDefaultBrowserType, ...mobileDevice } = devices['iPhone 14 Pro Max'];
 void mobileDefaultBrowserType;
 
-const SHELL_LCP_TEXT = 'Dashboard is loading';
+const SHELL_LCP_TEXT = 'Intelligence workspace is loading';
 
 declare global {
   interface Window {
@@ -108,6 +108,25 @@ const delayWelcomeMain = async (page: Page): Promise<{ release: () => void; requ
   });
 
   return { release: releaseMain, requested };
+};
+
+const delayOpsShellModule = async (page: Page): Promise<{ release: () => void; requested: Promise<void> }> => {
+  let releaseModule!: () => void;
+  let resolveRequested!: () => void;
+  const releasePromise = new Promise<void>((resolve) => {
+    releaseModule = resolve;
+  });
+  const requested = new Promise<void>((resolve) => {
+    resolveRequested = resolve;
+  });
+
+  await page.route('**/src/app/ops-shell.ts', async (route) => {
+    resolveRequested();
+    await releasePromise;
+    await route.continue();
+  });
+
+  return { release: releaseModule, requested };
 };
 
 test.describe('pre-hydration dashboard shell', () => {
@@ -207,7 +226,7 @@ test.describe('pre-hydration dashboard shell', () => {
       expect(preHydration.focusableCount).toBe(0);
       expect(preHydration.shellText).toContain('Vantage');
       expect(preHydration.shellText).toContain(SHELL_LCP_TEXT);
-      expect(preHydration.shellText).toContain('Primary View');
+      expect(preHydration.shellText).toContain('Intelligence');
       expect(preHydration.candidateText).toBe(SHELL_LCP_TEXT);
       expect(preHydration.candidateRect.width).toBeGreaterThan(260);
       expect(preHydration.candidateRect.height).toBeGreaterThan(18);
@@ -251,6 +270,113 @@ test.describe('pre-hydration dashboard shell', () => {
       releaseMain();
     }
   });
+
+  test('keeps the workspace shell covering the legacy plumbing render', async ({ page }) => {
+    const delayedOpsShell = await delayOpsShellModule(page);
+    try {
+      await page.goto('/', { waitUntil: 'commit' });
+      await delayedOpsShell.requested;
+
+      await expect(page.locator('.header')).toHaveCount(1);
+      await expect(page.locator('.skeleton-shell-handoff')).toBeVisible();
+      const paintedSurface = await page.evaluate(() => {
+        const shell = document.querySelector<HTMLElement>('.skeleton-shell-handoff');
+        const app = document.getElementById('app');
+        const transientControl = app?.querySelector<HTMLElement>('button, a[href]') ?? null;
+        transientControl?.focus();
+        const rect = shell?.getBoundingClientRect();
+        const styles = shell ? getComputedStyle(shell) : null;
+        return {
+          appAriaHidden: app?.getAttribute('aria-hidden'),
+          appInert: app?.inert,
+          coversViewport: Boolean(rect
+            && rect.left <= 0 && rect.top <= 0
+            && rect.right >= window.innerWidth && rect.bottom >= window.innerHeight),
+          focusEnteredPlumbing: document.activeElement === transientControl,
+          opacity: styles?.opacity,
+          pointerEvents: styles?.pointerEvents,
+          shellAriaHidden: shell?.getAttribute('aria-hidden'),
+          zIndex: styles?.zIndex,
+        };
+      });
+      expect(paintedSurface).toEqual({
+        appAriaHidden: 'true',
+        appInert: true,
+        coversViewport: true,
+        focusEnteredPlumbing: false,
+        opacity: '1',
+        pointerEvents: 'auto',
+        shellAriaHidden: 'true',
+        zIndex: '10000',
+      });
+
+      delayedOpsShell.release();
+      await expect(page.locator('.ops-shell')).toBeVisible({ timeout: 30000 });
+      await expect(page.locator('.skeleton-shell')).toHaveCount(0);
+      await expect(page.locator('#app')).not.toHaveAttribute('aria-hidden');
+      expect(await page.locator('#app').evaluate((element) => (element as HTMLElement).inert)).toBe(false);
+    } finally {
+      delayedOpsShell.release();
+    }
+  });
+
+  test('replaces a failed workspace chunk with a usable recovery surface', async ({ page }) => {
+    await page.route('**/src/app/ops-shell.ts', async (route) => {
+      await route.abort('failed');
+    });
+
+    await page.goto('/', { waitUntil: 'commit' });
+
+    const recovery = page.getByRole('alert', { name: 'Vantage could not finish starting' });
+    await expect(recovery).toBeVisible({ timeout: 30000 });
+    await expect(recovery).toContainText('Your data is unchanged');
+    await expect(page.locator('.skeleton-shell-handoff')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Retry workspace' })).toBeFocused();
+    const classic = page.getByRole('link', { name: 'Use classic dashboard' });
+    await expect(classic).toHaveAttribute('href', /[?&]classic=1(?:&|$)/);
+    await expect(page.locator('#app')).toHaveAttribute('aria-hidden', 'true');
+    expect(await page.locator('#app').evaluate((element) => (element as HTMLElement).inert)).toBe(true);
+    const geometry = await recovery.locator('.ops-boot-failure-card').evaluate((card) => {
+      const rect = card.getBoundingClientRect();
+      return {
+        centeredX: Math.abs((rect.left + rect.width / 2) - window.innerWidth / 2),
+        centeredY: Math.abs((rect.top + rect.height / 2) - window.innerHeight / 2),
+        insideViewport: rect.left >= 0 && rect.top >= 0
+          && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
+      };
+    });
+    expect(geometry.insideViewport).toBe(true);
+    expect(geometry.centeredX).toBeLessThanOrEqual(1);
+    expect(geometry.centeredY).toBeLessThanOrEqual(1);
+  });
+});
+
+test.describe('pre-hydration workspace shell on tablet', () => {
+  test.use({ viewport: { width: 820, height: 1180 } });
+
+  test('keeps the stacked map footprint stable at the 820px handoff', async ({ page }) => {
+    const delayedOpsShell = await delayOpsShellModule(page);
+    try {
+      await page.goto('/', { waitUntil: 'commit' });
+      await delayedOpsShell.requested;
+      await expect(page.locator('.skeleton-ops-map')).toBeVisible();
+
+      const boot = await page.locator('.skeleton-ops-map').boundingBox();
+      expect(boot).not.toBeNull();
+      expect(boot!.width).toBe(820);
+      expect(boot!.height).toBeGreaterThan(200);
+
+      delayedOpsShell.release();
+      await expect(page.locator('.ops-map')).toBeVisible({ timeout: 30000 });
+      await expect(page.locator('.skeleton-shell')).toHaveCount(0);
+      const live = await page.locator('.ops-map').boundingBox();
+      expect(live).not.toBeNull();
+      expect(Math.abs(live!.width - boot!.width), 'tablet map width drift').toBeLessThanOrEqual(1);
+      expect(Math.abs(live!.height - boot!.height), 'tablet map height drift').toBeLessThanOrEqual(2);
+    } finally {
+      delayedOpsShell.release();
+    }
+  });
 });
 
 test.describe('pre-hydration dashboard shell on mobile', () => {
@@ -277,7 +403,7 @@ test.describe('pre-hydration dashboard shell on mobile', () => {
       await page.goto('/', { waitUntil: 'commit' });
       await delayedMain.requested;
       await expect(page.locator('.skeleton-shell')).toBeVisible();
-      await expect(page.locator('.skeleton-map-title')).toBeVisible();
+      await expect(page.locator('.skeleton-lcp-copy')).toBeVisible();
       await expect(page.locator('[data-shell-lcp]')).toHaveText(SHELL_LCP_TEXT);
 
       await expect.poll(async () => page.evaluate(() => (
@@ -289,8 +415,8 @@ test.describe('pre-hydration dashboard shell on mobile', () => {
       }).toBeGreaterThan(0);
 
       const mobileShell = await page.evaluate(() => {
-        const title = document.querySelector('.skeleton-map-title');
-        const panel = document.querySelector('.skeleton-panel');
+        const title = document.querySelector('.skeleton-lcp-copy');
+        const panel = document.querySelector('.skeleton-ops-feed');
         const titleRect = title?.getBoundingClientRect();
         const panelRect = panel?.getBoundingClientRect();
         return {
@@ -328,17 +454,14 @@ test.describe('pre-hydration dashboard shell on mobile', () => {
 
       releaseMain();
 
-      await expect(page.locator('.header')).toBeVisible({ timeout: 30000 });
+      await expect(page.locator('.ops-shell')).toBeVisible({ timeout: 30000 });
       await expect(page.locator('.skeleton-shell')).toHaveCount(0);
     } finally {
       releaseMain();
     }
   });
 
-  test('matches the persisted collapsed-map footprint through hydration', async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem('mobile-map-collapsed', 'true');
-    });
+  test('matches the mobile map footprint through the OpsShell handoff', async ({ page }) => {
     const delayedMain = await delayDashboardMain(page);
     let released = false;
     const releaseMain = () => {
@@ -350,22 +473,18 @@ test.describe('pre-hydration dashboard shell on mobile', () => {
     try {
       await page.goto('/', { waitUntil: 'commit' });
       await delayedMain.requested;
-      await expect(page.locator('.skeleton-map')).toBeVisible();
-      await expect(page.locator('.skeleton-map-body')).toBeHidden();
+      await expect(page.locator('.skeleton-ops-map')).toBeVisible();
 
-      const shellHeight = await page.locator('.skeleton-map').evaluate((element) => element.getBoundingClientRect().height);
+      const shellHeight = await page.locator('.skeleton-ops-map').evaluate((element) => element.getBoundingClientRect().height);
       expect(shellHeight).toBeGreaterThan(0);
 
       releaseMain();
 
-      await expect(page.locator('#mapSection.collapsed')).toBeVisible({ timeout: 30000 });
+      await expect(page.locator('.ops-map')).toBeVisible({ timeout: 30000 });
       await expect(page.locator('.skeleton-shell')).toHaveCount(0);
-      const hydratedHeight = await page.locator('#mapSection').evaluate((element) => element.getBoundingClientRect().height);
+      const hydratedHeight = await page.locator('.ops-map').evaluate((element) => element.getBoundingClientRect().height);
 
-      expect(Math.abs(hydratedHeight - shellHeight), 'collapsed map footprint drift').toBeLessThanOrEqual(2);
-      await expect.poll(async () => page.evaluate(() => (
-        document.documentElement.classList.contains('wm-map-collapsed')
-      ))).toBe(false);
+      expect(Math.abs(hydratedHeight - shellHeight), 'mobile map footprint drift').toBeLessThanOrEqual(2);
     } finally {
       releaseMain();
     }

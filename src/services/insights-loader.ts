@@ -56,19 +56,54 @@ let cached: ServerInsights | null = null;
 // Exported so the regression test asserts against the real value rather than
 // inlining a copy that drifts silently when this constant changes.
 export const MAX_AGE_MS = 60 * 60 * 1000;
+export const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
 
 function isFresh(data: ServerInsights): boolean {
-  const age = Date.now() - new Date(data.generatedAt).getTime();
-  return age < MAX_AGE_MS;
+  const generatedAtMs = new Date(data.generatedAt).getTime();
+  if (!Number.isFinite(generatedAtMs)) return false;
+  const age = Date.now() - generatedAtMs;
+  return age >= -MAX_FUTURE_SKEW_MS && age < MAX_AGE_MS;
 }
 
-function validateInsights(raw: unknown): ServerInsights | null {
+function isInsightStory(value: unknown): value is ServerInsightStory {
+  if (!value || typeof value !== 'object') return false;
+  const story = value as Partial<ServerInsightStory>;
+  return typeof story.primaryTitle === 'string'
+    && typeof story.primarySource === 'string'
+    && typeof story.primaryLink === 'string'
+    && typeof story.sourceCount === 'number'
+    && Number.isFinite(story.sourceCount)
+    && typeof story.category === 'string'
+    && typeof story.threatLevel === 'string';
+}
+
+function isBriefSource(value: unknown): value is ServerBriefSource {
+  if (!value || typeof value !== 'object') return false;
+  const source = value as Partial<ServerBriefSource>;
+  return typeof source.title === 'string'
+    && typeof source.source === 'string'
+    && typeof source.url === 'string';
+}
+
+export function validateInsights(raw: unknown): ServerInsights | null {
   if (!raw || typeof raw !== 'object') return null;
-  const data = raw as ServerInsights;
-  if (!Array.isArray(data.topStories) || data.topStories.length === 0) return null;
+  const data = raw as Partial<ServerInsights>;
+  if (typeof data.worldBrief !== 'string') return null;
+  if (typeof data.briefProvider !== 'string') return null;
+  if (data.status !== 'ok' && data.status !== 'degraded') return null;
+  if (!Array.isArray(data.topStories) || data.topStories.length === 0 || !data.topStories.every(isInsightStory)) return null;
   if (typeof data.generatedAt !== 'string') return null;
-  if (!isFresh(data)) return null;
-  return data;
+  if (data.worldBriefSources !== undefined
+    && (!Array.isArray(data.worldBriefSources) || !data.worldBriefSources.every(isBriefSource))) return null;
+  if (data.briefStoryLines !== undefined
+    && (!Array.isArray(data.briefStoryLines) || !data.briefStoryLines.every((line) => (
+      line && typeof line === 'object'
+      && typeof (line as { n?: number }).n === 'number'
+      && Number.isFinite((line as { n: number }).n)
+      && typeof (line as { text?: string }).text === 'string'
+    )))) return null;
+  if (!isFresh(data as ServerInsights)) return null;
+  return data as ServerInsights;
 }
 
 export function getServerInsights(): ServerInsights | null {

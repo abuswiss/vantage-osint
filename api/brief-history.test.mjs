@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 const {
   diffBriefSnapshots,
   extractBriefLines,
+  handleBriefHistoryRequest,
   headlineFromBrief,
 } = await import('./brief-history.js');
 
@@ -118,5 +119,90 @@ describe('Brief history headline', () => {
     const headline = headlineFromBrief(`${'word '.repeat(60)}end.`);
     assert.ok(headline.length <= 140);
     assert.ok(headline.endsWith('…'));
+  });
+});
+
+describe('Brief history HTTP boundary', () => {
+  const request = (path = '', method = 'GET') => new Request(`https://vantage.example/api/brief-history${path}`, { method });
+  const allow = async () => null;
+
+  it('handles preflight and rejects unsupported methods without touching Redis', async () => {
+    const untouched = async () => { throw new Error('dependency should not be called'); };
+    const options = await handleBriefHistoryRequest(request('', 'OPTIONS'), {}, {
+      pipeline: untouched,
+      checkRateLimit: untouched,
+    });
+    assert.equal(options.status, 204);
+    assert.equal(options.headers.get('access-control-allow-origin'), '*');
+
+    const post = await handleBriefHistoryRequest(request('', 'POST'), {}, {
+      pipeline: untouched,
+      checkRateLimit: untouched,
+    });
+    assert.equal(post.status, 405);
+    assert.equal(post.headers.get('cache-control'), 'no-store');
+  });
+
+  it('rejects malformed and oversized selectors before rate-limit or archive I/O', async () => {
+    let calls = 0;
+    const untouched = async () => { calls += 1; return null; };
+    const malformed = await handleBriefHistoryRequest(request('?diff=not-a-date,latest'), {}, {
+      pipeline: untouched,
+      checkRateLimit: untouched,
+    });
+    assert.equal(malformed.status, 400);
+
+    const oversized = await handleBriefHistoryRequest(request(`?diff=${'x'.repeat(181)}`), {}, {
+      pipeline: untouched,
+      checkRateLimit: untouched,
+    });
+    assert.equal(oversized.status, 400);
+    assert.equal(calls, 0);
+  });
+
+  it('bounds archive reads, applies scoped rate limiting, and emits cache headers', async () => {
+    const older = snapshot('2026-08-06T12:00:00.000Z', ['Earlier report [1].']);
+    const latest = snapshot('2026-08-07T12:00:00.000Z', ['Current report [1].']);
+    const commands = [];
+    const response = await handleBriefHistoryRequest(request('?diff=yesterday,latest'), {}, {
+      checkRateLimit: allow,
+      pipeline: async (next) => {
+        commands.push(...next);
+        return [{ result: [
+          JSON.stringify(older), String(Date.parse(older.generatedAt)),
+          JSON.stringify(latest), String(Date.parse(latest.generatedAt)),
+        ] }];
+      },
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'public, s-maxage=60, stale-while-revalidate=300');
+    assert.deepEqual(commands, [[
+      'ZRANGE', 'news:insights:history:v1', '-400', '-1', 'WITHSCORES',
+    ]]);
+  });
+
+  it('returns a limiter response without reading the archive', async () => {
+    let pipelineCalls = 0;
+    const response = await handleBriefHistoryRequest(request(), {}, {
+      pipeline: async () => { pipelineCalls += 1; return []; },
+      checkRateLimit: async (_req, _headers, options) => {
+        assert.deepEqual({ scope: options.scope, limit: options.limit, window: options.window }, {
+          scope: 'brief-history', limit: 120, window: '60 s',
+        });
+        return new Response('limited', { status: 429 });
+      },
+    });
+    assert.equal(response.status, 429);
+    assert.equal(pipelineCalls, 0);
+  });
+
+  it('fails closed at the history boundary when Redis is unavailable', async () => {
+    const response = await handleBriefHistoryRequest(request(), {}, {
+      checkRateLimit: allow,
+      pipeline: async () => null,
+    });
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
   });
 });

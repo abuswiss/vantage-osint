@@ -202,7 +202,26 @@ const FREE_MAP_PANEL_ACCESS_KEY = 'worldmonitor-free-map-panel-access-v1';
 const CW_PRO_GATE_RECOVERY_KEY = 'worldmonitor-cw-pro-gate-recovery-v1';
 const CW_PRO_GATE_CLOUD_RECOVERY_BASELINE_KEY = 'worldmonitor-cw-pro-gate-cloud-recovery-baseline-v1';
 const CW_PRO_GATE_CLOUD_RECOVERY_APPLIED_KEY = 'worldmonitor-cw-pro-gate-cloud-recovery-applied-v1';
+const OPS_SHELL_BOOT_TIMEOUT_MS = 12_000;
 type SignalModalInstance = import('@/components/SignalModal').SignalModal;
+
+function withBootTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(`Intelligence workspace did not start within ${timeoutMs}ms`));
+    }, timeoutMs);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 
 export type { CountryBriefSignals } from '@/app/app-context';
 
@@ -1184,7 +1203,11 @@ export class App {
     // Build shared state object
     this.state = {
       map: null,
-      opsMode: !isMobile && !new URLSearchParams(window.location.search).has('classic'),
+      // Public Vantage is one coherent map-first product at every viewport.
+      // The full/desktop product keeps its established mobile dashboard, and
+      // `?classic=1` remains an explicit escape hatch for either surface.
+      opsMode: !new URLSearchParams(window.location.search).has('classic')
+        && (VANTAGE_PUBLIC_MODE || !isMobile),
       opsFocus: initialUrlState.focus ?? null,
       opsShell: null,
       isMobile,
@@ -1939,20 +1962,30 @@ export class App {
     await this.panelLayout.init();
     markLcpDebug('wm:layout:init-complete');
     if (this.state.opsMode) {
-      const { OpsShell } = await import('@/app/ops-shell');
-      const shell = new OpsShell(this.state, {
-        onToggleLayer: (layer, enabled) => {
-          // Side-effect funnel first (mutates ctx.mapLayers, persists, loads
-          // data), then push the resulting layer set into the renderer — in the
-          // classic flow the map originates toggles itself, so the funnel alone
-          // never repaints it.
-          this.eventHandlers.applyMapLayerChange(layer, enabled, 'user');
-          this.state.map?.setLayers({ ...this.state.mapLayers });
-        },
-        onOpenSearch: () => { void this.openSearch(); },
-      });
-      shell.mount();
-      this.state.opsShell = shell;
+      let shell: import('@/app/ops-shell').OpsShell | null = null;
+      try {
+        const { OpsShell } = await withBootTimeout(
+          import('@/app/ops-shell'),
+          OPS_SHELL_BOOT_TIMEOUT_MS,
+        );
+        shell = new OpsShell(this.state, {
+          onToggleLayer: (layer, enabled) => {
+            // Side-effect funnel first (mutates ctx.mapLayers, persists, loads
+            // data), then push the resulting layer set into the renderer — in the
+            // classic flow the map originates toggles itself, so the funnel alone
+            // never repaints it.
+            this.eventHandlers.applyMapLayerChange(layer, enabled, 'user');
+            this.state.map?.setLayers({ ...this.state.mapLayers });
+          },
+          onOpenSearch: () => { void this.openSearch(); },
+        });
+        shell.mount();
+        this.state.opsShell = shell;
+      } catch (error) {
+        shell?.destroy();
+        this.state.opsShell = null;
+        this.showOpsShellBootFailure(error);
+      }
     }
     this.eventHandlers.setupSearchControls();
     if (!VANTAGE_PUBLIC_MODE) showProBanner(this.state.container);
@@ -2453,6 +2486,59 @@ export class App {
       console.log(`[App] Free tier: round-robin disabled ${autoDisabled.size} source(s) to enforce ${FREE_MAX_SOURCES}-source limit (per-category fairness)`);
     }
     return panelsChanged;
+  }
+
+  private showOpsShellBootFailure(error: unknown): void {
+    console.error('[App] Intelligence workspace failed to start:', error);
+
+    this.state.container.inert = true;
+    this.state.container.setAttribute('aria-hidden', 'true');
+    this.state.container.dataset.opsHandoff = 'failed';
+    document.body.classList.remove('ops-mode');
+
+    const existing = document.querySelector<HTMLElement>('.skeleton-shell-handoff');
+    const surface = existing ?? document.createElement('section');
+    surface.classList.remove(
+      'skeleton-shell-handoff',
+      'skeleton-shell',
+      'skeleton-ops-shell',
+      'is-leaving',
+    );
+    surface.classList.add('ops-boot-failure');
+    surface.inert = false;
+    surface.removeAttribute('aria-busy');
+    surface.removeAttribute('aria-hidden');
+    surface.setAttribute('role', 'alert');
+    surface.setAttribute('aria-live', 'assertive');
+    surface.setAttribute('aria-atomic', 'true');
+    surface.setAttribute('aria-labelledby', 'opsBootFailureTitle');
+
+    const content = document.createElement('div');
+    content.className = 'ops-boot-failure-card';
+    const kicker = document.createElement('p');
+    kicker.className = 'ops-boot-failure-kicker';
+    kicker.textContent = 'Workspace unavailable';
+    const title = document.createElement('h1');
+    title.id = 'opsBootFailureTitle';
+    title.textContent = 'Vantage could not finish starting';
+    const copy = document.createElement('p');
+    copy.textContent = 'Your data is unchanged. Retry the intelligence workspace, or continue in the classic dashboard.';
+    const actions = document.createElement('div');
+    actions.className = 'ops-boot-failure-actions';
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.textContent = 'Retry workspace';
+    retry.addEventListener('click', () => window.location.reload());
+    const classic = document.createElement('a');
+    const classicUrl = new URL(window.location.href);
+    classicUrl.searchParams.set('classic', '1');
+    classic.href = classicUrl.toString();
+    classic.textContent = 'Use classic dashboard';
+    actions.append(retry, classic);
+    content.append(kicker, title, copy, actions);
+    surface.replaceChildren(content);
+    if (!existing) document.body.appendChild(surface);
+    requestAnimationFrame(() => retry.focus());
   }
 
   public destroy(): void {

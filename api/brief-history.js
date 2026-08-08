@@ -1,5 +1,6 @@
 import { getPublicCorsHeaders } from './_cors.js';
 import { jsonResponse } from './_json-response.js';
+import { checkRateLimit } from './_rate-limit.js';
 import { redisPipeline } from './_upstash-json.js';
 
 export const config = { runtime: 'edge' };
@@ -10,6 +11,11 @@ export const config = { runtime: 'edge' };
 // here would pull the seed scripts into this edge bundle.
 const HISTORY_KEY = 'news:insights:history:v1';
 const MAX_LIST_ENTRIES = 100;
+const MAX_ARCHIVE_ENTRIES = 400;
+const MAX_DIFF_PARAM_CHARS = 180;
+const MAX_AT_PARAM_CHARS = 80;
+const RATE_LIMIT_PER_MINUTE = 120;
+const RATE_LIMIT_SCOPE = 'brief-history';
 const HEADLINE_MAX_CHARS = 140;
 const KEPT_SIMILARITY_THRESHOLD = 0.5;
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -143,9 +149,9 @@ function pipelineEntryFailed(entry) {
     || !Object.prototype.hasOwnProperty.call(entry, 'result');
 }
 
-/** Load the full archive, oldest-first, as [{ generatedAtMs, snapshot }]. */
+/** Load the bounded archive, oldest-first, as [{ generatedAtMs, snapshot }]. */
 async function loadArchive(pipeline) {
-  const results = await pipeline([['ZRANGE', HISTORY_KEY, '0', '-1', 'WITHSCORES']]);
+  const results = await pipeline([['ZRANGE', HISTORY_KEY, String(-MAX_ARCHIVE_ENTRIES), '-1', 'WITHSCORES']]);
   if (!results || pipelineEntryFailed(results[0])) return null;
   const flat = results[0].result;
   if (!Array.isArray(flat)) return [];
@@ -218,28 +224,43 @@ async function handleSnapshot(at, pipeline, okHeaders, errorHeaders) {
   return jsonResponse(snapshot, 200, okHeaders);
 }
 
-async function handleDiff(diffParam, pipeline, okHeaders, errorHeaders) {
+function parseDiffSelectors(diffParam) {
+  if (diffParam.length > MAX_DIFF_PARAM_CHARS) {
+    return { error: 'Invalid "diff" parameter: selector is too long' };
+  }
   const parts = diffParam.split(',').map((part) => part.trim()).filter(Boolean);
   if (parts.length !== 2) {
-    return jsonResponse({ error: 'Invalid "diff" parameter: expected "<generatedAtA>,<generatedAtB>"' }, 400, errorHeaders);
+    return { error: 'Invalid "diff" parameter: expected "<generatedAtA>,<generatedAtB>"' };
   }
+  const invalidSelector = parts.find((selector) => (
+    selector !== 'latest' && selector !== 'yesterday' && !Number.isFinite(Date.parse(selector))
+  ));
+  if (invalidSelector) {
+    return { error: `Invalid diff selector: "${invalidSelector}"` };
+  }
+  return { parts };
+}
+
+async function handleDiff(parts, pipeline, okHeaders, errorHeaders) {
   const entries = await loadArchive(pipeline);
   if (entries === null) {
     return jsonResponse({ error: 'History store unavailable' }, 503, errorHeaders);
   }
   const resolved = parts.map((selector) => resolveSelector(selector, entries));
-  const badIndex = resolved.findIndex((entry) => entry === undefined);
+  const badIndex = resolved.indexOf(undefined);
   if (badIndex >= 0) {
     return jsonResponse({ error: `Invalid diff selector: "${parts[badIndex]}"` }, 400, errorHeaders);
   }
-  const missingIndex = resolved.findIndex((entry) => entry === null);
+  const missingIndex = resolved.indexOf(null);
   if (missingIndex >= 0) {
     return jsonResponse({ error: `No archived snapshot for diff selector: "${parts[missingIndex]}"` }, 404, errorHeaders);
   }
   return jsonResponse(diffBriefSnapshots(resolved[0].snapshot, resolved[1].snapshot), 200, okHeaders);
 }
 
-export default async function handler(req) {
+export async function handleBriefHistoryRequest(req, ctx, dependencies = {}) {
+  const pipeline = dependencies.pipeline ?? redisPipeline;
+  const limit = dependencies.checkRateLimit ?? checkRateLimit;
   const cors = getPublicCorsHeaders('GET, OPTIONS');
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
@@ -262,12 +283,34 @@ export default async function handler(req) {
     return jsonResponse({ error: 'Pass either "at" or "diff", not both' }, 400, errorHeaders);
   }
 
+  let diffSelectors = null;
+  if (diff !== null) {
+    const parsed = parseDiffSelectors(diff);
+    if (parsed.error) return jsonResponse({ error: parsed.error }, 400, errorHeaders);
+    diffSelectors = parsed.parts;
+  }
+  if (at !== null && (at.length > MAX_AT_PARAM_CHARS || !Number.isFinite(Date.parse(at)))) {
+    return jsonResponse({ error: 'Invalid "at" parameter: expected a generatedAt timestamp' }, 400, errorHeaders);
+  }
+
+  const limited = await limit(req, errorHeaders, {
+    ctx,
+    scope: RATE_LIMIT_SCOPE,
+    limit: RATE_LIMIT_PER_MINUTE,
+    window: '60 s',
+  });
+  if (limited) return limited;
+
   try {
-    if (diff !== null) return await handleDiff(diff, redisPipeline, okHeaders, errorHeaders);
-    if (at !== null) return await handleSnapshot(at, redisPipeline, okHeaders, errorHeaders);
-    return await handleList(redisPipeline, okHeaders, errorHeaders);
+    if (diffSelectors !== null) return await handleDiff(diffSelectors, pipeline, okHeaders, errorHeaders);
+    if (at !== null) return await handleSnapshot(at, pipeline, okHeaders, errorHeaders);
+    return await handleList(pipeline, okHeaders, errorHeaders);
   } catch (error) {
     console.error('[brief-history] failed', error);
     return jsonResponse({ error: 'History store unavailable' }, 503, errorHeaders);
   }
+}
+
+export default async function handler(req, ctx) {
+  return handleBriefHistoryRequest(req, ctx);
 }

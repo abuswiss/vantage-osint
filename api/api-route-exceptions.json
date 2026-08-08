@@ -510,6 +510,13 @@
       "removal_issue": null
     },
     {
+      "path": "api/brief-history.js",
+      "category": "ops-admin",
+      "reason": "Read-only bounded archive view over the analysis snapshots written by the protected Vantage refresh orchestrator. It exposes snapshot provenance and diffs for the operations brief without provider access, generation, identity, or mutable product data.",
+      "owner": "@abuswiss",
+      "removal_issue": null
+    },
+    {
       "path": "api/analytics-health.js",
       "category": "ops-admin",
       "reason": "Anonymous, bounded analytics collector health counter ingress. It accepts no event or identity payload and aggregates operator telemetry in Redis; not a product API.",

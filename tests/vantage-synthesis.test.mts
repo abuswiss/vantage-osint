@@ -73,6 +73,13 @@ describe('Vantage cited synthesis view model', () => {
     assert.equal('briefProvider' in brief, false);
   });
 
+  it('does not label a provider headline fallback as model synthesis', () => {
+    const input = makeInsights();
+    input.briefProvider = 'openai+headline-fallback';
+    const brief = buildVantageSynthesis(input, Date.parse('2026-08-07T10:10:00.000Z'));
+    assert.equal(brief?.generationMode, 'grounded-fallback');
+  });
+
   it('falls back to cited headlines when per-story synthesis lines are absent', () => {
     const input = makeInsights();
     delete input.briefStoryLines;

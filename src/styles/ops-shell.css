@@ -23,6 +23,11 @@ body.ops-mode .header,
 body.ops-mode .dashboard-tabs-mount,
 body.ops-mode .site-footer,
 body.ops-mode .mobile-tab-bar,
+body.ops-mode .mobile-panel-nav,
+body.ops-mode .mobile-menu-overlay,
+body.ops-mode .mobile-menu,
+body.ops-mode .region-sheet-backdrop,
+body.ops-mode .region-bottom-sheet,
 body.ops-mode .critical-posture-banner,
 body.ops-mode #mapResizeHandle,
 body.ops-mode #mapWidthResizeHandle,
@@ -32,6 +37,12 @@ body.ops-mode .map-section > .panel-header {
 body.ops-mode .breaking-news-container {
   top: 52px !important;
   z-index: 90;
+}
+body.ops-mode .search-command-metrics,
+body.ops-mode .search-index-state,
+body.ops-mode .search-command-mark,
+body.ops-mode .search-footer-ready {
+  display: none;
 }
 /* Panel dock: keep panels laid out (data pipelines alive) but out of view. */
 body.ops-mode .ops-panel-dock {
@@ -54,7 +65,7 @@ body.ops-mode .ops-panel-dock {
   /* Row 2 is a live spacer driven by BreakingNewsBanner. Keeping the alert in
      its existing fixed layer avoids duplicating alert plumbing while ensuring
      it never covers the map. */
-  grid-template-rows: 52px var(--breaking-alert-offset, 0px) minmax(0, 1fr) 28px;
+  grid-template-rows: 52px var(--breaking-alert-offset, 0px) minmax(0, 1fr) 34px;
   grid-template-columns: minmax(0, 1fr);
   background: var(--ops-bg);
   color: var(--ops-text);
@@ -107,7 +118,14 @@ body.ops-mode .ops-panel-dock {
   height: 6px;
   border-radius: 50%;
   background: var(--status-live, #5cb886);
-  animation: ops-pulse 2.4s ease-in-out infinite;
+}
+.ops-live[data-state='updating']::before {
+  background: var(--status-cached, #d9ae4f);
+  animation: ops-pulse 1.6s ease-in-out infinite;
+}
+.ops-live[data-state='offline']::before {
+  background: var(--status-unavailable, #e5655e);
+  animation: none;
 }
 @keyframes ops-pulse {
   0%, 100% { opacity: 1; }
@@ -239,6 +257,10 @@ body.ops-mode .ops-top-right button:hover {
 }
 
 body.ops-mode .ops-top-right .ops-brief-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   min-height: 30px;
   padding: 5px 12px;
   color: var(--ops-text);
@@ -246,12 +268,23 @@ body.ops-mode .ops-top-right .ops-brief-button {
   font: 500 12.5px/1.3 var(--font-body);
   letter-spacing: 0;
 }
+.ops-brief-button::after {
+  content: '';
+  display: block;
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+}
+.ops-brief-button[aria-busy='true']::after {
+  opacity: 1;
+}
 body.ops-mode .ops-top-right .ops-brief-button:hover,
 body.ops-mode .ops-top-right .ops-brief-button:focus-visible {
   background: color-mix(in srgb, var(--ops-accent) 18%, transparent);
 }
-.ops-brief-button:disabled { opacity: 0.55; cursor: wait; }
-
 .ops-more-layers {
   flex: 0 0 auto;
   padding: 5px 12px;
@@ -284,8 +317,25 @@ body.ops-mode .ops-top-right .ops-brief-button:focus-visible {
   border: 1px solid var(--ops-border);
   border-radius: var(--r-md);
   background: var(--ops-bg-raised);
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transform-origin: top left;
+  transition:
+    opacity var(--motion-fast),
+    transform var(--motion-fast),
+    display var(--motion-fast) allow-discrete;
 }
-.ops-layer-popover[hidden] { display: none; }
+.ops-layer-popover[hidden] {
+  display: none;
+  opacity: 0;
+  transform: translateY(-5px) scale(0.99);
+}
+@starting-style {
+  .ops-layer-popover:not([hidden]) {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.99);
+  }
+}
 .ops-layer-popover-head {
   display: flex;
   align-items: center;
@@ -295,6 +345,20 @@ body.ops-mode .ops-top-right .ops-brief-button:focus-visible {
   font: 500 11px/1.2 var(--font-body);
   letter-spacing: 0;
 }
+.ops-layer-window {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px 10px;
+  border-bottom: 1px solid var(--ops-border);
+  margin-bottom: 8px;
+}
+.ops-layer-window-label {
+  color: var(--ops-text-faint);
+  font: 500 11px/1.2 var(--font-body);
+}
+.ops-layer-window-buttons { display: flex; align-items: center; gap: 2px; }
 .ops-layer-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -392,6 +456,67 @@ body.ops-mode .ops-top-right .ops-brief-button:focus-visible {
   font-weight: 500;
   color: var(--ops-text-faint);
 }
+.ops-feed-order {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: var(--r-sm);
+  background: var(--overlay-subtle, rgba(255, 255, 255, 0.025));
+}
+.ops-feed-order-button {
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ops-text-faint);
+  font: 500 10.5px/1.3 var(--font-body);
+  cursor: pointer;
+}
+.ops-feed-order-button[aria-pressed='true'] {
+  color: var(--ops-text);
+  background: var(--ops-accent-soft);
+}
+.ops-brief-preview-host:empty { display: none; }
+.ops-brief-preview-host { padding: 0 10px 8px; }
+.ops-brief-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  padding: 11px 12px 12px;
+  border: 1px solid var(--ops-border);
+  border-radius: var(--r-md);
+  background: var(--ops-bg-raised);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--motion-fast), background var(--motion-fast);
+}
+.ops-brief-preview:hover {
+  border-color: var(--ops-border-strong);
+  background: color-mix(in srgb, var(--ops-bg-raised) 92%, var(--ops-accent));
+}
+.ops-brief-preview-meta,
+.ops-brief-preview-evidence {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ops-text-faint);
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+.ops-brief-preview-label { color: var(--ops-accent); font-weight: 600; }
+.ops-brief-preview-copy {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ops-text);
+  font-size: 12.5px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.ops-brief-preview-evidence { justify-content: flex-start; }
 .ops-feed-list {
   flex: 1;
   overflow-y: auto;
@@ -433,6 +558,15 @@ body.ops-mode .ops-top-right .ops-brief-button:focus-visible {
 .ops-feed-item .meta .corroboration {
   margin-left: auto;
   color: var(--ops-text-faint);
+}
+.ops-feed-signal {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: var(--ops-accent);
+  background: var(--ops-accent-soft);
+  font-size: 10px;
+  font-weight: 600;
 }
 .ops-feed-item .title {
   font-size: 13px;
@@ -564,8 +698,24 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   background: var(--ops-bg);
   min-height: 0;
   overflow-y: auto;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity var(--motion-fast),
+    transform var(--motion-fast),
+    display var(--motion-fast) allow-discrete;
 }
-.ops-inspector[hidden] { display: none; }
+.ops-inspector[hidden] {
+  display: none;
+  opacity: 0;
+  transform: translateX(12px);
+}
+@starting-style {
+  .ops-inspector:not([hidden]) {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
 .ops-inspector-head {
   position: sticky;
   top: 0;
@@ -589,7 +739,20 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   font: 450 11px/1.35 var(--font-body);
   letter-spacing: 0;
 }
-.ops-inspector-content { padding: 18px 20px 32px; }
+.ops-brief-update {
+  display: block;
+  margin-top: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ops-accent);
+  font: 550 11px/1.35 var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+.ops-inspector-content {
+  padding: 18px 20px 32px;
+}
 .ops-inspector-title {
   margin: 0;
   color: var(--ops-text);
@@ -637,6 +800,11 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   color: var(--ops-text-dim);
   font-size: 13px;
   line-height: 1.62;
+}
+.ops-rank-reason {
+  margin: 11px 0 0;
+  color: var(--ops-text-faint);
+  font: 500 11px/1.45 var(--font-body);
 }
 /* Fact grid: tonal cells with hairline seams from the grid gap only. */
 .ops-inspector-facts {
@@ -788,23 +956,33 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
 }
 .ops-timeline-bars {
   display: grid;
-  grid-template-columns: repeat(32, minmax(2px, 1fr));
+  grid-template-columns: repeat(16, minmax(5px, 1fr));
   align-items: end;
   gap: 2px;
-  height: 16px;
+  height: 24px;
   min-width: 0;
   padding: 1px 0;
 }
 .ops-timeline-bar {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
   width: 100%;
-  height: calc(var(--activity, 0.08) * 14px);
-  min-height: 2px;
+  height: 24px;
   padding: 0;
   border: 0;
-  background: color-mix(in srgb, var(--ops-accent) 50%, var(--ops-bg-raised));
+  background: transparent;
   opacity: 0.5;
   cursor: pointer;
-  transition: height var(--motion-fast), opacity var(--motion-fast);
+  transition: opacity var(--motion-fast);
+}
+.ops-timeline-bar::before {
+  content: '';
+  display: block;
+  width: 100%;
+  height: calc(var(--activity, 0.08) * 18px);
+  min-height: 2px;
+  background: color-mix(in srgb, var(--ops-accent) 50%, var(--ops-bg-raised));
 }
 .ops-timeline-bar:hover:not(:disabled),
 .ops-timeline-bar:focus-visible { opacity: 1; }
@@ -831,7 +1009,7 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   font-weight: 550;
 }
 
-/* ---- Keyboard reference (true modal: one shadow, dim + blur backdrop) ---- */
+/* ---- Keyboard reference (true modal: one shadow, calm dim backdrop) ---- */
 .ops-shortcuts-overlay {
   position: fixed;
   inset: 0;
@@ -840,9 +1018,15 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   place-items: center;
   padding: 24px;
   background: rgba(2, 6, 13, 0.55);
-  backdrop-filter: blur(8px);
+  opacity: 1;
+  transition:
+    opacity var(--motion-fast),
+    display var(--motion-fast) allow-discrete;
 }
-.ops-shortcuts-overlay[hidden] { display: none; }
+.ops-shortcuts-overlay[hidden] {
+  display: none;
+  opacity: 0;
+}
 .ops-shortcuts {
   width: min(440px, 100%);
   padding: 20px;
@@ -850,6 +1034,14 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   border-radius: var(--r-md);
   background: var(--ops-bg-raised);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+  transform: translateY(0);
+  transition: transform var(--motion-fast);
+}
+@starting-style {
+  .ops-shortcuts-overlay:not([hidden]) { opacity: 0; }
+  .ops-shortcuts-overlay:not([hidden]) .ops-shortcuts {
+    transform: translateY(4px);
+  }
 }
 .ops-shortcuts-head {
   display: flex;
@@ -881,24 +1073,121 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
 }
 
 /* ---- Responsive ---- */
-@media (max-width: 900px) {
-  body.ops-mode { --ops-rail-left: 0px; }
-  .ops-body { grid-template-columns: minmax(0, 1fr); }
-  .ops-feed { display: none; }
-  .ops-timeline-label,
-  .ops-timeline-meta,
-  .ops-status-item { display: none; }
-  .ops-seg-btn { padding-inline: 7px; }
-  .ops-layer-popover { left: 12px; width: calc(100vw - 24px); }
-  .ops-layer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 1100px) {
+  .ops-top {
+    gap: 8px;
+    padding-inline: 12px;
+  }
+  .ops-brand { flex: 1; min-width: 0; }
+  .ops-chips,
+  .ops-top-divider,
+  .ops-top > .ops-seg,
+  .ops-counts,
+  body.ops-mode .ops-top #headerClock { display: none; }
+  .ops-top-right { gap: 6px; }
+  .ops-layer-window { display: flex; }
+  .ops-layer-popover {
+    left: 12px;
+    width: calc(100vw - 24px);
+  }
+  .ops-inspector {
+    position: fixed;
+    top: calc(52px + var(--breaking-alert-offset, 0px));
+    right: 0;
+    bottom: 34px;
+    z-index: 85;
+    width: min(420px, calc(100vw - 48px));
+    border-top: 1px solid var(--ops-border);
+    background: var(--ops-bg);
+  }
+  .ops-body.has-inspector { grid-template-columns: var(--ops-rail-left) minmax(0, 1fr); }
 }
 
-@media (max-width: 1380px) {
+@media (max-width: 900px) {
+  body.ops-mode { --ops-rail-left: 0px; }
+  .ops-body,
+  .ops-body.has-inspector {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: clamp(210px, 42vh, 430px) minmax(0, 1fr);
+  }
+  .ops-map { grid-row: 1; }
+  .ops-feed {
+    display: flex;
+    grid-row: 2;
+    border-top: 1px solid var(--ops-border);
+    border-right: 0;
+  }
+  .ops-feed-head { padding: 10px 12px 8px; }
+  .ops-feed-list { padding-bottom: 10px; }
+  .ops-feed-loading-row { min-height: 76px; padding: 11px 12px; }
+  .ops-brief-preview-host { padding-inline: 8px; }
+  .ops-brief-preview-copy { -webkit-line-clamp: 2; }
+  .ops-timeline { display: none; }
+  .ops-status-item {
+    display: block;
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ops-bottom { padding-inline: 12px 8px; }
+  .ops-layer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ops-hud { top: 8px; left: 8px; padding: 5px 9px; }
+  .ops-map-controls { top: 8px; right: 8px; }
+}
+
+@media (max-width: 600px) {
+  .ops-inspector {
+    left: 0;
+    width: 100vw;
+    border-left: 0;
+  }
+  .ops-inspector[hidden] { transform: translateY(8px); }
+  @starting-style {
+    .ops-inspector:not([hidden]) { transform: translateY(8px); }
+  }
+  .ops-feed-order-button { padding-inline: 6px; }
+  .ops-watch-bell { padding-inline: 6px; }
+  .ops-feed-head-right { gap: 6px; }
+  body.ops-mode .ops-top-right .search-btn {
+    display: inline-grid !important;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 0;
+  }
+  body.ops-mode .ops-top-right .search-btn::after {
+    content: '⌕';
+    font: 18px/1 var(--font-body);
+  }
+  body.ops-mode .ops-top-right .search-btn kbd { display: none; }
+  .ops-layer-popover { padding: 10px; }
+  .ops-layer-window {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .ops-layer-window-buttons { width: 100%; justify-content: space-between; }
+  .ops-layer-time-btn { flex: 1; padding-inline: 4px; }
+}
+
+@media (max-width: 360px) {
+  .ops-live { display: none; }
+  body.ops-mode .ops-top-right .ops-brief-button { padding-inline: 8px; }
+}
+
+@media (max-width: 900px) and (max-height: 550px) {
+  .ops-body,
+  .ops-body.has-inspector { grid-template-rows: 160px minmax(0, 1fr); }
+}
+
+@media (max-width: 1500px) {
   .ops-counts { display: none; }
   .ops-top { gap: 10px; }
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 1320px) {
   body.ops-mode .ops-top #headerClock { display: none; }
   .ops-chip { padding-inline: 9px; }
 }
@@ -1142,19 +1431,95 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   font-size: 11px;
 }
 
-/* ---- Loading skeleton ----
-   One tonal pulse for every loading affordance in the shell
-   (brief, country, history). The loading text stays in the DOM for
-   accessibility; the pulse is background-only. Static fill under
-   reduced motion (see the consolidated block at the end of file). */
-.ops-skeleton {
+/* ---- Loading states ----
+   Reserve the shape of the content that will arrive. The label remains real
+   status text; only the quiet geometry beneath it animates. The delayed reveal
+   avoids flashing a placeholder when a cached response resolves immediately. */
+.ops-loading-state {
+  display: grid;
+  gap: 11px;
+  min-height: 104px;
+  padding: 14px;
   border-radius: var(--r-md);
   background: var(--overlay-subtle, rgba(255, 255, 255, 0.025));
-  animation: ops-skeleton-pulse 1.6s ease-in-out infinite;
+  opacity: 0;
+  animation: ops-loading-reveal 140ms cubic-bezier(0.2, 0, 0, 1) 120ms forwards;
 }
-@keyframes ops-skeleton-pulse {
-  0%, 100% { background-color: rgba(255, 255, 255, 0.025); }
-  50% { background-color: rgba(255, 255, 255, 0.055); }
+.ops-loading-label {
+  color: var(--ops-text-faint);
+  font: 500 11.5px/1.4 var(--font-body);
+}
+.ops-loading-lines {
+  display: grid;
+  gap: 8px;
+}
+.ops-loading-line {
+  display: block;
+  width: var(--loading-width, 80%);
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.035) 20%,
+    rgba(255, 255, 255, 0.075) 50%,
+    rgba(255, 255, 255, 0.035) 80%
+  );
+  background-size: 220% 100%;
+  animation: ops-loading-sweep 1.6s ease-in-out infinite;
+}
+.ops-feed-loading {
+  display: block;
+  min-height: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.ops-feed-loading .ops-loading-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.ops-feed-loading-rows { display: grid; }
+.ops-feed-loading-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px 10px;
+  min-height: 86px;
+  padding: 13px 20px;
+  border-top: 1px solid var(--ops-border-soft, rgba(255, 255, 255, 0.045));
+}
+.ops-feed-loading-row > * {
+  display: block;
+  border-radius: 4px;
+  background: var(--overlay-medium, rgba(255, 255, 255, 0.055));
+}
+.ops-feed-loading-row > i { width: 30px; height: 8px; }
+.ops-feed-loading-row > b { width: 44%; height: 8px; }
+.ops-feed-loading-row > span {
+  grid-column: 1 / -1;
+  width: 88%;
+  height: 28px;
+  margin-top: 3px;
+}
+.ops-feed-loading-row:nth-child(2n) > span { width: 72%; }
+.ops-feed-loading-row:nth-child(3n) > span { width: 81%; }
+.ops-country-status { min-height: 126px; }
+.ops-history-loading { min-height: 74px; padding: 11px; }
+.ops-content-enter { animation: ops-content-enter var(--motion-fast) both; }
+@keyframes ops-loading-reveal { to { opacity: 1; } }
+@keyframes ops-loading-sweep {
+  from { background-position: 160% 0; }
+  to { background-position: -60% 0; }
+}
+@keyframes ops-content-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* ---- Country inspector ---- */
@@ -1191,6 +1556,17 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   display: grid;
   gap: 5px;
 }
+.ops-brief-history-disclosure {
+  margin-top: 24px;
+  border-top: 1px solid var(--ops-border);
+}
+.ops-brief-history-summary {
+  padding: 12px 0;
+  color: var(--ops-text-dim);
+  font: 600 11.5px/1.3 var(--font-body);
+  cursor: pointer;
+}
+.ops-brief-history-disclosure[open] .ops-brief-history-summary { color: var(--ops-text); }
 .ops-history-status {
   margin: 0;
   color: var(--ops-text-faint);
@@ -1261,6 +1637,8 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
    after the component rules so it wins same-specificity ties. */
 .ops-chip:focus-visible,
 .ops-seg-btn:focus-visible,
+.ops-feed-order-button:focus-visible,
+.ops-brief-preview:focus-visible,
 .ops-feed-item:focus-visible,
 .ops-citation:focus-visible,
 .ops-brief-button:focus-visible,
@@ -1272,6 +1650,8 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
 .ops-inspector-action:focus-visible,
 .ops-source-link:focus-visible,
 .ops-history-entry:focus-visible,
+.ops-brief-history-summary:focus-visible,
+.ops-brief-update:focus-visible,
 .ops-timeline-bar:focus-visible,
 .ops-watch-bell:focus-visible,
 .ops-watch-chip-label:focus-visible,
@@ -1281,6 +1661,10 @@ body.ops-mode .ops-map-controls .map-dim-btn:focus-visible,
 body.ops-mode .ops-top-right button:focus-visible {
   outline: 2px solid var(--ops-accent);
   outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .ops-watch-remove { opacity: 1; }
 }
 
 /* Ops scroll areas use the shared scrollbar thumb tokens
@@ -1311,19 +1695,23 @@ body.ops-mode .ops-top-right button:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   /* Animations off; the skeleton keeps a static tonal fill */
   .ops-live::before,
+  .ops-brief-button[aria-busy='true']::after,
   .ops-feed-flash,
   .ops-source-flash,
-  .ops-skeleton {
+  .ops-loading-state,
+  .ops-loading-line,
+  .ops-content-enter {
     animation: none;
   }
-  .ops-skeleton {
-    background: var(--overlay-subtle, rgba(255, 255, 255, 0.025));
-  }
+  .ops-loading-state { opacity: 1; }
+  .ops-loading-line { background: rgba(255, 255, 255, 0.05); }
 
   /* Hover/press/state transitions snap instead of easing */
   .ops-chip,
   .ops-chip .dot,
   .ops-seg-btn,
+  .ops-feed-order-button,
+  .ops-brief-preview,
   .ops-more-layers,
   .ops-feed-item,
   .ops-hud,
@@ -1338,6 +1726,14 @@ body.ops-mode .ops-top-right button:focus-visible {
   .ops-watch-remove,
   .ops-watch-clear,
   .ops-history-entry {
+    transition: none;
+  }
+  .ops-body,
+  .ops-inspector,
+  .ops-inspector-content,
+  .ops-layer-popover,
+  .ops-shortcuts-overlay,
+  .ops-shortcuts {
     transition: none;
   }
 }

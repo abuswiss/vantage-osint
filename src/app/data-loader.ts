@@ -917,7 +917,11 @@ export class DataLoaderManager implements AppModule {
   }
 
   private async runLoadAllData(forceAll: boolean): Promise<void> {
-    const runGuarded = async (name: string, fn: () => Promise<void>): Promise<void> => {
+    const runGuarded = async (
+      name: string,
+      fn: () => Promise<void>,
+      onSettled?: () => void,
+    ): Promise<void> => {
       if (this.ctx.isDestroyed || this.ctx.inFlight.has(name)) return;
       this.ctx.inFlight.add(name);
       try {
@@ -926,6 +930,7 @@ export class DataLoaderManager implements AppModule {
         if (!this.ctx.isDestroyed) console.error(`[App] ${name} failed:`, e);
       } finally {
         this.ctx.inFlight.delete(name);
+        onSettled?.();
       }
     };
 
@@ -934,7 +939,17 @@ export class DataLoaderManager implements AppModule {
 
     const tasks: HydrationTask[] = [];
     if (this.shouldHydrateNews(forceAll)) {
-      tasks.push({ name: 'news', task: () => runGuarded('news', () => this.loadNews()) });
+      tasks.push({
+        name: 'news',
+        task: () => runGuarded(
+          'news',
+          () => this.loadNews(),
+          // Settle only from the request that actually owned the in-flight
+          // slot. A coalesced caller must not publish an empty state while the
+          // owner is still loading.
+          () => this.ctx.opsShell?.onFeedLoadSettled(),
+        ),
+      });
     }
 
     // Happy variant only loads news data -- skip all geopolitical/financial/military data

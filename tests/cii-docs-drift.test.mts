@@ -55,7 +55,7 @@ function titleCase(value: string): string {
 
 function parseStrategicRiskDisplayBands(source: string): Array<{ min: number; label: string }> {
   const match = source.match(/const STRATEGIC_RISK_BANDS:[\s\S]*?=\s*\[([\s\S]*?)\]\s*as const;/);
-  assert.ok(match, 'StrategicRiskPanel STRATEGIC_RISK_BANDS declaration not found');
+  assert.ok(match, 'canonical STRATEGIC_RISK_BANDS declaration not found');
   return [...match[1]!.matchAll(/\{\s*min:\s*(\d+),\s*levelKey:\s*'([^']+)'/g)]
     .map(([, min, label]) => ({ min: Number(min), label: titleCase(label!) }));
 }
@@ -146,7 +146,7 @@ describe('CII docs drift guards', () => {
 
   it('strategic risk doc publishes current panel display bands, server severity bands, and roll-up', () => {
     const doc = readFileSync(resolve(root, 'docs', 'strategic-risk.mdx'), 'utf8');
-    const panelSource = readFileSync(resolve(root, 'src', 'components', 'StrategicRiskPanel.ts'), 'utf8');
+    const panelSource = readFileSync(resolve(root, 'src', 'utils', 'strategic-risk-band.ts'), 'utf8');
     const serverSource = readFileSync(
       resolve(root, 'server', 'worldmonitor', 'intelligence', 'v1', 'get-risk-scores.ts'),
       'utf8',

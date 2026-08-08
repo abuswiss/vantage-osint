@@ -848,7 +848,9 @@ export class PanelLayoutManager implements AppModule {
     // section's first frame instead of ~150ms later via setupMobileMapToggle
     // (which shoved #panelsGrid up 698px, field CLS ~0.62 for this cohort).
     const mapStartsCollapsed = this.ctx.isMobile && PanelLayoutManager.isMobileMapCollapsedPreferred();
-    const bootShellFootprint = import.meta.env.DEV ? captureBootShellFootprint(this.ctx.container) : null;
+    const bootShellFootprint = import.meta.env.DEV && !this.ctx.opsMode
+      ? captureBootShellFootprint(this.ctx.container)
+      : null;
     const referenceLinksHtml = DASHBOARD_REFERENCE_LINKS.map(({ label, path }) => {
       const href = this.ctx.isDesktopApp && !VANTAGE_PUBLIC_MODE ? `https://www.worldmonitor.app${path}` : path;
       return `<a href="${href}" target="_blank" rel="noopener">${label}</a>`;
@@ -858,6 +860,25 @@ export class PanelLayoutManager implements AppModule {
       <a href="/docs" target="_blank" rel="noopener">Docs</a>
       <a href="https://github.com/abuswiss/vantage-osint" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/koala73/worldmonitor" target="_blank" rel="noopener">Upstream</a>`;
+
+    // OpsShell still needs the legacy layout's map/panel nodes as data plumbing.
+    // Keep the matching server-rendered workspace above that internal render so
+    // users never see the classic dashboard flash between boot and OpsShell.
+    const opsBootShell = this.ctx.opsMode
+      ? this.ctx.container.querySelector<HTMLElement>('[data-shell-surface="ops"]')
+      : null;
+    if (opsBootShell) {
+      // Nothing in the legacy plumbing pass is user-facing. Keep it outside
+      // the accessibility tree and interaction order until OpsShell either
+      // takes over or replaces the boot surface with an explicit recovery UI.
+      this.ctx.container.inert = true;
+      this.ctx.container.setAttribute('aria-hidden', 'true');
+      this.ctx.container.dataset.opsHandoff = 'active';
+      opsBootShell.classList.add('skeleton-shell-handoff');
+      opsBootShell.setAttribute('aria-hidden', 'true');
+      opsBootShell.removeAttribute('aria-busy');
+      document.body.appendChild(opsBootShell);
+    }
 
     markLcpDebug('wm:layout:render-start');
     document.documentElement.classList.add('wm-layout-hydrated');

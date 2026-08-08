@@ -53,7 +53,7 @@ export function classifyCacheEntry(entry, maxAgeMs, nowMs = Date.now()) {
   if (entry.result === null) return { status: 'missing', ageSeconds: null };
 
   const timestampMs = timestampFromPayload(parseRedisValue(entry.result));
-  if (timestampMs === null) return { status: 'ready', ageSeconds: null };
+  if (timestampMs === null) return { status: 'unknown', ageSeconds: null };
   const ageMs = Math.max(0, nowMs - timestampMs);
   return {
     status: ageMs <= maxAgeMs ? 'ready' : 'stale',

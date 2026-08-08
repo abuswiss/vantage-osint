@@ -4,7 +4,7 @@
  * The classic panel grid remains mounted in an off-screen dock so its existing
  * data loaders keep running. The shell adopts the live map/header controls and
  * turns the same stores into an operator feed, activity timeline, and inspector.
- * `?classic=1` remains the desktop opt-out.
+ * `?classic=1` remains the explicit opt-out.
  */
 import type { AppContext } from '@/app/app-context';
 import type {
@@ -55,6 +55,7 @@ import {
   type Watchlist,
 } from '@/services/watchlist';
 import { toFlagEmoji } from '@/utils/country-flag';
+import { getStrategicRiskDisplayLevel } from '@/utils/strategic-risk-band';
 
 export interface OpsShellHooks {
   onToggleLayer: (layer: keyof MapLayers, enabled: boolean) => void;
@@ -113,6 +114,7 @@ type InspectorSelection =
   | { kind: 'signal' };
 
 type WatchFilter = { kind: 'country' | 'topic'; value: string };
+type FeedOrder = 'priority' | 'latest';
 
 const PRIMARY_LAYER_CHIPS: LayerChipDef[] = [
   { key: 'hotspots', label: 'Events', cssVar: '--ops-dom-events' },
@@ -132,7 +134,7 @@ const TIME_RANGE_MS: Partial<Record<TimeRange, number>> = {
 };
 
 const FEED_LIMIT = 80;
-const TIMELINE_BUCKETS = 32;
+const TIMELINE_BUCKETS = 16;
 const HUD_REFRESH_MS = 30_000;
 const FOCUS_PARAM = 'focus';
 const FLASH_MS = 1_300;
@@ -164,9 +166,14 @@ export class OpsShell {
   private layerPopover: HTMLElement | null = null;
   private moreLayersButton: HTMLButtonElement | null = null;
   private briefButton: HTMLButtonElement | null = null;
+  private systemStatus: HTMLElement | null = null;
+  private briefPreviewHost: HTMLElement | null = null;
+  private briefPreviewButton: HTMLButtonElement | null = null;
   private shortcutsOverlay: HTMLElement | null = null;
   private chipButtons = new Map<keyof MapLayers, Set<HTMLButtonElement>>();
-  private timeButtons = new Map<TimeRange, HTMLButtonElement>();
+  private timeButtons = new Map<TimeRange, Set<HTMLButtonElement>>();
+  private feedOrderButtons = new Map<FeedOrder, HTMLButtonElement>();
+  private feedOrder: FeedOrder = 'priority';
   private selection: InspectorSelection | null = null;
   private hudScore: HTMLElement | null = null;
   private hudLevel: HTMLElement | null = null;
@@ -175,6 +182,9 @@ export class OpsShell {
   private countEvents: HTMLElement | null = null;
   private statusLine: HTMLElement | null = null;
   private hudTimer: ReturnType<typeof setInterval> | null = null;
+  private bootHandoffTimer: number | null = null;
+  private feedHasSettled = false;
+  private briefLoading = false;
   private focusRestoreTimers: number[] = [];
   private escalationHistory: EscalationSample[] | null = null;
   private watchlistRow: HTMLElement | null = null;
@@ -186,10 +196,23 @@ export class OpsShell {
   private alertsSeeded = false;
   private seenAlertIds = new Set<string>();
   private lastNotifiedAt: Record<'escalation' | 'watchlist', number> = { escalation: 0, watchlist: 0 };
+  private lastBriefRevalidatedAt = 0;
   private unsubscribeAuth: (() => void) | null = null;
   private boundKeydown: ((event: KeyboardEvent) => void) | null = null;
   private boundOutsidePointer: ((event: PointerEvent) => void) | null = null;
   private boundOpsAlert: ((event: Event) => void) | null = null;
+  private legacyMain: HTMLElement | null = null;
+  private legacyMainRole: string | null = null;
+  private legacyMainAriaHidden: string | null = null;
+  private legacyMainWasInert = false;
+  private legacyMainWasHidden = false;
+  private skipLink: HTMLAnchorElement | null = null;
+  private skipLinkHref = '';
+  private skipLinkText = '';
+  private boundSkipClick: ((event: MouseEvent) => void) | null = null;
+  private inspectorReturnFocus: HTMLElement | null = null;
+  private layerReturnFocus: HTMLElement | null = null;
+  private shortcutsReturnFocus: HTMLElement | null = null;
   private destroyed = false;
 
   constructor(ctx: AppContext, hooks: OpsShellHooks) {
@@ -202,6 +225,11 @@ export class OpsShell {
     document.body.classList.add('ops-mode');
 
     const shell = el('div', 'ops-shell');
+    const hasBootHandoff = Boolean(document.querySelector('.skeleton-shell-handoff'));
+    if (hasBootHandoff) {
+      shell.inert = true;
+      shell.setAttribute('aria-hidden', 'true');
+    }
     shell.append(
       this.buildTopBar(),
       this.buildBody(),
@@ -211,6 +239,7 @@ export class OpsShell {
     document.body.appendChild(shell);
     this.root = shell;
 
+    this.prepareLandmarks();
     this.dockLegacyPanels();
     this.adoptMap();
     this.adoptHeaderControls();
@@ -229,17 +258,19 @@ export class OpsShell {
     this.syncLayerChips();
     this.syncTimeChips(this.ctx.currentTimeRange);
     this.renderWatchlistStrip();
+    this.feedHasSettled = this.ctx.initialLoadComplete || this.collectFeedItems(false).length > 0;
     this.renderFeed();
     this.updateHud();
     this.restoreDeepLinkedFocus();
     this.hudTimer = setInterval(() => this.updateHud(), HUD_REFRESH_MS);
-
     requestAnimationFrame(() => this.ctx.map?.resize?.());
+    this.completeBootHandoff();
   }
 
   destroy(): void {
     this.destroyed = true;
     if (this.hudTimer) clearInterval(this.hudTimer);
+    if (this.bootHandoffTimer !== null) window.clearTimeout(this.bootHandoffTimer);
     for (const timer of this.focusRestoreTimers) window.clearTimeout(timer);
     this.focusRestoreTimers = [];
     this.unsubscribeAuth?.();
@@ -251,17 +282,62 @@ export class OpsShell {
     if (this.boundOpsAlert) document.removeEventListener('wm:ops-inspect-alert', this.boundOpsAlert);
     this.panelDock?.remove();
     this.panelDock = null;
+    this.restoreLandmarks();
     this.root?.remove();
     this.root = null;
+    this.ctx.container.inert = false;
+    this.ctx.container.removeAttribute('aria-hidden');
+    delete this.ctx.container.dataset.opsHandoff;
     document.body.classList.remove('ops-mode');
+  }
+
+  /** Fade the contentful boot shell only after the live map/feed frame exists. */
+  private completeBootHandoff(): void {
+    const bootShell = document.querySelector<HTMLElement>('.skeleton-shell-handoff');
+    if (!bootShell) {
+      if (this.root) {
+        this.root.inert = false;
+        this.root.removeAttribute('aria-hidden');
+      }
+      return;
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (this.root) {
+        this.root.inert = false;
+        this.root.removeAttribute('aria-hidden');
+      }
+      this.ctx.container.inert = false;
+      this.ctx.container.removeAttribute('aria-hidden');
+      delete this.ctx.container.dataset.opsHandoff;
+      // An extension or host may remove the visual boot node between frames;
+      // the live shell must still leave its temporary inert state.
+      if (!bootShell.isConnected) return;
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        bootShell.remove();
+        return;
+      }
+      bootShell.classList.add('is-leaving');
+      this.bootHandoffTimer = window.setTimeout(() => {
+        bootShell.remove();
+        this.bootHandoffTimer = null;
+      }, 200);
+    }));
   }
 
   /** Called whenever the news/cluster stores change. */
   onDataUpdated(): void {
     if (this.destroyed) return;
+    this.feedHasSettled = true;
     this.renderFeed();
     this.updateHud();
     this.restoreDeepLinkedFocus();
+  }
+
+  /** Called when the news loader completes, including an honest empty/error pass. */
+  onFeedLoadSettled(): void {
+    if (this.destroyed || this.feedHasSettled) return;
+    this.feedHasSettled = true;
+    this.renderFeed();
   }
 
   /** Called from the app's single map time-range callback. */
@@ -281,11 +357,14 @@ export class OpsShell {
           continue;
         }
         const enabled = this.ctx.mapLayers[key] === true;
-        button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        const relayPending = this.isRelayPendingLayer(key);
+        button.setAttribute('aria-pressed', enabled && !relayPending ? 'true' : 'false');
         button.disabled = !this.canToggleLayer(key);
         const state = button.querySelector<HTMLElement>('.ops-layer-state');
-        if (state) state.textContent = enabled
-          ? 'ON'
+        if (state) state.textContent = relayPending
+          ? 'pending'
+          : enabled
+            ? 'ON'
           : !VANTAGE_PUBLIC_MODE && state.dataset.locked === 'true'
             ? 'PRO'
             : '';
@@ -293,7 +372,9 @@ export class OpsShell {
     }
 
     if (this.moreLayersButton) {
-      const active = this.getAvailableLayerDefinitions().filter((definition) => this.ctx.mapLayers[definition.key]).length;
+      const active = this.getAvailableLayerDefinitions().filter((definition) => (
+        this.ctx.mapLayers[definition.key] && !this.isRelayPendingLayer(definition.key)
+      )).length;
       this.moreLayersButton.textContent = active > 0 ? `Layers ${active}` : 'Layers';
     }
   }
@@ -326,12 +407,15 @@ export class OpsShell {
 
     const brand = el('div', 'ops-brand');
     brand.textContent = BRAND.name;
-    const live = el('span', 'ops-live');
-    live.textContent = 'Live';
-    brand.appendChild(live);
+    this.systemStatus = el('span', 'ops-live');
+    this.systemStatus.textContent = navigator.onLine ? 'Updating' : 'Offline';
+    this.systemStatus.dataset.state = navigator.onLine ? 'updating' : 'offline';
+    brand.appendChild(this.systemStatus);
 
     const chips = el('div', 'ops-chips');
     for (const definition of PRIMARY_LAYER_CHIPS) {
+      if (VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED
+        && (definition.key === 'military' || definition.key === 'ais')) continue;
       chips.appendChild(this.createPrimaryLayerChip(definition));
     }
 
@@ -360,14 +444,14 @@ export class OpsShell {
       button.setAttribute('aria-label', `Show ${range === 'all' ? 'all available' : `the last ${range}`} activity`);
       button.addEventListener('click', () => this.ctx.map?.setTimeRange(range));
       timeSeg.appendChild(button);
-      this.timeButtons.set(range, button);
+      this.registerTimeButton(range, button);
     }
 
     const right = el('div', 'ops-top-right');
     this.briefButton = el('button', 'ops-brief-button') as HTMLButtonElement;
     this.briefButton.type = 'button';
     this.briefButton.textContent = 'Brief';
-    this.briefButton.setAttribute('aria-label', 'Open cited AI situation brief');
+    this.briefButton.setAttribute('aria-label', 'Open cited situation brief');
     this.briefButton.addEventListener('click', () => { void this.inspectBrief(); });
     const counts = el('div', 'ops-counts');
     this.countAir = el('span');
@@ -401,15 +485,35 @@ export class OpsShell {
   }
 
   private buildBody(): HTMLElement {
-    const body = el('div', 'ops-body');
+    const body = el('main', 'ops-body');
+    body.id = 'opsMain';
+    body.tabIndex = -1;
     this.body = body;
 
     const feed = el('aside', 'ops-feed');
     feed.setAttribute('aria-label', 'Live intelligence feed');
     const head = el('div', 'ops-feed-head');
     const label = el('span');
-    label.textContent = 'Live feed';
+    label.textContent = 'Intelligence';
     const headRight = el('span', 'ops-feed-head-right');
+    const order = el('span', 'ops-feed-order');
+    order.setAttribute('role', 'group');
+    order.setAttribute('aria-label', 'Feed order');
+    for (const mode of ['priority', 'latest'] as const) {
+      const button = el('button', 'ops-feed-order-button') as HTMLButtonElement;
+      button.type = 'button';
+      button.textContent = sentence(mode);
+      button.title = mode === 'priority'
+        ? 'Rank by current brief, severity, corroboration and freshness'
+        : 'Show newest reporting first';
+      button.addEventListener('click', () => {
+        this.feedOrder = mode;
+        this.syncFeedOrderButtons();
+        this.renderFeed();
+      });
+      this.feedOrderButtons.set(mode, button);
+      order.appendChild(button);
+    }
     this.watchBell = el('button', 'ops-watch-bell') as HTMLButtonElement;
     this.watchBell.type = 'button';
     this.watchBell.textContent = 'Alerts';
@@ -420,15 +524,18 @@ export class OpsShell {
       this.renderWatchlistStrip();
     });
     this.feedCount = el('span', 'count');
-    headRight.append(this.watchBell, this.feedCount);
+    headRight.append(order, this.watchBell, this.feedCount);
     head.append(label, headRight);
+    this.syncFeedOrderButtons();
+    this.briefPreviewHost = el('div', 'ops-brief-preview-host');
     this.watchlistRow = el('div', 'ops-watchlist');
     this.watchlistRow.hidden = true;
     this.feedList = el('div', 'ops-feed-list');
-    feed.append(head, this.watchlistRow, this.feedList);
+    feed.append(head, this.briefPreviewHost, this.watchlistRow, this.feedList);
 
-    const mapArea = el('main', 'ops-map');
+    const mapArea = el('section', 'ops-map');
     mapArea.id = 'opsMapArea';
+    mapArea.setAttribute('aria-label', 'Global intelligence map');
     mapArea.appendChild(this.buildHud());
     const controls = el('div', 'ops-map-controls');
     controls.id = 'opsMapControls';
@@ -524,9 +631,58 @@ export class OpsShell {
 
   // ---- adopted legacy elements ----
 
+  private prepareLandmarks(): void {
+    this.legacyMain = document.getElementById('main');
+    if (this.legacyMain) {
+      this.legacyMainRole = this.legacyMain.getAttribute('role');
+      this.legacyMainAriaHidden = this.legacyMain.getAttribute('aria-hidden');
+      this.legacyMainWasInert = this.legacyMain.inert;
+      this.legacyMainWasHidden = this.legacyMain.hidden;
+      this.legacyMain.setAttribute('role', 'presentation');
+      this.legacyMain.setAttribute('aria-hidden', 'true');
+      this.legacyMain.inert = true;
+      this.legacyMain.hidden = true;
+    }
+
+    this.skipLink = document.querySelector<HTMLAnchorElement>('.skip-link');
+    if (this.skipLink) {
+      this.skipLinkHref = this.skipLink.getAttribute('href') ?? '';
+      this.skipLinkText = this.skipLink.textContent ?? '';
+      this.skipLink.href = '#opsMain';
+      this.skipLink.textContent = 'Skip to intelligence workspace';
+      this.boundSkipClick = (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        this.body?.focus();
+      };
+      this.skipLink.addEventListener('click', this.boundSkipClick, true);
+    }
+  }
+
+  private restoreLandmarks(): void {
+    if (this.legacyMain) {
+      if (this.legacyMainRole === null) this.legacyMain.removeAttribute('role');
+      else this.legacyMain.setAttribute('role', this.legacyMainRole);
+      if (this.legacyMainAriaHidden === null) this.legacyMain.removeAttribute('aria-hidden');
+      else this.legacyMain.setAttribute('aria-hidden', this.legacyMainAriaHidden);
+      this.legacyMain.inert = this.legacyMainWasInert;
+      this.legacyMain.hidden = this.legacyMainWasHidden;
+    }
+    if (this.skipLink) {
+      if (this.boundSkipClick) this.skipLink.removeEventListener('click', this.boundSkipClick, true);
+      this.skipLink.setAttribute('href', this.skipLinkHref);
+      this.skipLink.textContent = this.skipLinkText;
+    }
+    this.boundSkipClick = null;
+    this.legacyMain = null;
+    this.skipLink = null;
+  }
+
   private dockLegacyPanels(): void {
     const dock = el('div', 'ops-panel-dock');
     dock.setAttribute('aria-hidden', 'true');
+    const mobilePanelNav = document.querySelector<HTMLElement>('.mobile-panel-nav');
+    if (mobilePanelNav) dock.appendChild(mobilePanelNav);
     for (const id of ['panelTabsMount', 'panelsGrid', 'mapBottomGrid']) {
       const node = document.getElementById(id);
       if (node) dock.appendChild(node);
@@ -579,6 +735,11 @@ export class OpsShell {
   }
 
   private handleKeydown(event: KeyboardEvent): void {
+    const shortcuts = this.shortcutsOverlay;
+    if (shortcuts && !shortcuts.hidden && event.key === 'Tab') {
+      trapFocus(event, shortcuts);
+      return;
+    }
     const target = event.target as HTMLElement | null;
     if (isEditableTarget(target)) return;
 
@@ -634,6 +795,12 @@ export class OpsShell {
     this.chipButtons.set(key, buttons);
   }
 
+  private registerTimeButton(range: TimeRange, button: HTMLButtonElement): void {
+    const buttons = this.timeButtons.get(range) ?? new Set<HTMLButtonElement>();
+    buttons.add(button);
+    this.timeButtons.set(range, buttons);
+  }
+
   private currentRenderer(): MapRenderer {
     return this.ctx.map?.isGlobeMode?.() ? 'globe' : 'flat';
   }
@@ -650,9 +817,7 @@ export class OpsShell {
   }
 
   private canToggleLayer(key: keyof MapLayers): boolean {
-    if (VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED && (key === 'military' || key === 'ais')) {
-      return false;
-    }
+    if (this.isRelayPendingLayer(key)) return false;
     return isLayerCommandAllowed(
       key,
       this.ctx.mapLayers[key],
@@ -660,6 +825,10 @@ export class OpsShell {
       this.ctx.map?.isDeckGLActive?.() ?? false,
       !VANTAGE_PUBLIC_MODE && hasPremiumAccess(getAuthState()),
     );
+  }
+
+  private isRelayPendingLayer(key: keyof MapLayers): boolean {
+    return VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED && (key === 'military' || key === 'ais');
   }
 
   private toggleLayer(key: keyof MapLayers): void {
@@ -671,10 +840,21 @@ export class OpsShell {
   private toggleLayerPopover(force?: boolean): void {
     if (!this.layerPopover || !this.moreLayersButton) return;
     const open = force ?? this.layerPopover.hidden;
-    if (open) this.renderLayerPopover();
+    if (open) {
+      this.layerReturnFocus = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : this.moreLayersButton;
+      this.renderLayerPopover();
+    }
     this.layerPopover.hidden = !open;
     this.moreLayersButton.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open) this.layerPopover.querySelector<HTMLButtonElement>('.ops-layer-option')?.focus();
+    if (open) {
+      this.layerPopover.querySelector<HTMLButtonElement>('.ops-layer-option')?.focus();
+    } else if (this.layerReturnFocus?.isConnected) {
+      const restore = this.layerReturnFocus;
+      this.layerReturnFocus = null;
+      requestAnimationFrame(() => restore.focus());
+    }
   }
 
   private renderLayerPopover(): void {
@@ -701,8 +881,24 @@ export class OpsShell {
       grid.appendChild(button);
       this.registerLayerButton(definition.key, button);
     }
-    this.layerPopover.replaceChildren(header, grid);
+
+    const windowControl = el('div', 'ops-layer-window');
+    const windowLabel = el('span', 'ops-layer-window-label');
+    windowLabel.textContent = 'Activity window';
+    const windowButtons = el('div', 'ops-layer-window-buttons');
+    for (const range of TIME_RANGES) {
+      const button = el('button', 'ops-seg-btn ops-layer-time-btn') as HTMLButtonElement;
+      button.type = 'button';
+      button.textContent = range === 'all' ? 'All' : range.toUpperCase();
+      button.setAttribute('aria-label', `Show ${range === 'all' ? 'all available' : `the last ${range}`} activity`);
+      button.addEventListener('click', () => this.ctx.map?.setTimeRange(range));
+      this.registerTimeButton(range, button);
+      windowButtons.appendChild(button);
+    }
+    windowControl.append(windowLabel, windowButtons);
+    this.layerPopover.replaceChildren(header, windowControl, grid);
     this.syncLayerChips();
+    this.syncTimeChips(this.ctx.map?.getTimeRange() ?? this.ctx.currentTimeRange);
   }
 
   // ---- live feed + timeline ----
@@ -734,30 +930,51 @@ export class OpsShell {
         }))
       : this.ctx.allNews.map(feedItemFromNews);
 
-    const sorted = items.sort((a, b) => b.when.getTime() - a.when.getTime());
-    if (!applyWindow) return sorted;
+    const latest = items.sort((a, b) => b.when.getTime() - a.when.getTime());
+    if (!applyWindow) return latest;
     const range = this.ctx.map?.getTimeRange() ?? this.ctx.currentTimeRange;
     const duration = TIME_RANGE_MS[range];
     const windowed = duration === undefined
-      ? sorted
-      : sorted.filter((item) => item.when.getTime() >= Date.now() - duration);
+      ? latest
+      : latest.filter((item) => item.when.getTime() >= Date.now() - duration);
     // The active watchlist chip narrows the already time-windowed feed.
     const filter = this.watchFilter;
     const filtered = filter
       ? windowed.filter((item) => watchEntryMatches(item, filter.kind, filter.value))
       : windowed;
-    return filtered.slice(0, FEED_LIMIT);
+    const brief = this.currentBrief();
+    const watchlist = getWatchlist();
+    const ordered = this.feedOrder === 'priority'
+      ? [...filtered].sort((a, b) => priorityScore(b, brief, watchlist) - priorityScore(a, brief, watchlist)
+        || b.when.getTime() - a.when.getTime())
+      : filtered;
+    return ordered.slice(0, FEED_LIMIT);
   }
 
   private renderFeed(): void {
     if (!this.feedList) return;
+    const focusedId = document.activeElement instanceof HTMLButtonElement
+      && this.feedList.contains(document.activeElement)
+      ? document.activeElement.dataset.focusId ?? null
+      : null;
+    const brief = this.currentBrief();
+    this.renderBriefPreview(brief);
     const items = this.collectFeedItems(true);
     this.feedList.replaceChildren();
-    if (this.feedCount) this.feedCount.textContent = String(items.length);
+    this.feedList.removeAttribute('aria-busy');
+    if (this.feedCount) this.feedCount.textContent = `${items.length} shown`;
+
+    if (items.length === 0 && !this.feedHasSettled) {
+      if (this.feedCount) this.feedCount.textContent = 'Updating';
+      this.feedList.setAttribute('aria-busy', 'true');
+      this.feedList.appendChild(feedLoadingState());
+      this.renderTimeline(items);
+      return;
+    }
 
     if (items.length === 0) {
       const empty = el('div', 'ops-feed-empty');
-      empty.textContent = 'Waiting for reporting in this time window…';
+      empty.textContent = 'No reporting in this time window.';
       this.feedList.appendChild(empty);
       this.renderTimeline(items);
       return;
@@ -768,8 +985,15 @@ export class OpsShell {
       const button = el('button', 'ops-feed-item') as HTMLButtonElement;
       button.type = 'button';
       button.dataset.focusId = item.id;
+      const briefLead = isBriefLead(item, brief);
+      if (briefLead) button.dataset.briefLead = 'true';
       if (item.id === selectedId) button.setAttribute('aria-current', 'true');
       const meta = el('div', 'meta');
+      if (briefLead) {
+        const signal = el('span', 'ops-feed-signal');
+        signal.textContent = 'Brief lead';
+        meta.appendChild(signal);
+      }
       const source = el('span', 'src');
       source.textContent = item.source;
       const when = el('span');
@@ -784,11 +1008,72 @@ export class OpsShell {
       this.feedList.appendChild(button);
     }
 
-    this.renderTimeline(items);
+    this.renderTimeline([...items].sort((a, b) => b.when.getTime() - a.when.getTime()));
+    if (focusedId) {
+      this.feedList.querySelector<HTMLButtonElement>(`[data-focus-id="${cssEscape(focusedId)}"]`)?.focus();
+    }
     const focus = this.ctx.opsFocus;
     if (!this.selection && focus) {
       const selected = items.find((item) => item.id === focus || item.legacyFocusId === focus);
       if (selected) this.inspectFeedItem(selected, false);
+    }
+  }
+
+  private currentBrief(): VantageSynthesis | null {
+    const insights = getServerInsights();
+    if (!insights) return null;
+    try {
+      return buildVantageSynthesis(insights);
+    } catch {
+      return null;
+    }
+  }
+
+  private renderBriefPreview(brief: VantageSynthesis | null): void {
+    if (!this.briefPreviewHost) return;
+    if (this.systemStatus) {
+      const newestReport = brief ? null : this.collectFeedItems(false)[0] ?? null;
+      const state = !navigator.onLine ? 'offline' : brief || newestReport ? 'current' : 'updating';
+      this.systemStatus.dataset.state = state;
+      this.systemStatus.textContent = state === 'offline'
+        ? 'Offline'
+        : brief
+          ? `Brief ${brief.freshness.replace(/^Updated\s+/i, '')}`
+          : newestReport
+            ? `Reports ${formatTimeAgo(newestReport.when)}`
+            : 'Updating';
+    }
+    if (!VANTAGE_PUBLIC_MODE || !brief) {
+      this.briefPreviewButton?.remove();
+      this.briefPreviewButton = null;
+      return;
+    }
+
+    let button = this.briefPreviewButton;
+    if (!button) {
+      button = el('button', 'ops-brief-preview') as HTMLButtonElement;
+      button.type = 'button';
+      button.setAttribute('aria-label', 'Open the current cited situation brief');
+      button.addEventListener('click', () => { void this.inspectBrief(); });
+      this.briefPreviewButton = button;
+      this.briefPreviewHost.appendChild(button);
+    }
+    const meta = el('span', 'ops-brief-preview-meta');
+    const label = el('span', 'ops-brief-preview-label');
+    label.textContent = brief.generationMode === 'ai' ? 'Cited synthesis' : 'Cited brief';
+    const freshness = el('span');
+    freshness.textContent = brief.freshness;
+    meta.append(label, freshness);
+    const summary = el('span', 'ops-brief-preview-copy');
+    summary.textContent = stripCitations(brief.whatChanged);
+    const evidence = el('span', 'ops-brief-preview-evidence');
+    evidence.textContent = `${brief.sources.length} sources · ${corroborationLabel(brief)}`;
+    button.replaceChildren(meta, summary, evidence);
+  }
+
+  private syncFeedOrderButtons(): void {
+    for (const [mode, button] of this.feedOrderButtons) {
+      button.setAttribute('aria-pressed', mode === this.feedOrder ? 'true' : 'false');
     }
   }
 
@@ -840,7 +1125,7 @@ export class OpsShell {
     // map to the report; passive restores (deep links, data refreshes) do not.
     if (updateUrl && item.lat !== undefined && item.lon !== undefined) {
       this.ctx.map?.setCenter(item.lat, item.lon, 5);
-      this.ctx.map?.flashLocation(item.lat, item.lon, 1800);
+      if (!prefersReducedMotion()) this.ctx.map?.flashLocation(item.lat, item.lon, 1800);
     }
     const content = this.beginInspector(
       item.alert ? 'Priority report' : 'Intelligence report',
@@ -853,6 +1138,12 @@ export class OpsShell {
     if (item.sourceCount > 1) badges.appendChild(badge(`${item.sourceCount} sources`, 'sources'));
     if (item.locationName) badges.appendChild(badge(item.locationName, 'location'));
     if (badges.childElementCount > 0) content.appendChild(badges);
+
+    if (this.feedOrder === 'priority') {
+      const ranking = el('p', 'ops-rank-reason');
+      ranking.textContent = `Priority basis: ${priorityReasons(item, this.currentBrief(), getWatchlist()).join(', ')}.`;
+      content.appendChild(ranking);
+    }
 
     const summary = el('p', 'ops-inspector-copy');
     summary.textContent = item.snippet || 'Open the source report for the full context and verify material claims against corroborating evidence.';
@@ -1040,14 +1331,16 @@ export class OpsShell {
     this.setFocus(null);
     const content = this.beginInspector('Country', `${name} ${toFlagEmoji(iso)}`, iso);
 
-    const status = el('p', 'ops-inspector-copy ops-country-status ops-skeleton');
-    status.textContent = 'Compiling live signals for this country…';
-    content.appendChild(status);
     const signalsHost = el('div', 'ops-country-signals');
+    signalsHost.setAttribute('aria-busy', 'true');
+    const status = loadingState('Compiling live signals for this country', 3, 'ops-country-status');
+    signalsHost.appendChild(status);
     content.appendChild(signalsHost);
 
     const actions = el('div', 'ops-inspector-actions');
-    actions.appendChild(actionButton('Open full deep-dive', () => intel.openFullBrief(), true));
+    if (!VANTAGE_PUBLIC_MODE) {
+      actions.appendChild(actionButton('Open full deep-dive', () => intel.openFullBrief(), true));
+    }
     const watchButton = actionButton('', (button) => {
       toggleCountry(iso);
       syncWatchButton(button, 'country', iso);
@@ -1055,6 +1348,10 @@ export class OpsShell {
     syncWatchButton(watchButton, 'country', iso);
     actions.appendChild(watchButton);
     content.appendChild(actions);
+    // Secondary details arrive after the summary. Keeping them below the
+    // actions prevents the primary controls from moving under the pointer.
+    const detailsHost = el('div', 'ops-country-details');
+    content.appendChild(detailsHost);
     this.openInspector();
     this.syncFeedSelection();
 
@@ -1066,19 +1363,25 @@ export class OpsShell {
         signals = null;
       }
       if (this.destroyed || this.selection !== selection || !signalsHost.isConnected) return;
-      status.remove();
+      signalsHost.replaceChildren();
+      signalsHost.removeAttribute('aria-busy');
       if (!signals) {
         const failed = el('p', 'ops-inspector-copy');
-        failed.textContent = 'Country signals are unavailable right now. The full deep-dive may still load them.';
+        failed.textContent = VANTAGE_PUBLIC_MODE
+          ? 'Country signals are unavailable right now. Current reporting remains available in the intelligence feed.'
+          : 'Country signals are unavailable right now. The full deep-dive may still load them.';
         signalsHost.appendChild(failed);
+        revealAsyncContent(signalsHost);
         return;
       }
       this.renderCountrySignals(signalsHost, signals);
+      revealAsyncContent(signalsHost);
 
       try {
         const details = await intel.getSignalDetails();
-        if (this.destroyed || this.selection !== selection || !signalsHost.isConnected) return;
-        this.renderCountrySignalDetails(signalsHost, details);
+        if (this.destroyed || this.selection !== selection || !detailsHost.isConnected) return;
+        this.renderCountrySignalDetails(detailsHost, details);
+        revealAsyncContent(detailsHost);
       } catch {
         // Signal-detail chunk unavailable — the summary above stands alone.
       }
@@ -1340,56 +1643,77 @@ export class OpsShell {
   }
 
   private async inspectBrief(): Promise<void> {
-    const loading = this.beginInspector('AI synthesis', 'Compiling the current picture', 'Cited · cached · public');
-    const loadingCopy = el('p', 'ops-inspector-copy ops-skeleton');
-    loadingCopy.textContent = 'Loading the latest validated brief and its evidence trail…';
+    const cachedBrief = this.currentBrief();
+    if (cachedBrief) {
+      this.selection = { kind: 'brief', brief: cachedBrief };
+      this.renderBrief(cachedBrief);
+      this.openInspector();
+      void this.revalidateBrief(cachedBrief.generatedAt);
+      return;
+    }
+    if (this.briefLoading) return;
+    this.briefLoading = true;
+
+    const loading = this.beginInspector('Cited brief', 'Compiling the current picture', 'Cached · public');
+    const loadingCopy = loadingState('Loading the latest validated brief and its evidence trail', 4);
     loading.appendChild(loadingCopy);
-    this.selection = { kind: 'brief', brief: null };
+    this.inspector?.setAttribute('aria-busy', 'true');
+    const loadingSelection: InspectorSelection = { kind: 'brief', brief: null };
+    this.selection = loadingSelection;
     this.openInspector();
 
     if (this.briefButton) {
-      this.briefButton.disabled = true;
-      this.briefButton.textContent = 'Loading';
+      this.briefButton.setAttribute('aria-busy', 'true');
     }
-    const insights = await fetchServerInsights(5_000, true) ?? getServerInsights();
-    if (this.briefButton) {
-      this.briefButton.disabled = false;
-      this.briefButton.textContent = 'Brief';
+    this.briefPreviewButton?.setAttribute('aria-busy', 'true');
+    let brief: VantageSynthesis | null = null;
+    try {
+      const insights = await fetchServerInsights(5_000, true) ?? getServerInsights();
+      brief = insights ? buildVantageSynthesis(insights) : null;
+    } catch {
+      brief = null;
+    } finally {
+      this.briefLoading = false;
+      if (this.selection === loadingSelection) this.inspector?.removeAttribute('aria-busy');
+      if (this.briefButton) {
+        this.briefButton.removeAttribute('aria-busy');
+      }
+      this.briefPreviewButton?.removeAttribute('aria-busy');
     }
-    if (this.selection?.kind !== 'brief') return;
-
-    const brief = insights ? buildVantageSynthesis(insights) : null;
-    this.selection = { kind: 'brief', brief };
+    if (this.selection !== loadingSelection) return;
     if (!brief) {
-      const unavailable = this.beginInspector('AI synthesis', 'Brief temporarily unavailable', 'Data plane degraded');
-      const copy = el('p', 'ops-inspector-copy');
-      copy.textContent = 'The cited snapshot is not fresh enough to display. Live reporting remains available in the feed while the next synthesis run completes.';
-      unavailable.appendChild(copy);
-      this.renderBriefHistory(unavailable);
+      this.renderBriefUnavailable();
       return;
     }
+    this.selection = { kind: 'brief', brief };
+    this.renderBrief(brief);
+    this.renderFeed();
+  }
 
+  private renderBrief(brief: VantageSynthesis): void {
     const briefLabel = brief.generationMode === 'grounded-fallback'
-      ? 'Cited synthesis · safety fallback'
+      ? 'Verified headline brief'
       : brief.degraded
-        ? 'AI synthesis · degraded'
-        : 'AI synthesis';
+        ? 'Cited assessment · limited'
+        : 'Cited assessment';
     const content = this.beginInspector(
       briefLabel,
       'Global situation brief',
       brief.freshness,
     );
     const badges = el('div', 'ops-inspector-badges');
-    badges.appendChild(badge(`${sentence(brief.confidence)} confidence`, brief.confidence === 'HIGH' ? 'sources' : 'location'));
+    badges.appendChild(badge(corroborationLabel(brief), brief.confidence === 'HIGH' ? 'sources' : 'location'));
     badges.appendChild(badge(`${brief.sources.length} sources`, 'sources'));
     content.appendChild(badges);
 
     const changedHeading = el('h3', 'ops-inspector-section-title');
-    changedHeading.textContent = 'What changed';
+    changedHeading.textContent = brief.generationMode === 'grounded-fallback'
+      ? 'Current cited reports'
+      : 'Current assessment';
     const changed = el('p', 'ops-inspector-copy ops-brief-copy');
     this.appendTextWithCitations(changed, brief.whatChanged, brief);
     const whyHeading = el('h3', 'ops-inspector-section-title');
-    whyHeading.textContent = 'Why it matters';
+    whyHeading.textContent = 'Evidence status';
     const why = el('p', 'ops-inspector-copy');
     this.appendTextWithCitations(why, brief.whyItMatters, brief);
     content.append(changedHeading, changed, whyHeading, why);
@@ -1430,25 +1754,76 @@ export class OpsShell {
     this.renderBriefHistory(content);
   }
 
+  private renderBriefUnavailable(): void {
+    const unavailable = this.beginInspector('Cited brief', 'Brief temporarily unavailable', 'Freshness unavailable');
+    const copy = el('p', 'ops-inspector-copy');
+    copy.textContent = 'The latest validated snapshot is not ready. Current reporting remains available in the feed while the next analysis snapshot is published.';
+    unavailable.appendChild(copy);
+    this.renderBriefHistory(unavailable);
+  }
+
+  private async revalidateBrief(previousGeneratedAt: string): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastBriefRevalidatedAt < 60_000) return;
+    this.lastBriefRevalidatedAt = now;
+    try {
+      const insights = await fetchServerInsights(5_000, true);
+      if (!insights || this.selection?.kind !== 'brief') return;
+      const refreshed = buildVantageSynthesis(insights);
+      if (!refreshed || refreshed.generatedAt === previousGeneratedAt) return;
+      // Keep the document the user is reading stable. The refreshed snapshot
+      // updates the compact preview and offers an explicit in-place handoff,
+      // without resetting inspector scroll or replaying entrance motion.
+      this.offerBriefRefresh(refreshed);
+      this.renderFeed();
+    } catch {
+      // Keep the already validated cached brief visible when revalidation fails.
+    }
+  }
+
+  private offerBriefRefresh(refreshed: VantageSynthesis): void {
+    const meta = this.inspector?.querySelector<HTMLElement>('.ops-inspector-meta');
+    if (!meta || this.selection?.kind !== 'brief') return;
+    const update = el('button', 'ops-brief-update') as HTMLButtonElement;
+    update.type = 'button';
+    update.textContent = 'New brief available';
+    update.setAttribute('aria-label', 'Load updated brief');
+    update.addEventListener('click', () => {
+      if (!update.isConnected || this.selection?.kind !== 'brief') return;
+      this.selection = { kind: 'brief', brief: refreshed };
+      this.renderBrief(refreshed);
+      this.renderFeed();
+    });
+    meta.replaceWith(update);
+  }
+
   // ---- brief history & diffs ----
 
-  /** Lazy "History" section appended to the brief inspector view. */
+  /** Fetch history only when the user opens its disclosure. */
   private renderBriefHistory(content: HTMLElement): void {
-    const heading = el('h3', 'ops-inspector-section-title');
-    heading.textContent = 'History';
+    const disclosure = el('details', 'ops-brief-history-disclosure') as HTMLDetailsElement;
+    const summary = el('summary', 'ops-brief-history-summary');
+    summary.textContent = 'Brief history';
     const box = el('div', 'ops-brief-history');
-    const status = el('p', 'ops-history-status ops-skeleton');
-    status.textContent = 'Loading archived briefs…';
-    box.appendChild(status);
-    content.append(heading, box);
+    disclosure.append(summary, box);
+    content.appendChild(disclosure);
 
-    void fetchBriefHistory().then((history) => {
+    let loaded = false;
+    disclosure.addEventListener('toggle', () => {
+      if (!disclosure.open || loaded) return;
+      loaded = true;
+      box.setAttribute('aria-busy', 'true');
+      const status = loadingState('Loading archived briefs', 2, 'ops-history-loading');
+      box.appendChild(status);
+      void fetchBriefHistory().then((history) => {
       if (this.destroyed || this.selection?.kind !== 'brief' || !box.isConnected) return;
+      box.removeAttribute('aria-busy');
       box.replaceChildren();
       if (history.entries.length === 0) {
         const empty = el('p', 'ops-history-status');
-        empty.textContent = 'No archived briefs yet — history builds up as the 5-minute refresh runs.';
+        empty.textContent = 'Brief history appears as new analysis snapshots are published.';
         box.appendChild(empty);
+        revealAsyncContent(box);
         return;
       }
       for (const entry of history.entries.slice(0, BRIEF_HISTORY_LIMIT)) {
@@ -1467,12 +1842,16 @@ export class OpsShell {
       const diffHost = el('div', 'ops-diff');
       box.appendChild(actionButton('What changed vs yesterday', () => this.renderBriefDiff(diffHost)));
       box.appendChild(diffHost);
-    }).catch(() => {
-      if (this.destroyed || !box.isConnected) return;
-      box.replaceChildren();
-      const failed = el('p', 'ops-history-status');
-      failed.textContent = 'History unavailable';
-      box.appendChild(failed);
+      revealAsyncContent(box);
+      }).catch(() => {
+        if (this.destroyed || !box.isConnected) return;
+        box.removeAttribute('aria-busy');
+        box.replaceChildren();
+        const failed = el('p', 'ops-history-status');
+        failed.textContent = 'History unavailable';
+        box.appendChild(failed);
+        revealAsyncContent(box);
+      });
     });
   }
 
@@ -1483,12 +1862,13 @@ export class OpsShell {
    */
   private renderBriefDiff(host: HTMLElement): void {
     host.replaceChildren();
-    const status = el('p', 'ops-history-status ops-skeleton');
-    status.textContent = 'Comparing against yesterday…';
+    host.setAttribute('aria-busy', 'true');
+    const status = loadingState('Comparing against yesterday', 3, 'ops-history-loading');
     host.appendChild(status);
 
     void fetchBriefDiff('yesterday', 'latest').then((diff) => {
       if (this.destroyed || !host.isConnected) return;
+      host.removeAttribute('aria-busy');
       host.replaceChildren();
       const baseline = diff.a.generatedAt
         ? `Baseline ${formatAbsoluteTime(coerceDate(diff.a.generatedAt))}`
@@ -1518,12 +1898,15 @@ export class OpsShell {
         same.textContent = 'No substantive line changes vs yesterday.';
         host.appendChild(same);
       }
+      revealAsyncContent(host);
     }).catch(() => {
       if (this.destroyed || !host.isConnected) return;
+      host.removeAttribute('aria-busy');
       host.replaceChildren();
       const failed = el('p', 'ops-history-status');
       failed.textContent = 'History unavailable';
       host.appendChild(failed);
+      revealAsyncContent(host);
     });
   }
 
@@ -1535,9 +1918,9 @@ export class OpsShell {
       'Loading archived brief',
       formatAbsoluteTime(coerceDate(at)),
     );
-    const copy = el('p', 'ops-inspector-copy ops-skeleton');
-    copy.textContent = 'Fetching the archived snapshot…';
+    const copy = loadingState('Fetching the archived snapshot', 4);
     loading.appendChild(copy);
+    this.inspector?.setAttribute('aria-busy', 'true');
     this.openInspector();
 
     let snapshot: ArchivedBriefSnapshot;
@@ -1545,6 +1928,7 @@ export class OpsShell {
       snapshot = await fetchBriefSnapshot(at);
     } catch {
       if (this.destroyed || this.selection !== selection) return;
+      this.inspector?.removeAttribute('aria-busy');
       const failed = this.beginInspector('AI synthesis · archive', 'History unavailable', formatAbsoluteTime(coerceDate(at)));
       const note = el('p', 'ops-inspector-copy');
       note.textContent = 'This archived snapshot could not be loaded. The live brief remains available.';
@@ -1555,6 +1939,7 @@ export class OpsShell {
       return;
     }
     if (this.destroyed || this.selection !== selection) return;
+    this.inspector?.removeAttribute('aria-busy');
 
     const generated = coerceDate(snapshot.generatedAt);
     const content = this.beginInspector(
@@ -1674,15 +2059,16 @@ export class OpsShell {
       scores.computedAt ? `Computed ${formatAbsoluteTime(new Date(scores.computedAt))}` : 'Computation time unavailable',
     );
 
+    const displayLevel = getStrategicRiskDisplayLevel(risk.score);
     const badges = el('div', 'ops-inspector-badges');
-    badges.appendChild(badge(sentence(risk.level), `level-${risk.level}`));
+    badges.appendChild(badge(sentence(displayLevel), `level-${displayLevel}`));
     badges.appendChild(badge(`Trend ${risk.trend}`, 'location'));
     content.appendChild(badges);
 
     const facts = el('div', 'ops-inspector-facts');
     facts.append(
       fact('Score', `${Math.round(risk.score)} / 100`),
-      fact('Level', sentence(risk.level)),
+      fact('Level', sentence(displayLevel)),
     );
     content.appendChild(facts);
 
@@ -1798,6 +2184,9 @@ export class OpsShell {
 
   private beginInspector(kicker: string, titleText: string, metaText?: string): HTMLElement {
     if (!this.inspector) return el('div');
+    this.inspector.removeAttribute('aria-busy');
+    const hadFocus = document.activeElement instanceof HTMLElement
+      && this.inspector.contains(document.activeElement);
     const header = el('div', 'ops-inspector-head');
     const labels = el('div');
     const kickerEl = el('div', 'ops-inspector-kicker');
@@ -1812,27 +2201,49 @@ export class OpsShell {
     const close = iconButton('×', 'Close inspector', () => this.closeInspector());
     header.append(labels, close);
     const title = el('h2', 'ops-inspector-title');
+    title.id = 'opsInspectorTitle';
     title.textContent = titleText;
     const content = el('div', 'ops-inspector-content');
     content.appendChild(title);
     this.inspector.replaceChildren(header, content);
+    this.inspector.setAttribute('aria-labelledby', title.id);
+    if (hadFocus) requestAnimationFrame(() => close.focus());
     return content;
   }
 
   private openInspector(): void {
     if (!this.inspector || !this.body) return;
+    const wasHidden = this.inspector.hidden;
+    if (wasHidden) {
+      this.inspectorReturnFocus = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    }
     this.inspector.hidden = false;
     this.body.classList.add('has-inspector');
-    requestAnimationFrame(() => this.ctx.map?.resize?.());
+    requestAnimationFrame(() => {
+      if (wasHidden) this.inspector?.querySelector<HTMLButtonElement>('.ops-inspector-head button')?.focus();
+    });
+    this.resizeMapForShellTransition();
   }
 
   private closeInspector(): void {
     if (!this.inspector || !this.body) return;
     this.selection = null;
+    this.inspector.removeAttribute('aria-busy');
     this.inspector.hidden = true;
     this.body.classList.remove('has-inspector');
     this.setFocus(null);
     this.syncFeedSelection();
+    const restore = this.inspectorReturnFocus;
+    this.inspectorReturnFocus = null;
+    requestAnimationFrame(() => {
+      if (restore?.isConnected) restore.focus();
+    });
+    this.resizeMapForShellTransition();
+  }
+
+  private resizeMapForShellTransition(): void {
     requestAnimationFrame(() => this.ctx.map?.resize?.());
   }
 
@@ -1885,8 +2296,14 @@ export class OpsShell {
   // ---- status + HUD ----
 
   private syncTimeChips(active: TimeRange): void {
-    for (const [range, button] of this.timeButtons) {
-      button.setAttribute('aria-pressed', range === active ? 'true' : 'false');
+    for (const [range, buttons] of this.timeButtons) {
+      for (const button of [...buttons]) {
+        if (!button.isConnected) {
+          buttons.delete(button);
+          continue;
+        }
+        button.setAttribute('aria-pressed', range === active ? 'true' : 'false');
+      }
     }
     this.updateStatusLine();
   }
@@ -1895,7 +2312,7 @@ export class OpsShell {
     if (!this.statusLine) return;
     const range = (this.ctx.map?.getTimeRange() ?? this.ctx.currentTimeRange).toUpperCase();
     if (VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED) {
-      this.statusLine.textContent = `Window ${range} · Air/ships pending`;
+      this.statusLine.textContent = `Window ${range} · Coverage limited`;
       return;
     }
     const ais = safeAisStatus();
@@ -1907,7 +2324,7 @@ export class OpsShell {
     const risk = scores?.strategicRisk ?? null;
     if (this.hudScore) this.hudScore.textContent = risk ? String(Math.round(risk.score)) : '--';
     if (this.hudLevel) {
-      const level = risk?.level ?? 'low';
+      const level = risk ? getStrategicRiskDisplayLevel(risk.score) : 'low';
       this.hudLevel.textContent = risk ? sentence(level) : 'Pending';
       this.hudLevel.dataset.level = level;
     }
@@ -1919,8 +2336,14 @@ export class OpsShell {
     const ais = safeAisStatus();
     const events = this.ctx.latestClusters.length || this.ctx.allNews.length;
 
-    if (this.countAir) setCount(this.countAir, VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : militaryFlights, 'air');
-    if (this.countShips) setCount(this.countShips, VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED ? '—' : ais.vessels, 'ships');
+    if (this.countAir) {
+      this.countAir.hidden = VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED;
+      if (!this.countAir.hidden) setCount(this.countAir, militaryFlights, 'air');
+    }
+    if (this.countShips) {
+      this.countShips.hidden = VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED;
+      if (!this.countShips.hidden) setCount(this.countShips, ais.vessels, 'ships');
+    }
     if (this.countEvents) setCount(this.countEvents, events, 'events');
     this.updateStatusLine();
     this.checkWatchlistAlerts();
@@ -1928,12 +2351,156 @@ export class OpsShell {
 
   private toggleShortcuts(open: boolean): void {
     if (!this.shortcutsOverlay) return;
+    if (open) {
+      this.shortcutsReturnFocus = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    }
+    for (const child of [...(this.root?.children ?? [])]) {
+      if (child instanceof HTMLElement && child !== this.shortcutsOverlay) child.inert = open;
+    }
     this.shortcutsOverlay.hidden = !open;
-    if (open) this.shortcutsOverlay.querySelector<HTMLButtonElement>('button')?.focus();
+    if (open) {
+      this.shortcutsOverlay.querySelector<HTMLButtonElement>('button')?.focus();
+    } else {
+      const restore = this.shortcutsReturnFocus;
+      this.shortcutsReturnFocus = null;
+      if (restore?.isConnected) requestAnimationFrame(() => restore.focus());
+    }
   }
 }
 
 // ---- small DOM/data helpers ----
+
+function loadingState(label: string, lineCount = 3, modifier = ''): HTMLElement {
+  const node = el('div', `ops-loading-state${modifier ? ` ${modifier}` : ''}`);
+  node.setAttribute('role', 'status');
+  node.setAttribute('aria-live', 'polite');
+  node.setAttribute('aria-atomic', 'true');
+  const text = el('span', 'ops-loading-label');
+  text.textContent = `${label}…`;
+  const lines = el('span', 'ops-loading-lines');
+  lines.setAttribute('aria-hidden', 'true');
+  const widths = ['92%', '74%', '84%', '61%', '78%'];
+  for (let index = 0; index < lineCount; index++) {
+    const line = el('i', 'ops-loading-line');
+    line.style.setProperty('--loading-width', widths[index % widths.length] ?? '80%');
+    lines.appendChild(line);
+  }
+  node.append(text, lines);
+  return node;
+}
+
+function feedLoadingState(): HTMLElement {
+  const node = el('div', 'ops-loading-state ops-feed-loading');
+  node.setAttribute('role', 'status');
+  node.setAttribute('aria-live', 'polite');
+  node.setAttribute('aria-atomic', 'true');
+  const text = el('span', 'ops-loading-label');
+  text.textContent = 'Loading current reporting…';
+  const rows = el('span', 'ops-feed-loading-rows');
+  rows.setAttribute('aria-hidden', 'true');
+  for (let index = 0; index < 5; index++) {
+    const row = el('span', 'ops-feed-loading-row');
+    row.append(el('i'), el('b'), el('span'));
+    rows.appendChild(row);
+  }
+  node.append(text, rows);
+  return node;
+}
+
+function revealAsyncContent(host: HTMLElement): void {
+  host.classList.remove('ops-content-enter');
+  // Restart the short resolution transition when a second async stage (for
+  // example country details after its summary) lands in the same container.
+  void host.offsetWidth;
+  host.classList.add('ops-content-enter');
+}
+
+function stripCitations(text: string): string {
+  return text.replace(CITATION_PATTERN, '').replace(/\s+/g, ' ').trim();
+}
+
+function corroborationLabel(brief: VantageSynthesis): string {
+  const match = brief.confidenceDetail.match(/^(\d+) of (\d+)/);
+  return match ? `${match[1]}/${match[2]} corroborated` : `${sentence(brief.confidence)} evidence`;
+}
+
+function normalizedTitle(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function isBriefLead(item: OpsFeedItem, brief: VantageSynthesis | null): boolean {
+  if (!brief) return false;
+  const itemTitle = normalizedTitle(item.title);
+  return brief.sources.some((source) => {
+    const sourceTitle = normalizedTitle(source.title);
+    return item.link === source.url
+      || itemTitle === sourceTitle
+      || item.allItems.some((news) => news.link === source.url || normalizedTitle(news.title) === sourceTitle);
+  });
+}
+
+function priorityScore(item: OpsFeedItem, brief: VantageSynthesis | null, watchlist: Watchlist): number {
+  const threatWeight: Partial<Record<ThreatClassification['level'], number>> = {
+    critical: 180,
+    high: 130,
+    medium: 70,
+    low: 20,
+    info: 0,
+  };
+  const importance = Math.max(0, ...item.allItems.map((news) => news.importanceScore ?? 0));
+  const ageHours = Math.max(0, (Date.now() - item.when.getTime()) / 3_600_000);
+  const freshness = Math.max(0, 72 - ageHours * 3);
+  return (isBriefLead(item, brief) ? 600 : 0)
+    + (matchesWatchlist(item, watchlist) ? 140 : 0)
+    + (item.alert ? 220 : 0)
+    + (item.threat ? threatWeight[item.threat.level] ?? 0 : 0)
+    + Math.min(100, importance)
+    + Math.min(10, Math.max(1, item.sourceCount)) * 12
+    + freshness;
+}
+
+function priorityReasons(item: OpsFeedItem, brief: VantageSynthesis | null, watchlist: Watchlist): string[] {
+  const reasons: string[] = [];
+  if (isBriefLead(item, brief)) reasons.push('current brief lead');
+  if (matchesWatchlist(item, watchlist)) reasons.push('watchlist match');
+  if (item.alert) reasons.push('active alert');
+  if (item.threat && (item.threat.level === 'critical' || item.threat.level === 'high')) {
+    reasons.push(`${item.threat.level} severity`);
+  }
+  if (item.sourceCount > 1) reasons.push(`${item.sourceCount}-source corroboration`);
+  if (reasons.length === 0) reasons.push('report freshness');
+  return reasons;
+}
+
+function cssEscape(value: string): string {
+  return CSS.escape(value);
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function trapFocus(event: KeyboardEvent, container: HTMLElement): void {
+  const focusable = [...container.querySelectorAll<HTMLElement>(
+    'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+  )].filter((node) => !node.hidden && node.getAttribute('aria-hidden') !== 'true');
+  if (focusable.length === 0) {
+    event.preventDefault();
+    return;
+  }
+  const first = focusable[0]!;
+  const last = focusable[focusable.length - 1]!;
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
 
 function sentence(text: string): string {
   const lower = text.toLowerCase();

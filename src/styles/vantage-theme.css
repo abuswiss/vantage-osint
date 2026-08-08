@@ -97,7 +97,7 @@ body.ops-mode {
   --ops-border-strong: rgba(255, 255, 255, 0.13);
   --ops-text: #e8eaee;
   --ops-text-dim: #99a0ac;
-  --ops-text-faint: #6a717d;
+  --ops-text-faint: #858d99;
   --ops-accent: #8ab4f8;
   --ops-accent-soft: rgba(138, 180, 248, 0.1);
 
@@ -308,4 +308,3 @@ body.ops-mode {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
-

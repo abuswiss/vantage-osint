@@ -228,6 +228,52 @@
 
       @keyframes skel-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
+      /* ---------- Vantage map/feed boot shell ----------
+         This geometry mirrors OpsShell so startup is one continuous handoff,
+         not skeleton -> classic dashboard -> intelligence workspace. */
+      .skeleton-ops-shell{display:grid;grid-template-rows:52px minmax(0,1fr) 34px;grid-template-columns:minmax(0,1fr);width:100%;max-width:100vw;height:100vh;background:#101318;color:#e8eaee;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+      .skeleton-ops-top{display:flex;align-items:center;justify-content:space-between;gap:24px;min-width:0;padding:0 18px 0 22px;border-bottom:1px solid rgba(255,255,255,.07);background:#101318}
+      .skeleton-ops-brand{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;letter-spacing:-.01em;white-space:nowrap}
+      .skeleton-ops-status{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;background:rgba(255,255,255,.025);color:#8b93a0;font-size:11px;font-weight:500}
+      .skeleton-ops-status i{width:6px;height:6px;border-radius:50%;background:#d9ae4f;animation:skel-status 1.6s ease-in-out infinite}
+      .skeleton-ops-controls{display:flex;align-items:center;gap:8px}
+      .skeleton-ops-controls span{display:block;width:54px;height:26px;border-radius:6px;background:rgba(255,255,255,.045)}
+      .skeleton-ops-controls span.wide{width:76px}
+      .skeleton-ops-body{display:grid;grid-template-columns:340px minmax(0,1fr);width:100%;min-width:0;min-height:0}
+      .skeleton-ops-feed{display:flex;flex-direction:column;min-width:0;min-height:0;border-right:1px solid rgba(255,255,255,.07);background:#101318}
+      .skeleton-ops-feed-head{display:flex;align-items:center;justify-content:space-between;padding:15px 20px 10px;color:#8b93a0;font-size:11.5px;font-weight:550}
+      .skeleton-ops-feed-head span:last-child{color:#6b7280;font-size:10.5px;font-weight:450}
+      .skeleton-ops-feed-list{display:grid;align-content:start}
+      .skeleton-ops-feed-row{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px 10px;min-height:86px;padding:13px 20px;border-top:1px solid rgba(255,255,255,.045)}
+      .skeleton-ops-feed-row i,.skeleton-ops-feed-row b,.skeleton-ops-feed-row span,.skeleton-ops-hud span,.skeleton-ops-hud i,.skeleton-ops-bottom>*{display:block;border-radius:4px;background:rgba(255,255,255,.055)}
+      .skeleton-ops-feed-row i{width:30px;height:8px}
+      .skeleton-ops-feed-row b{width:44%;height:8px}
+      .skeleton-ops-feed-row span{grid-column:1/-1;width:88%;height:28px;margin-top:3px}
+      .skeleton-ops-feed-row:nth-child(2n) span{width:72%}
+      .skeleton-ops-feed-row:nth-child(3n) span{width:81%}
+      .skeleton-ops-map{position:relative;min-width:0;overflow:hidden;background:#0d1519}
+      .skeleton-ops-map::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse 36% 44% at 53% 48%,rgba(65,111,112,.22),transparent 70%),radial-gradient(ellipse 22% 30% at 70% 32%,rgba(53,82,95,.16),transparent 72%),linear-gradient(120deg,transparent 42%,rgba(255,255,255,.025) 42.2%,transparent 42.5%),linear-gradient(18deg,transparent 54%,rgba(255,255,255,.02) 54.2%,transparent 54.5%)}
+      .skeleton-ops-hud{position:absolute;z-index:1;top:14px;left:14px;display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;background:rgba(16,19,24,.84)}
+      .skeleton-ops-hud span{width:68px;height:8px}.skeleton-ops-hud i{width:28px;height:8px}
+      .skeleton-ops-ready{position:absolute;z-index:1;top:50%;left:50%;width:min(420px,calc(100% - 48px));transform:translate(-50%,-50%);text-align:center}
+      .skeleton-ops-ready p{margin:0 0 8px;color:#8ab4f8;font-size:11px;font-weight:600}
+      .skeleton-ops-ready h2{margin:0;color:#e8eaee;font-size:21px;line-height:1.3;font-weight:600;letter-spacing:-.015em}
+      .skeleton-ops-ready>span{display:block;margin-top:8px;color:#8b93a0;font-size:12.5px;line-height:1.45}
+      .skeleton-ops-bottom{display:flex;align-items:center;gap:9px;padding:0 14px;border-top:1px solid rgba(255,255,255,.07);background:#101318}
+      .skeleton-ops-bottom span{width:112px;height:7px}.skeleton-ops-bottom i{width:7px;height:7px}.skeleton-ops-bottom b{width:180px;height:7px;margin-left:auto}
+      .skeleton-shell-handoff{position:fixed!important;inset:0!important;z-index:10000!important;pointer-events:auto;transition:opacity 180ms cubic-bezier(.2,0,0,1)}
+      .skeleton-shell-handoff.is-leaving{opacity:0}
+      .ops-boot-failure{position:fixed!important;inset:0!important;z-index:10000!important;display:grid!important;place-items:center;padding:24px;background:#101318;color:#e8eaee;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+      .ops-boot-failure-card{width:min(460px,100%);padding:28px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:#15191f;box-shadow:0 18px 60px rgba(0,0,0,.3)}
+      .ops-boot-failure-kicker{margin:0 0 8px;color:#d9ae4f;font-size:11px;font-weight:600}
+      .ops-boot-failure-card h1{margin:0;color:#e8eaee;font-size:22px;line-height:1.25;letter-spacing:-.015em}
+      .ops-boot-failure-card>p:not(.ops-boot-failure-kicker){margin:12px 0 0;color:#a7aeba;font-size:13px;line-height:1.55}
+      .ops-boot-failure-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+      .ops-boot-failure-actions button,.ops-boot-failure-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:7px 13px;border:1px solid rgba(255,255,255,.1);border-radius:6px;background:rgba(255,255,255,.04);color:#e8eaee;font:500 12.5px/1.3 inherit;text-decoration:none;cursor:pointer}
+      .ops-boot-failure-actions button{border-color:rgba(138,180,248,.3);background:rgba(138,180,248,.12)}
+      .ops-boot-failure-actions button:focus-visible,.ops-boot-failure-actions a:focus-visible{outline:2px solid #8ab4f8;outline-offset:2px}
+      @keyframes skel-status{0%,100%{opacity:1}50%{opacity:.42}}
+
       /* ---------- skeleton shell (light theme) ---------- */
       [data-theme="light"] .skeleton-shell{background:#f8f9fa}
       [data-theme="light"] .skeleton-header{background:#fff;border-bottom-color:#d4d4d4}
@@ -348,6 +394,22 @@
         .skeleton-panel:first-child{grid-column:span 1;grid-row:span 1;min-height:var(--dashboard-panel-row-min)}
         .skeleton-panel:nth-child(n+5){display:none}
       }
+      @media (max-width:900px){
+        .skeleton-ops-shell{grid-template-rows:52px minmax(0,1fr) 34px}
+        .skeleton-ops-top{padding-inline:12px}
+        .skeleton-ops-controls span:not(.wide){display:none}
+        .skeleton-ops-controls span.wide{width:66px;height:28px}
+        .skeleton-ops-body{grid-template-columns:1fr;grid-template-rows:clamp(210px,42vh,430px) minmax(0,1fr)}
+        .skeleton-ops-map{grid-row:1}
+        .skeleton-ops-feed{grid-row:2;border-top:1px solid rgba(255,255,255,.07);border-right:0}
+        .skeleton-ops-feed-head{padding:10px 12px 8px}
+        .skeleton-ops-feed-head span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .skeleton-ops-feed-row{min-height:76px;padding:11px 12px}
+        .skeleton-ops-ready{left:0;right:0;width:auto;margin-inline:20px;transform:translateY(-50%)}
+        .skeleton-ops-ready h2{font-size:18px}
+        .skeleton-ops-ready>span{font-size:12px}
+      }
+      @media (prefers-reduced-motion:reduce){.skeleton-line,.skeleton-ops-status i{animation:none}.skeleton-shell-handoff{transition:none}}
     </style>
 
     <!-- Preconnect: critical first-paint origins.
@@ -385,6 +447,7 @@
       </main>
     </noscript>
     <div id="app">
+      <!-- WM_PREHYDRATION_SHELL_START -->
       <!-- Pre-render skeleton: visible instantly, replaced when JS calls renderLayout() -->
       <div class="skeleton-shell" aria-busy="true" aria-label="Vantage dashboard loading">
         <div class="skeleton-header">
@@ -430,6 +493,7 @@
           </div>
         </div>
       </div>
+      <!-- WM_PREHYDRATION_SHELL_END -->
     </div>
     <aside id="country-deep-dive-panel" class="country-deep-dive" aria-label="Country Intelligence" aria-hidden="true">
       <div class="country-deep-dive-shell">

@@ -61,13 +61,14 @@ export interface IntelligenceCache {
 
 export interface AppContext {
   map: import('@/components').MapContainer | null;
-  /** True when the map-first ops shell replaces the classic panel grid (default on desktop; ?classic=1 opts out). */
+  /** True when the map-first ops shell replaces the classic panel grid (all public Vantage viewports; desktop otherwise; ?classic=1 opts out). */
   readonly opsMode: boolean;
   /** Deep-linkable item currently open in the ops inspector. */
   opsFocus: string | null;
   /** Live handle to the mounted ops shell, if any. */
   opsShell: {
     onDataUpdated(): void;
+    onFeedLoadSettled(): void;
     onTimeRangeChanged(range: import('@/components').TimeRange): void;
     syncLayerChips(): void;
     inspectNewsItem(item: NewsItem): void;

@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 
 import {
   MAX_AGE_MS,
+  MAX_FUTURE_SKEW_MS,
   fetchServerInsights,
   getServerInsights,
+  validateInsights,
   __resetServerInsightsCacheForTests,
 } from '../src/services/insights-loader';
 
@@ -50,36 +52,50 @@ describe('insights-loader', () => {
   });
 
   describe('ServerInsights payload shape', () => {
-    it('validates required fields', () => {
-      const valid = {
+    function makeValid(overrides = {}) {
+      return {
         worldBrief: 'Test brief',
         worldBriefSources: [{ title: 'Test', source: 's', url: 'https://example.com/test' }],
         briefProvider: 'groq',
         status: 'ok',
-        topStories: [{ primaryTitle: 'Test', sourceCount: 2 }],
+        topStories: [{
+          primaryTitle: 'Test', primarySource: 's', primaryLink: 'https://example.com/test',
+          pubDate: new Date().toISOString(), sourceCount: 2, importanceScore: 1,
+          velocity: { level: 'low', sourcesPerHour: 1 }, isAlert: false,
+          category: 'general', threatLevel: 'low', countryCode: null,
+        }],
         generatedAt: new Date().toISOString(),
         clusterCount: 10,
         multiSourceCount: 5,
         fastMovingCount: 3,
+        ...overrides,
       };
-      assert.ok(valid.topStories.length >= 1);
-      assert.ok(['ok', 'degraded'].includes(valid.status));
+    }
+
+    it('validates required fields', () => {
+      assert.ok(validateInsights(makeValid()));
     });
 
     it('allows degraded status with empty brief', () => {
-      const degraded = {
-        worldBrief: '',
-        status: 'degraded',
-        topStories: [{ primaryTitle: 'Test' }],
-        generatedAt: new Date().toISOString(),
-      };
-      assert.equal(degraded.worldBrief, '');
-      assert.equal(degraded.status, 'degraded');
+      const degraded = validateInsights(makeValid({ worldBrief: '', status: 'degraded' }));
+      assert.equal(degraded?.worldBrief, '');
+      assert.equal(degraded?.status, 'degraded');
     });
 
     it('rejects empty topStories', () => {
-      const empty = { topStories: [] };
-      assert.equal(empty.topStories.length >= 1, false);
+      assert.equal(validateInsights(makeValid({ topStories: [] })), null);
+    });
+
+    it('rejects malformed fresh payloads before synthesis', () => {
+      const missingBrief = makeValid();
+      delete missingBrief.worldBrief;
+      assert.equal(validateInsights(missingBrief), null);
+      assert.equal(validateInsights(makeValid({ topStories: [{ primaryTitle: 'Incomplete' }] })), null);
+    });
+
+    it('rejects timestamps beyond the allowed future clock skew', () => {
+      const future = new Date(Date.now() + MAX_FUTURE_SKEW_MS + 60_000).toISOString();
+      assert.equal(validateInsights(makeValid({ generatedAt: future })), null);
     });
   });
 

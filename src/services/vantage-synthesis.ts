@@ -112,10 +112,15 @@ export function buildVantageSynthesis(
     .slice(0, MAX_THREADS)
     .map((line) => ({ index: line.n, text: line.text }));
 
-  const whatChanged = insights.worldBrief.trim() || threads[0]?.text || insights.topStories[0]!.primaryTitle;
+  const worldBrief = typeof insights.worldBrief === 'string' ? insights.worldBrief.trim() : '';
+  const whatChanged = worldBrief || threads[0]?.text || insights.topStories[0]!.primaryTitle;
   const confidence = confidenceFor(insights.topStories);
   const storiesConsidered = insights.provenance?.storiesConsidered ?? insights.clusterCount;
   const sourcesConsidered = insights.provenance?.sourcesConsidered ?? new Set(insights.topStories.map((story) => story.primarySource)).size;
+  const providerMode = insights.briefProvider.trim().toLowerCase();
+  const generationMode: VantageSynthesis['generationMode'] = !providerMode || providerMode.includes('fallback')
+    ? 'grounded-fallback'
+    : 'ai';
 
   return {
     whatChanged,
@@ -127,8 +132,6 @@ export function buildVantageSynthesis(
     ...confidence,
     provenance: `Compiled from ${storiesConsidered} stories across ${sourcesConsidered} sources.`,
     degraded: insights.status === 'degraded',
-    generationMode: insights.briefProvider === 'deterministic-grounded-fallback'
-      ? 'grounded-fallback'
-      : 'ai',
+    generationMode,
   };
 }

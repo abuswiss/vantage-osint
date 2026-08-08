@@ -20,6 +20,10 @@ describe('Vantage public health', () => {
       status: 'missing',
       ageSeconds: null,
     });
+    assert.deepEqual(classifyCacheEntry({ result: JSON.stringify({ rows: [] }) }, 10 * 60_000, now), {
+      status: 'unknown',
+      ageSeconds: null,
+    });
   });
 
   it('normalizes websocket relay URLs and projects only operational state', () => {
@@ -57,6 +61,29 @@ describe('Vantage public health', () => {
     assert.equal(health.status, 'ready');
     assert.deepEqual(health.services.relay, { status: 'ready', air: 'ready', ships: 'ready' });
     assert.equal(JSON.stringify(health).includes('relay.example.com'), false);
+  });
+
+  it('reports degraded readiness when cache freshness cannot be proven', async () => {
+    const health = await collectVantageHealth({
+      pipeline: async () => [
+        { result: 'PONG' },
+        { result: JSON.stringify({ rows: [] }) },
+        { result: JSON.stringify({ generatedAt: '2026-08-07T11:50:00.000Z' }) },
+        { result: JSON.stringify({ fetchedAt: '2026-08-07T11:50:00.000Z' }) },
+      ],
+      fetch: async () => new Response(JSON.stringify({
+        status: 'ok',
+        ingestion: {
+          status: 'ok',
+          aviation: { coverage: { status: 'ok' } },
+          aisSnapshot: { connected: true },
+        },
+      })),
+      env: { WS_RELAY_URL: 'wss://relay.example.com' },
+    }, Date.parse('2026-08-07T12:00:00.000Z'));
+
+    assert.equal(health.status, 'degraded');
+    assert.deepEqual(health.services.news, { status: 'unknown', ageSeconds: null });
   });
 
   it('is public, no-store, and fails readiness when Redis is unavailable', async () => {

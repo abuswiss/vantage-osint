@@ -21,21 +21,7 @@ import type { CountryScore } from '@/services/country-instability';
 import { fetchCachedRiskScores, isElevatedCiiScore, toCountryScore, type CachedRiskScores } from '@/services/cached-risk-scores';
 import { getCachedPosture } from '@/services/cached-theater-posture';
 import { setTrustedHtml, trustedHtml } from '@/utils/dom-utils';
-
-type StrategicRiskDisplayLevel = 'critical' | 'high' | 'elevated' | 'normal' | 'low';
-type StrategicRiskDisplayBand = {
-  min: number;
-  levelKey: StrategicRiskDisplayLevel;
-  colorVar: string;
-};
-
-const STRATEGIC_RISK_BANDS: readonly StrategicRiskDisplayBand[] = [
-  { min: 81, levelKey: 'critical', colorVar: '--semantic-critical' },
-  { min: 66, levelKey: 'high', colorVar: '--semantic-high' },
-  { min: 51, levelKey: 'elevated', colorVar: '--semantic-elevated' },
-  { min: 31, levelKey: 'normal', colorVar: '--semantic-normal' },
-  { min: 0, levelKey: 'low', colorVar: '--semantic-low' },
-] as const;
+import { getStrategicRiskDisplayBand } from '@/utils/strategic-risk-band';
 
 export class StrategicRiskPanel extends Panel {
   private overview: StrategicRiskOverview | null = null;
@@ -226,8 +212,8 @@ export class StrategicRiskPanel extends Panel {
     return t(`countryBrief.levels.${this.getFallbackScoreBand(score).levelKey}`);
   }
 
-  private getFallbackScoreBand(score: number): typeof STRATEGIC_RISK_BANDS[number] {
-    return STRATEGIC_RISK_BANDS.find((band) => score >= band.min) ?? STRATEGIC_RISK_BANDS[STRATEGIC_RISK_BANDS.length - 1]!;
+  private getFallbackScoreBand(score: number) {
+    return getStrategicRiskDisplayBand(score);
   }
 
   private getTrendEmoji(trend: string): string {
