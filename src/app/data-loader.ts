@@ -1071,9 +1071,16 @@ export class DataLoaderManager implements AppModule {
         }
       } catch { /* non-fatal */ }
     }
-    // Intelligence signals: run for any variant that shows these panels
-    if (shouldLoadAny(['cii', 'strategic-risk', 'strategic-posture', 'climate', 'population-exposure', 'security-advisories', 'radiation-watch', 'displacement', 'ucdp-events', 'satellite-fires', 'oref-sirens'])) {
+    // Intelligence signals: run for any variant that shows these panels.
+    // An enabled military layer must still load on a cold Ops-shell start even
+    // when none of the docked legacy intelligence panels are near the viewport.
+    // Keep this mutually exclusive with the broader intelligence fetch, which
+    // already includes military tracks, so the provider is never queried twice.
+    const shouldLoadIntelligence = shouldLoadAny(['cii', 'strategic-risk', 'strategic-posture', 'climate', 'population-exposure', 'security-advisories', 'radiation-watch', 'displacement', 'ucdp-events', 'satellite-fires', 'oref-sirens']);
+    if (shouldLoadIntelligence) {
       tasks.push({ name: 'intelligence', task: () => runGuarded('intelligence', () => this.loadIntelligenceSignals()) });
+    } else if ((!VANTAGE_PUBLIC_MODE || VANTAGE_RELAY_ENABLED) && SITE_VARIANT !== 'happy' && this.ctx.mapLayers.military) {
+      tasks.push({ name: 'military', task: () => runGuarded('military', () => this.loadMilitary()) });
     }
 
     if (SITE_VARIANT === 'full' && (shouldLoad('satellite-fires') || this.ctx.mapLayers.natural)) {
