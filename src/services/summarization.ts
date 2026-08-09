@@ -10,6 +10,7 @@
 import { mlWorker } from './ml-worker';
 import { getRpcBaseUrl, getRpcErrorStatusCode } from '@/services/rpc-client';
 import { SITE_VARIANT } from '@/config';
+import { VANTAGE_PUBLIC_MODE } from '@/config/product-policy';
 import { BETA_MODE } from '@/config/beta';
 import { isFeatureAvailable, type RuntimeFeatureId } from './runtime-config';
 import { trackLLMUsage, trackLLMFailure } from './analytics';
@@ -86,10 +87,13 @@ const premiumNewsClient = new NewsServiceClient(getRpcBaseUrl(), {
 // anon/free principals fall straight to the browser-T5 provider with ZERO
 // network attempts — before this gate, every summarize attempt fanned out up
 // to 3 doomed RPCs (ollama→openrouter→groq through the same gated endpoint).
-// panel-gating's hasPremiumAccess is the dual-signal source of truth.
+// panel-gating's hasPremiumAccess is the dual-signal source of truth. Public
+// Vantage deliberately keeps paid/user-bound provider calls out of its
+// account-free surface, so it uses the shared summary cache and browser T5
+// fallback without dispatching doomed authenticated requests.
 // translateText is deliberately NOT gated: it uses mode='translate' via the
 // plain newsClient, which the server allows for non-premium callers.
-configureSummarizeGate(() => hasPremiumAccess());
+configureSummarizeGate(() => !VANTAGE_PUBLIC_MODE && hasPremiumAccess());
 const summaryBreaker = createCircuitBreaker<SummarizeArticleResponse>({ name: 'News Summarization', cacheTtlMs: 0 });
 
 const summaryResultBreaker = createCircuitBreaker<SummarizationResult | null>({

@@ -217,8 +217,11 @@ describe('summarization.ts wiring (source-grep — module not loadable under nod
     );
   });
 
-  it('gate probe is wired to hasPremiumAccess (dual-signal entitlement)', () => {
-    assert.match(src, /configureSummarizeGate\(\s*\(\)\s*=>\s*hasPremiumAccess\(\)/);
+  it('gate probe uses paid entitlement and keeps public Vantage off user-bound LLM calls', () => {
+    assert.match(
+      src,
+      /configureSummarizeGate\(\s*\(\)\s*=>\s*!VANTAGE_PUBLIC_MODE\s*&&\s*hasPremiumAccess\(\)/,
+    );
   });
 
   it('every premium dispatch flows through tryApiProvider (single choke point)', () => {
