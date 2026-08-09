@@ -10,6 +10,7 @@ import {
 import { compareAndDeleteRedisKey, getCachedJson, runRedisPipeline } from '../../../_shared/redis';
 import { unwrapEnvelope } from '../../../_shared/seed-envelope';
 import { timingSafeEqual } from '../../../_shared/internal-auth';
+import { isVantagePublicServerMode } from '../../../_shared/vantage-public-mode';
 import { isInRankableUniverse } from './_rankable-universe';
 import {
   RESILIENCE_INTERVAL_KEY_PREFIX,
@@ -17,6 +18,7 @@ import {
   RESILIENCE_RANKING_CACHE_TTL_SECONDS,
   RESILIENCE_RANKING_META_KEY,
   RESILIENCE_RANKING_META_TTL_SECONDS,
+  assertResilienceSourcePlaneAvailable,
   buildRankingItem,
   getCachedResilienceScores,
   listScorableCountries,
@@ -276,6 +278,13 @@ export const getResilienceRanking: ResilienceServiceHandler['getResilienceRankin
   ctx: ServerContext,
   _req: GetResilienceRankingRequest,
 ): Promise<GetResilienceRankingResponse> => {
+  // Vantage has no authoritative local score plane yet. Reject an empty plane
+  // before accepting a ranking cache or returning a plausible-looking 0/0
+  // response; canonical deployments keep their existing handler path.
+  if (isVantagePublicServerMode()) {
+    await assertResilienceSourcePlaneAvailable();
+  }
+
   // ?refresh=1 forces a full recompute-and-publish instead of returning the
   // existing cache. It is seed-service-only: a full warm is expensive (~222
   // score computations + chunked pipeline SETs). Normal premium credentials

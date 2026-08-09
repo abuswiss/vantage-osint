@@ -7,6 +7,11 @@
  * here even if they remain available in the account-based WorldMonitor build.
  */
 const FULL_ACCESS_METHODS = new Map<string, ReadonlySet<string>>([
+  ['/api/intelligence/v1/get-country-facts', new Set(['GET'])],
+  ['/api/intelligence/v1/get-country-energy-profile', new Set(['GET'])],
+  ['/api/intelligence/v1/get-country-port-activity', new Set(['GET'])],
+  ['/api/intelligence/v1/get-country-risk', new Set(['GET'])],
+  ['/api/market/v1/get-country-stock-index', new Set(['GET'])],
   ['/api/maritime/v1/get-vessel-snapshot', new Set(['GET'])],
   ['/api/military/v1/list-military-flights', new Set(['GET'])],
   ['/api/resilience/v1/get-resilience-score', new Set(['GET'])],

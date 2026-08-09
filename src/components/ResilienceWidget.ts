@@ -14,7 +14,9 @@ import {
   formatResilienceConfidence,
   formatResilienceDataVersion,
   formatResilienceScoreInterval,
+  getResilienceDomainDisplay,
   getResilienceOverallDisplay,
+  getResiliencePresentationState,
   getImputationClassIcon,
   getImputationClassLabel,
   getResilienceDomainLabel,
@@ -36,11 +38,6 @@ const METHODOLOGY_HELP_TITLE = formatResilienceMethodologyHelpTitle();
 function normalizeCountryCode(countryCode: string | null | undefined): string | null {
   const normalized = String(countryCode || '').trim().toUpperCase();
   return /^[A-Z]{2}$/.test(normalized) ? normalized : null;
-}
-
-function clampScore(score: number): number {
-  if (!Number.isFinite(score)) return 0;
-  return Math.min(100, Math.max(0, score));
 }
 
 export class ResilienceWidget {
@@ -258,18 +255,37 @@ export class ResilienceWidget {
 
   private renderScoreCard(data: ResilienceScoreResponse, preview = false): HTMLElement {
     const overallDisplay = getResilienceOverallDisplay(data);
+    const presentation = getResiliencePresentationState(data);
     const levelColor = RESILIENCE_VISUAL_LEVEL_COLORS[overallDisplay.visualLevel];
+    const scoreColor = presentation.provisional || !overallDisplay.hasScore
+      ? 'var(--text-muted)'
+      : levelColor;
     const scoreInterval = overallDisplay.hasScore ? formatResilienceScoreInterval(data.scoreInterval) : null;
 
     return h(
       'div',
-      { className: 'cdp-card-body resilience-widget__body' },
+      {
+        className: `cdp-card-body resilience-widget__body${presentation.provisional ? ' resilience-widget__body--provisional' : ''}`,
+      },
+      ...(presentation.headline
+        ? [h(
+            'div',
+            { className: 'resilience-widget__coverage-notice', role: 'status' },
+            h('span', { className: 'resilience-widget__coverage-headline' }, presentation.headline),
+            ...(presentation.provisional
+              ? [h('span', { className: 'resilience-widget__coverage-tag' }, 'Provisional')]
+              : []),
+            ...(presentation.notRanked
+              ? [h('span', { className: 'resilience-widget__coverage-rank' }, 'Not ranked')]
+              : []),
+          )]
+        : []),
       h(
         'div',
         { className: 'resilience-widget__overall' },
         this.renderBarBlock(
           overallDisplay.scoreForBar,
-          levelColor,
+          scoreColor,
           h(
             'div',
             { className: 'resilience-widget__overall-meta' },
@@ -284,10 +300,10 @@ export class ResilienceWidget {
               'span',
               {
                 className: 'resilience-widget__overall-level',
-                style: { color: levelColor },
+                style: { color: scoreColor },
                 title: overallDisplay.serverLevelLabel,
               },
-              overallDisplay.visualLevelLabel,
+              presentation.provisional ? 'Provisional score' : overallDisplay.visualLevelLabel,
             ),
             ...(overallDisplay.hasScore
               ? [h('span', { className: 'resilience-widget__overall-trend' }, `${getResilienceTrendArrow(data.trend)} ${data.trend}`)]
@@ -295,7 +311,7 @@ export class ResilienceWidget {
           ),
         ),
       ),
-      ...(shouldRenderResilienceBaselineStress(data, overallDisplay)
+      ...(!presentation.provisional && shouldRenderResilienceBaselineStress(data, overallDisplay)
         ? [h(
             'div',
             { className: 'resilience-widget__baseline-stress' },
@@ -306,15 +322,9 @@ export class ResilienceWidget {
       h(
         'div',
         { className: 'resilience-widget__domains' },
-        ...data.domains.map((domain) => this.renderDomainRow(domain, preview)),
+        ...data.domains.map((domain) => this.renderDomainRow(domain, preview, presentation.provisional)),
       ),
-      // T1.6 Phase 1 of the country-resilience reference-grade upgrade plan:
-      // per-dimension confidence grid. Uses only the existing `coverage`,
-      // `observedWeight`, `imputedWeight` fields on ResilienceDimension so
-      // this ships without proto changes. Imputation class icons (T1.7)
-      // and freshness badges (T1.5 full pass) land as additional columns
-      // once the schema exposes those fields through the response type.
-      this.renderDimensionConfidenceGrid(data),
+      this.renderDimensionConfidenceDisclosure(data),
       h(
         'div',
         { className: 'resilience-widget__footer' },
@@ -345,6 +355,29 @@ export class ResilienceWidget {
             : [];
         })(),
       ),
+    );
+  }
+
+  private renderDimensionConfidenceDisclosure(data: ResilienceScoreResponse): HTMLElement {
+    const dimensions = collectDimensionConfidences(data.domains);
+    const observed = dimensions.filter((dimension) => dimension.status === 'observed').length;
+    const modeled = dimensions.filter((dimension) =>
+      dimension.status === 'partial' || dimension.status === 'imputed').length;
+    const unavailable = dimensions.filter((dimension) => dimension.status === 'absent').length;
+    const summary = `Data quality · ${observed} observed · ${modeled} modeled · ${unavailable} unavailable`;
+
+    return h(
+      'details',
+      { className: 'resilience-widget__dimension-disclosure' },
+      h(
+        'summary',
+        {
+          className: 'resilience-widget__dimension-summary',
+          'aria-label': `${summary}. Show per-dimension coverage.`,
+        },
+        summary,
+      ),
+      this.renderDimensionConfidenceGrid(data),
     );
   }
 
@@ -415,11 +448,16 @@ export class ResilienceWidget {
     );
   }
 
-  private renderDomainRow(domain: ResilienceDomain, preview = false): HTMLElement {
-    const score = clampScore(domain.score);
-    const levelColor = RESILIENCE_VISUAL_LEVEL_COLORS[getResilienceVisualLevel(score)];
+  private renderDomainRow(domain: ResilienceDomain, preview = false, neutral = false): HTMLElement {
+    const display = getResilienceDomainDisplay(domain);
+    const levelColor = display.hasScore && !neutral
+      ? RESILIENCE_VISUAL_LEVEL_COLORS[getResilienceVisualLevel(display.scoreForBar)]
+      : 'var(--text-faint)';
 
-    const attrs: Record<string, string> = { className: 'resilience-widget__domain-row' };
+    const attrs: Record<string, string> = {
+      className: `resilience-widget__domain-row${display.hasScore ? '' : ' resilience-widget__domain-row--unavailable'}`,
+    };
+    if (!display.hasScore) attrs['title'] = 'Not enough covered country data for a domain score.';
 
     if (!preview && domain.id === 'energy' && this.energyMixData?.mixAvailable) {
       const d = this.energyMixData;
@@ -437,8 +475,8 @@ export class ResilienceWidget {
       'div',
       attrs,
       h('span', { className: 'resilience-widget__domain-label' }, getResilienceDomainLabel(domain.id)),
-      this.renderBarBlock(score, levelColor),
-      h('span', { className: 'resilience-widget__domain-score' }, String(Math.round(score))),
+      this.renderBarBlock(display.scoreForBar, levelColor),
+      h('span', { className: 'resilience-widget__domain-score' }, display.scoreLabel),
     );
   }
 

@@ -148,6 +148,60 @@ test('country deep-dive panel mounts the resilience widget beside the score card
   }
 });
 
+test('country deep-dive uses five keyboard-ready sections and shows only the active section', async () => {
+  const harness = await createCountryDeepDivePanelHarness({ premiumAccess: true });
+  try {
+    const panel = harness.createPanel();
+    panel.show('Norway', 'NO', sampleScore, emptySignals);
+    await waitForLazyWidget(harness);
+
+    const root = harness.getPanelRoot();
+    const tabs = [...root.querySelectorAll('.cdp-section-tab')];
+    assert.deepEqual(tabs.map((tab) => tab.textContent), ['Overview', 'Risk', 'Economy', 'Exposure', 'Data']);
+    assert.equal(root.querySelector('.cdp-section-nav')?.getAttribute('role'), 'tablist');
+    assert.equal(root.querySelector('#cdp-section-overview')?.hasAttribute('hidden'), false);
+    assert.equal(root.querySelector('#cdp-section-risk')?.hasAttribute('hidden'), true);
+    assert.equal(root.querySelectorAll('.cdp-section-panel:not([hidden])').length, 1);
+
+    const riskTab = tabs.find((tab) => tab.textContent === 'Risk');
+    assert.ok(riskTab);
+    riskTab.dispatchEvent(new Event('click'));
+
+    assert.equal(riskTab.getAttribute('aria-selected'), 'true');
+    assert.equal(root.querySelector('#cdp-section-overview')?.hasAttribute('hidden'), true);
+    assert.equal(root.querySelector('#cdp-section-risk')?.hasAttribute('hidden'), false);
+    assert.equal(root.querySelectorAll('.cdp-section-panel:not([hidden])').length, 1);
+  } finally {
+    harness.cleanup();
+  }
+});
+
+test('unlocked country access removes public-facing Pro lock copy without weakening the canonical free gate', async () => {
+  const unlockedHarness = await createCountryDeepDivePanelHarness({ premiumAccess: true });
+  try {
+    const panel = unlockedHarness.createPanel();
+    panel.show('Norway', 'NO', sampleScore, emptySignals);
+    await waitForLazyWidget(unlockedHarness);
+    const root = unlockedHarness.getPanelRoot();
+    assert.equal(root.querySelector('.cdp-pro-locked'), null);
+    assert.doesNotMatch(root.querySelector('.cdp-evidence-export-btn')?.getAttribute('title') ?? '', /PRO/i);
+  } finally {
+    unlockedHarness.cleanup();
+  }
+
+  const canonicalFreeHarness = await createCountryDeepDivePanelHarness({ premiumAccess: false });
+  try {
+    const panel = canonicalFreeHarness.createPanel();
+    panel.show('Norway', 'NO', sampleScore, emptySignals);
+    await waitForLazyWidget(canonicalFreeHarness);
+    const root = canonicalFreeHarness.getPanelRoot();
+    assert.ok(root.querySelector('.cdp-pro-locked'));
+    assert.match(root.querySelector('.cdp-evidence-export-btn')?.getAttribute('title') ?? '', /PRO/i);
+  } finally {
+    canonicalFreeHarness.cleanup();
+  }
+});
+
 test('country deep-dive panel renders fallback when the resilience widget chunk rejects', async () => {
   const harness = await createCountryDeepDivePanelHarness({ resilienceWidgetMode: 'import-reject' });
   try {

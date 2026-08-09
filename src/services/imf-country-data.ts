@@ -4,11 +4,13 @@
  * subset for one country. Used by CountryDeepDivePanel Economic
  * Indicators + Country Facts cards (issue #3027).
  *
- * Network policy: single bootstrap GET with comma-separated keys; result
- * is memoised for ~10 min since WEO is a monthly release.
+ * Network policy: four fixed public on-demand bootstrap keys, coalesced by the
+ * shared hydration service; result is memoised for ~10 min since WEO is a
+ * monthly release. This keeps account-free Vantage on the audited public URL
+ * contract instead of the credentialed multi-key bootstrap route.
  */
 
-import { toApiUrl } from '@/services/runtime';
+import { ensureHydrated } from '@/services/bootstrap';
 
 export interface ImfMacroEntry {
   inflationPct: number | null;
@@ -68,6 +70,8 @@ interface ImfBootstrapPayload {
   };
 }
 
+type ImfBootstrapData = NonNullable<ImfBootstrapPayload['data']>;
+
 const CACHE_TTL_MS = 10 * 60 * 1000;
 let cachedBundle: { fetchedAt: number; payload: ImfBootstrapPayload['data'] } | null = null;
 let inFlight: Promise<ImfBootstrapPayload['data']> | null = null;
@@ -80,14 +84,21 @@ async function fetchBundle(): Promise<ImfBootstrapPayload['data']> {
 
   inFlight = (async () => {
     try {
-      const resp = await fetch(
-        toApiUrl('/api/bootstrap?keys=imfMacro,imfGrowth,imfLabor,imfExternal'),
-        { signal: AbortSignal.timeout(8_000) },
-      );
-      if (!resp.ok) return undefined;
-      const payload = (await resp.json()) as ImfBootstrapPayload;
-      cachedBundle = { fetchedAt: Date.now(), payload: payload.data };
-      return payload.data;
+      const [imfMacro, imfGrowth, imfLabor, imfExternal] = await Promise.all([
+        ensureHydrated('imfMacro'),
+        ensureHydrated('imfGrowth'),
+        ensureHydrated('imfLabor'),
+        ensureHydrated('imfExternal'),
+      ]);
+      const data: ImfBootstrapData = {
+        imfMacro: imfMacro as ImfBootstrapData['imfMacro'],
+        imfGrowth: imfGrowth as ImfBootstrapData['imfGrowth'],
+        imfLabor: imfLabor as ImfBootstrapData['imfLabor'],
+        imfExternal: imfExternal as ImfBootstrapData['imfExternal'],
+      };
+      if (!imfMacro && !imfGrowth && !imfLabor && !imfExternal) return undefined;
+      cachedBundle = { fetchedAt: Date.now(), payload: data };
+      return data;
     } catch {
       return undefined;
     } finally {

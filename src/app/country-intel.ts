@@ -61,6 +61,7 @@ import { getActiveFrameworkForPanel, subscribeFrameworkChange } from '@/services
 import { fetchMultiSectorExposure, fetchCountryProducts, fetchMultiSectorCostShock } from '@/services/supply-chain';
 import { getImfCountryBundle, buildImfEconomicIndicators, type ImfCountryBundle } from '@/services/imf-country-data';
 import { getChinaDecisionSignalsData } from '@/services/china-decision-signals';
+import { ensureHydrated } from '@/services/bootstrap';
 import { EconomicServiceClient, IntelligenceServiceClient, MarketServiceClient, TradeServiceClient } from '@/services/generated-rpc-clients';
 import { CHINA_DECISION_SIGNAL_GROUP_IDS } from '../../shared/china-decision-signals';
 
@@ -934,19 +935,21 @@ export class CountryIntelManager implements AppModule {
   private fetchHousingCycle(code: string): void {
     const page = this.ctx.countryBriefPage;
     if (!page?.updateHousingCycle) return;
-    const keys = 'bisDsr,bisPropertyResidential,bisPropertyCommercial';
-    fetch(toApiUrl(`/api/bootstrap?keys=${keys}`), {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal: page.signal,
-    }).then(async resp => {
-      if (!resp.ok) return null;
-      return resp.json() as Promise<{ data?: {
+    Promise.all([
+      ensureHydrated('bisDsr'),
+      ensureHydrated('bisPropertyResidential'),
+      ensureHydrated('bisPropertyCommercial'),
+    ]).then(([bisDsr, bisPropertyResidential, bisPropertyCommercial]) => ({
+      data: {
+        bisDsr,
+        bisPropertyResidential,
+        bisPropertyCommercial,
+      } as {
         bisDsr?: { entries?: Array<{ countryCode: string; dsrPct: number; change: number | null; period: string }> };
         bisPropertyResidential?: { entries?: Array<{ countryCode: string; indexValue: number; qoqChange: number | null; yoyChange: number | null; period: string }> };
         bisPropertyCommercial?: { entries?: Array<{ countryCode: string; indexValue: number; qoqChange: number | null; yoyChange: number | null; period: string }> };
-      } }>;
-    }).then(body => {
+      },
+    })).then(body => {
       if (!body || this.ctx.countryBriefPage?.getCode() !== code) return;
       const pick = <T extends { countryCode: string }>(arr: T[] | undefined, cc: string): T | null =>
         arr?.find(e => e?.countryCode === cc) ?? null;

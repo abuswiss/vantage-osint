@@ -1,12 +1,11 @@
-import type {
-  GetResilienceScoreResponse,
-  ResilienceDimension,
-  ResilienceDomain,
-  ResilienceRankingItem,
-  ScoreInterval,
+import {
+  ApiError,
+  type GetResilienceScoreResponse,
+  type ResilienceDimension,
+  type ResilienceDomain,
+  type ResilienceRankingItem,
+  type ScoreInterval,
 } from '../../../../src/generated/server/worldmonitor/resilience/v1/service_server';
-
-
 export type { ScoreInterval };
 
 import { cachedFetchJson, getCachedJson, runRedisPipeline, setCachedJson } from '../../../_shared/redis';
@@ -408,6 +407,11 @@ interface ResilienceStaticIndex {
   countries?: string[];
 }
 
+interface ResilienceStaticMeta {
+  fetchedAt?: unknown;
+  recordCount?: unknown;
+}
+
 function mean(values: number[]): number | null {
   if (values.length === 0) return null;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -416,6 +420,82 @@ function mean(values: number[]): number | null {
 function normalizeCountryCode(countryCode: string): string {
   const normalized = String(countryCode || '').trim().toUpperCase();
   return /^[A-Z]{2}$/.test(normalized) ? normalized : '';
+}
+
+/**
+ * A score is only meaningful when it is anchored to a published static
+ * country snapshot. A populated score cache alone is not sufficient: an
+ * empty deployment can otherwise retain or synthesize an imputation-only
+ * 0/50 score after the source plane has disappeared.
+ *
+ * `status: "error"` is deliberately not rejected when the last-good snapshot
+ * still has positive metadata and an index. The static seeder preserves that
+ * snapshot during a failed refresh; availability and latest-refresh health are
+ * separate concerns.
+ */
+export function isUsableResilienceSourcePlane(
+  meta: unknown,
+  index: unknown,
+  countryCode?: string,
+): boolean {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return false;
+  if (!index || typeof index !== 'object' || Array.isArray(index)) return false;
+
+  const sourceMeta = meta as ResilienceStaticMeta;
+  const fetchedAt = Number(sourceMeta.fetchedAt);
+  const recordCount = Number(sourceMeta.recordCount);
+  if (!Number.isFinite(fetchedAt) || fetchedAt <= 0) return false;
+  if (!Number.isInteger(recordCount) || recordCount <= 0) return false;
+
+  const rawCountries = (index as ResilienceStaticIndex).countries;
+  if (!Array.isArray(rawCountries)) return false;
+  const countries = new Set(
+    rawCountries
+      .map((value) => normalizeCountryCode(String(value ?? '')))
+      .filter(Boolean),
+  );
+  if (countries.size === 0) return false;
+
+  if (countryCode === undefined) return true;
+  const normalizedCountryCode = normalizeCountryCode(countryCode);
+  return normalizedCountryCode !== '' && countries.has(normalizedCountryCode);
+}
+
+function throwResilienceDataUnavailable(): never {
+  const message = 'Resilience data temporarily unavailable';
+  const error = new ApiError(
+    503,
+    message,
+    JSON.stringify({
+      error: message,
+      code: 'RESILIENCE_DATA_UNAVAILABLE',
+    }),
+  );
+  const publicError = error as ApiError & {
+    exposeMessage: boolean;
+    publicCode: string;
+    retryAfter: number;
+  };
+  publicError.exposeMessage = true;
+  publicError.publicCode = 'RESILIENCE_DATA_UNAVAILABLE';
+  publicError.retryAfter = 60;
+  throw error;
+}
+
+export async function assertResilienceSourcePlaneAvailable(
+  countryCodes?: string | string[],
+): Promise<void> {
+  const [meta, index] = await Promise.all([
+    getCachedJson(RESILIENCE_STATIC_META_KEY, true),
+    getCachedJson(RESILIENCE_STATIC_INDEX_KEY, true),
+  ]);
+  const requested = countryCodes === undefined
+    ? []
+    : Array.isArray(countryCodes) ? countryCodes : [countryCodes];
+  const usable = requested.length === 0
+    ? isUsableResilienceSourcePlane(meta, index)
+    : requested.every((countryCode) => isUsableResilienceSourcePlane(meta, index, countryCode));
+  if (!usable) throwResilienceDataUnavailable();
 }
 
 export function scoreCacheKey(countryCode: string): string {
@@ -749,7 +829,7 @@ async function buildResilienceScore(
   const staticMeta = await getCachedJson(RESILIENCE_STATIC_META_KEY, true) as { fetchedAt?: number } | null;
   const dataVersion = staticMeta?.fetchedAt
     ? new Date(staticMeta.fetchedAt).toISOString().slice(0, 10)
-    : todayIsoDate();
+    : '';
 
   // Plan §U7 (PR 6) — memoize the seed reader once at the top of the
   // build so the IMF labor seed read for the headline-eligible gate
@@ -969,6 +1049,11 @@ export async function ensureResilienceScoreCached(countryCode: string, reader?: 
       headlineEligible: false,
     };
   }
+
+  // Validate the observed source plane before accepting even a hot score-cache
+  // entry. Otherwise an empty Vantage Redis can serve a stale or
+  // imputation-only payload whose current-looking date implies real coverage.
+  await assertResilienceSourcePlaneAvailable(normalizedCountryCode);
 
   const current = currentCacheFormula();
   const cacheKey = scoreCacheKey(normalizedCountryCode);
@@ -1250,6 +1335,13 @@ export async function warmMissingResilienceScores(
   const uniqueCodes = [...new Set(countryCodes.map((countryCode) => normalizeCountryCode(countryCode)).filter(Boolean))];
   const warmed = createWarmedResilienceScores();
   if (uniqueCodes.length === 0) return warmed;
+
+  // The production builder must never generate scores without its snapshot.
+  // Tests and specialist tooling may inject an explicit builder, in which case
+  // that builder owns its own source contract.
+  if (scoreBuilder === buildResilienceScore) {
+    await assertResilienceSourcePlaneAvailable(uniqueCodes);
+  }
 
   // Share one memoized reader across all countries so global Redis keys (conflict events,
   // sanctions, unrest, etc.) are fetched only once instead of once per country.
