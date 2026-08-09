@@ -1,4 +1,5 @@
 import { type AuthSession, getAuthState, subscribeAuthState } from '@/services/auth-state';
+import { VANTAGE_PUBLIC_MODE } from '@/config/product-policy';
 import { PanelGateReason, getPanelGateReason } from '@/services/panel-gating';
 import { getResilienceScore, type ResilienceDomain, type ResilienceScoreResponse } from '@/services/resilience';
 import { h, replaceChildren } from '@/utils/dom-utils';
@@ -100,7 +101,7 @@ export class ResilienceWidget {
       return;
     }
 
-    if (this.authState.isPending || this.getGateReason() !== PanelGateReason.NONE) {
+    if ((!VANTAGE_PUBLIC_MODE && this.authState.isPending) || this.getGateReason() !== PanelGateReason.NONE) {
       this.render();
       return;
     }
@@ -170,7 +171,7 @@ export class ResilienceWidget {
       return h('div', { className: 'cdp-card-body' }, this.makeEmpty('Resilience data loads when a country is selected.'));
     }
 
-    if (this.authState.isPending) {
+    if (!VANTAGE_PUBLIC_MODE && this.authState.isPending) {
       return h('div', { className: 'cdp-card-body' }, this.makeLoading('Checking access…'));
     }
 

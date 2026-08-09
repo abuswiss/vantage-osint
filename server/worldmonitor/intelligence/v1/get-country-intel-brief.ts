@@ -13,6 +13,7 @@ import { isCallerPremium } from '../../../_shared/premium-check';
 import { sanitizeForPrompt } from '../../../_shared/llm-sanitize.js';
 import { ENERGY_SPINE_KEY_PREFIX } from '../../../_shared/cache-keys';
 import { deriveCountryIntelCacheKey, fetchSharedCountryContext } from './_country-brief-context';
+import { isVantagePublicServerMode } from '../../../_shared/vantage-public-mode';
 
 const INTEL_CACHE_TTL = 21600;
 
@@ -101,7 +102,12 @@ export async function getCountryIntelBrief(
 
   if (!req.countryCode || !COUNTRY_CODE_RE.test(req.countryCode)) return empty;
 
-  const isPremium = await isCallerPremium(ctx.request);
+  // Vantage has no user identity. Always retain this handler's bounded,
+  // caller-invariant anonymous cache contract even if an external caller adds
+  // stale WorldMonitor credentials to the public request.
+  const isPremium = isVantagePublicServerMode()
+    ? false
+    : await isCallerPremium(ctx.request);
 
   // Caller-supplied context only personalizes premium requests. Anonymous
   // briefs are grounded server-side (news digest) and share one cache entry

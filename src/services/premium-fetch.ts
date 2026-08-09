@@ -32,8 +32,10 @@
  * — those keys travel via X-WorldMonitor-Key which works on any path.
  */
 import { enqueueSentryCall } from '@/bootstrap/sentry-defer';
+import { VANTAGE_PUBLIC_MODE } from '@/config/product-policy';
 import { PREMIUM_RPC_PATHS } from '@/shared/premium-paths';
 import { PRO_FRESH_CACHE_RPC_PATHS } from '@/shared/pro-fresh-rpc';
+import { isVantagePublicRpcRequest } from '@/shared/vantage-public-rpc';
 import { withPremiumIntent } from './premium-intent';
 import { isDesktopRuntime } from './runtime';
 
@@ -211,6 +213,17 @@ export async function premiumFetch(
   const forcePremium = init?.forcePremium === true;
   const requestInit = init ? { ...init } : undefined;
   if (requestInit) delete requestInit.forcePremium;
+
+  // The audited Vantage routes are public by product policy. Bypass every
+  // account/tester-key lookup and send the request directly; the server uses
+  // the same path+method allowlist, so the browser and gateway cannot drift.
+  const inputUrl = input instanceof Request ? input.url : String(input);
+  const requestMethod = requestInit?.method ?? (input instanceof Request ? input.method : 'GET');
+  if (VANTAGE_PUBLIC_MODE && isVantagePublicRpcRequest(inputUrl, requestMethod)) {
+    const res = await globalThis.fetch(input, withCredentials(requestInit));
+    reportServerError(res, input);
+    return res;
+  }
 
   // Skip injection if the caller already set an auth header.
   const existing = new Headers(requestInit?.headers);

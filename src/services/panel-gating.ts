@@ -13,6 +13,7 @@
  */
 
 import type { AuthSession } from './auth-state';
+import { VANTAGE_PUBLIC_MODE } from '@/config/product-policy';
 import { getSubscription, openBillingPortal, prereserveBillingPortalTab } from './billing';
 import { deriveBillingUxState, getBillingGateOverride, getReactivationHref } from './billing-state';
 import { getEntitlementState } from './entitlements';
@@ -51,6 +52,10 @@ export enum PanelGateReason {
  * signals that aren't already covered by isProUser.
  */
 export function hasPremiumAccess(authState?: AuthSession): boolean {
+  // Vantage is an account-free public product. Treat its curated dashboard
+  // surface as unlocked before consulting any WorldMonitor account state so
+  // late-mounted widgets cannot resurrect stale sign-in/upgrade gates.
+  if (VANTAGE_PUBLIC_MODE) return true;
   if (getSecretState('WORLDMONITOR_API_KEY').present) return true;
   if (isProUser()) return true;
   if (authState?.user?.role === 'pro') return true;
