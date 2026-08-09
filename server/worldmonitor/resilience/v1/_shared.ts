@@ -1,10 +1,9 @@
-import {
-  ApiError,
-  type GetResilienceScoreResponse,
-  type ResilienceDimension,
-  type ResilienceDomain,
-  type ResilienceRankingItem,
-  type ScoreInterval,
+import type {
+  GetResilienceScoreResponse,
+  ResilienceDimension,
+  ResilienceDomain,
+  ResilienceRankingItem,
+  ScoreInterval,
 } from '../../../../src/generated/server/worldmonitor/resilience/v1/service_server';
 export type { ScoreInterval };
 
@@ -463,23 +462,23 @@ export function isUsableResilienceSourcePlane(
 
 function throwResilienceDataUnavailable(): never {
   const message = 'Resilience data temporarily unavailable';
-  const error = new ApiError(
-    503,
-    message,
-    JSON.stringify({
-      error: message,
-      code: 'RESILIENCE_DATA_UNAVAILABLE',
-    }),
-  );
-  const publicError = error as ApiError & {
+  const publicError = new Error(message) as Error & {
+    statusCode: number;
+    body: string;
     exposeMessage: boolean;
     publicCode: string;
     retryAfter: number;
   };
+  publicError.name = 'ApiError';
+  publicError.statusCode = 503;
+  publicError.body = JSON.stringify({
+    error: message,
+    code: 'RESILIENCE_DATA_UNAVAILABLE',
+  });
   publicError.exposeMessage = true;
   publicError.publicCode = 'RESILIENCE_DATA_UNAVAILABLE';
   publicError.retryAfter = 60;
-  throw error;
+  throw publicError;
 }
 
 export async function assertResilienceSourcePlaneAvailable(
