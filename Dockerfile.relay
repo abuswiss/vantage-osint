@@ -29,6 +29,7 @@ COPY scripts/ais-relay.cjs ./scripts/ais-relay.cjs
 # Shared ingestion outcome/cooldown helpers imported by ais-relay.cjs.
 COPY scripts/_ingestion-coverage.cjs ./scripts/_ingestion-coverage.cjs
 COPY scripts/_proxy-utils.cjs ./scripts/_proxy-utils.cjs
+COPY scripts/shared/ais-upstream-health.cjs ./scripts/shared/ais-upstream-health.cjs
 # Authenticated Yahoo sector valuation client required at relay startup.
 COPY scripts/_yahoo-sector-valuations.cjs ./scripts/_yahoo-sector-valuations.cjs
 COPY scripts/lib/usni-fleet-parser.cjs ./scripts/lib/usni-fleet-parser.cjs

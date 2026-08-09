@@ -124,6 +124,7 @@ test('relay handlers expose bounded Google/OpenSky cooldowns and RSS fallback me
     assert.equal(health.ingestion.status, 'degraded');
     assert.equal(health.ingestion.aisSnapshot.served, 0);
     assert.equal(health.ingestion.aisSnapshot.connected, false);
+    assert.equal(health.ingestion.aisSnapshot.currentPositionReady, false);
 
     const metrics = JSON.parse((await get(port, '/metrics')).body);
     assert.equal(metrics.googleFlights.requests, 2);

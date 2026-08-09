@@ -146,7 +146,7 @@ import { replaceRawI18nKeyPlaceholders } from '@/app/i18n-raw-key-healer';
 import { startAccountAuthHandoff } from '@/app/account-auth-handoff';
 import { resolveUserRegion, resolvePreciseUserCoordinates, type PreciseCoordinates } from '@/utils/user-location';
 import { showProBanner } from '@/components/ProBanner';
-import { getAuthState, initAuthState, subscribeAuthState } from '@/services/auth-state';
+import { getAuthState, initAuthState, settleAnonymousAuthState, subscribeAuthState } from '@/services/auth-state';
 import {
   CLOUD_PREFS_APPLIED_EVENT,
   getSyncVersion,
@@ -1570,6 +1570,10 @@ export class App {
   public async init(): Promise<void> {
     const initStart = performance.now();
     markLcpDebug('wm:boot:app-init-start');
+    // Vantage deliberately skips Clerk and entitlement boot. Settle the shared
+    // auth state before any late-mounted country widgets subscribe; otherwise
+    // the boot default stays pending forever and reads as "Checking access…".
+    if (VANTAGE_PUBLIC_MODE) settleAnonymousAuthState();
 
     // WebMCP — register synchronously before any init awaits so agent
     // scanners (isitagentready.com, in-browser agents) find the tools on

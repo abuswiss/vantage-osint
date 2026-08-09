@@ -1,0 +1,71 @@
+name: Vantage PortWatch refresh
+
+# PortWatch is a batch fallback, not relay ingestion. Keep its ArcGIS fetch and
+# Redis publication isolated from the always-on AIS relay so a slow upstream
+# cannot consume relay resources or couple the two failure domains.
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vantage-portwatch-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+
+    steps:
+      - name: Check out Vantage
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: "22"
+
+      - name: Require Redis publisher credentials
+        run: |
+          test -n "$UPSTASH_REDIS_REST_URL"
+          test -n "$UPSTASH_REDIS_REST_TOKEN"
+
+      - name: Publish current PortWatch traffic
+        run: node scripts/seed-portwatch.mjs
+
+      - name: Verify canonical and public fallback keys
+        run: |
+          node --input-type=module <<'NODE'
+            const get = async (key) => {
+              const response = await fetch(`${process.env.UPSTASH_REDIS_REST_URL}/get/${encodeURIComponent(key)}`, {
+                headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` },
+                signal: AbortSignal.timeout(10_000),
+              });
+              if (!response.ok) throw new Error(`${key}: Redis HTTP ${response.status}`);
+              const body = await response.json();
+              return typeof body.result === 'string' ? JSON.parse(body.result) : body.result;
+            };
+
+            const canonicalStored = await get('supply_chain:portwatch:v1');
+            const trafficStored = await get('supply_chain:portwatch-traffic:v1');
+            const canonical = canonicalStored?.data ?? canonicalStored;
+            const traffic = trafficStored?.data ?? trafficStored;
+            const canonicalCount = Object.keys(canonical ?? {}).length;
+            const trafficCount = Object.keys(traffic?.summaries ?? {}).length;
+            const publishedAt = Number(trafficStored?._seed?.fetchedAt);
+            const publishAgeMs = Date.now() - publishedAt;
+
+            if (canonicalCount < 13) throw new Error(`canonical coverage ${canonicalCount}/13`);
+            if (trafficCount < 13) throw new Error(`traffic coverage ${trafficCount}/13`);
+            if (!Number.isFinite(publishAgeMs) || publishAgeMs < -300_000 || publishAgeMs > 10 * 60 * 1000) {
+              throw new Error(`PortWatch publication is not fresh: ${publishAgeMs}ms`);
+            }
+            console.log(`PortWatch verified: canonical=${canonicalCount}, traffic=${trafficCount}`);
+          NODE

@@ -23,6 +23,16 @@ export interface AuthSession {
 
 let _currentSession: AuthSession = { user: null, isPending: true };
 
+/**
+ * Settle auth for product variants that intentionally do not boot Clerk.
+ * Without this explicit transition, the module-level boot default remains
+ * pending forever and late-mounted readers render "Checking access…" even
+ * though the variant has no account or entitlement surface by design.
+ */
+export function settleAnonymousAuthState(): void {
+  _currentSession = { user: null, isPending: false };
+}
+
 function snapshotSession(): AuthSession {
   const cu = getCurrentClerkUser();
   if (!cu) {
@@ -64,7 +74,7 @@ function snapshotSession(): AuthSession {
  */
 export async function initAuthState(): Promise<void> {
   if (!isClerkAuthEnabled()) {
-    _currentSession = snapshotSession();
+    settleAnonymousAuthState();
     return;
   }
   scheduleClerkLoad();

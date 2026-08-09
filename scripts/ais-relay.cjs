@@ -45,6 +45,11 @@ const {
   nextBackoffMs,
   summarizeServedCoverage,
 } = require('./_ingestion-coverage.cjs');
+const {
+  deriveAisUpstreamState,
+  isAisUpstreamUsable: isAisUpstreamHealthUsable,
+  shouldRecycleAisUpstream,
+} = require('./shared/ais-upstream-health.cjs');
 const { maintainClosedMarketEquityKeys: maintainClosedMarketEquityKeysWithDeps } = require('./shared/closed-market-equity-maintenance.cjs');
 const { getUsEquitySession, isMultiMarketEquityTradingDay } = require('./shared/market-hours.cjs');
 const { mergeLastGoodQuotes, planYahooRefresh } = require('./shared/market-quote-refresh.cjs');
@@ -93,6 +98,9 @@ function safeInt(envVal, fallback, min) {
 const MAX_VESSELS = safeInt(process.env.AIS_MAX_VESSELS, 20000, 1000);
 const MAX_VESSEL_HISTORY = safeInt(process.env.AIS_MAX_VESSEL_HISTORY, 20000, 1000);
 const MAX_DENSITY_CELLS = 5000;
+const AIS_FIRST_MESSAGE_TIMEOUT_MS = safeInt(process.env.AIS_FIRST_MESSAGE_TIMEOUT_MS, 90_000, 30_000);
+const AIS_STALE_MESSAGE_TIMEOUT_MS = safeInt(process.env.AIS_STALE_MESSAGE_TIMEOUT_MS, 5 * 60_000, 60_000);
+const AIS_WATCHDOG_INTERVAL_MS = safeInt(process.env.AIS_WATCHDOG_INTERVAL_MS, 30_000, 5_000);
 const MEMORY_CLEANUP_THRESHOLD_GB = (() => {
   const n = Number(process.env.RELAY_MEMORY_CLEANUP_GB);
   return Number.isFinite(n) && n > 0 ? n : 2.0;
@@ -690,6 +698,9 @@ let upstreamReconnectFailures = 0;
 let relayShuttingDown = false;
 const AIS_RECONNECT_BASE_MS = 5_000;
 const AIS_RECONNECT_MAX_MS = 5 * 60 * 1000;
+let upstreamOpenedAt = 0;
+let upstreamCurrentLastMessageAt = 0;
+let lastAisFrameAt = 0;
 let upstreamPaused = false;
 let upstreamQueue = [];
 let upstreamQueueReadIndex = 0;
@@ -699,6 +710,27 @@ let messageCount = 0;
 let droppedMessages = 0;
 const requestRateBuckets = new Map(); // key: route:ip -> { count, resetAt }
 const logThrottleState = new Map(); // key: event key -> timestamp
+
+function aisUpstreamHealthInput(now = Date.now()) {
+  return {
+    configured: Boolean(API_KEY),
+    socketOpen: upstreamSocket?.readyState === WebSocket.OPEN,
+    socketConnecting: upstreamSocket?.readyState === WebSocket.CONNECTING,
+    openedAt: upstreamOpenedAt,
+    lastMessageAt: upstreamCurrentLastMessageAt,
+    now,
+    firstMessageTimeoutMs: AIS_FIRST_MESSAGE_TIMEOUT_MS,
+    staleMessageTimeoutMs: AIS_STALE_MESSAGE_TIMEOUT_MS,
+  };
+}
+
+function getAisUpstreamState(now = Date.now()) {
+  return deriveAisUpstreamState(aisUpstreamHealthInput(now));
+}
+
+function hasUsableAisUpstream(now = Date.now()) {
+  return isAisUpstreamHealthUsable(aisUpstreamHealthInput(now));
+}
 
 // Safe response: guard against "headers already sent" crashes
 function safeEnd(res, statusCode, headers, body) {
@@ -7853,7 +7885,7 @@ function buildSnapshot() {
     sequence: snapshotSequence,
     timestamp: new Date(now).toISOString(),
     status: {
-      connected: upstreamSocket?.readyState === WebSocket.OPEN,
+      connected: hasUsableAisUpstream(now),
       vessels: vessels.size,
       messages: messageCount,
       clients: clients.size,
@@ -7883,7 +7915,7 @@ function buildSnapshot() {
 }
 
 function recordAisSnapshotAvailability(snapshot) {
-  const connected = upstreamSocket?.readyState === WebSocket.OPEN;
+  const connected = hasUsableAisUpstream();
   const hasData = Number(snapshot?.status?.vessels) > 0 || Number(snapshot?.status?.messages) > 0;
   if (connected && hasData) {
     recordRelayOutcome('aisSnapshot', 'success');
@@ -9800,10 +9832,14 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/health' || pathname === '/') {
     const mem = process.memoryUsage();
     const ingestion = getRelayRollingMetrics();
+    const aisUpstreamState = getAisUpstreamState();
+    const aisUpstreamConnected = aisUpstreamState === 'live';
+    const aisUpstreamDegraded = Boolean(API_KEY) && !aisUpstreamConnected;
     const aisSnapshotDegraded = ingestion.aisSnapshot.requests > 0 && ingestion.aisSnapshot.served === 0;
     const ingestionDegraded = ingestion.aviation.coverage.status === 'degraded'
       || ingestion.rss.coverage.status === 'degraded'
-      || aisSnapshotDegraded;
+      || aisSnapshotDegraded
+      || aisUpstreamDegraded;
     // ⚠ SECURITY — read before adding fields to this response.
     //
     // /health is in `isPublicRoute` (no auth check). Fields here are
@@ -9845,13 +9881,18 @@ const server = http.createServer(async (req, res) => {
         rss: ingestion.rss,
         aisSnapshot: {
           ...ingestion.aisSnapshot,
-          connected: upstreamSocket?.readyState === WebSocket.OPEN,
+          connected: aisUpstreamConnected,
+          currentPositionReady: aisUpstreamConnected && vessels.size > 0 && messageCount > 0,
+          vessels: vessels.size,
+          messages: messageCount,
+          upstreamState: aisUpstreamState,
+          lastFrameAgeSeconds: lastAisFrameAt > 0 ? Math.max(0, Math.floor((Date.now() - lastAisFrameAt) / 1000)) : null,
         },
       },
       clients: clients.size,
       messages: messageCount,
       droppedMessages,
-      connected: upstreamSocket?.readyState === WebSocket.OPEN,
+      connected: aisUpstreamConnected,
       upstreamPaused,
       vessels: vessels.size,
       densityZones: Array.from(densityGrid.values()).filter(c => c.vessels.size >= 2).length,
@@ -11863,6 +11904,8 @@ function connectUpstream() {
   console.log('[Relay] Connecting to aisstream.io...');
   const socket = new WebSocket(AISSTREAM_URL);
   upstreamSocket = socket;
+  upstreamOpenedAt = 0;
+  upstreamCurrentLastMessageAt = 0;
   clearUpstreamQueue();
   upstreamPaused = false;
 
@@ -11914,7 +11957,8 @@ function connectUpstream() {
       return;
     }
     console.log('[Relay] Connected to aisstream.io');
-    upstreamReconnectFailures = 0;
+    upstreamOpenedAt = Date.now();
+    upstreamCurrentLastMessageAt = 0;
     socket.send(JSON.stringify({
       APIKey: API_KEY,
       BoundingBoxes: [[[-90, -180], [90, 180]]],
@@ -11930,6 +11974,12 @@ function connectUpstream() {
 
   socket.on('message', (data) => {
     if (upstreamSocket !== socket) return;
+
+    const firstFrameOnSocket = upstreamCurrentLastMessageAt === 0;
+    upstreamCurrentLastMessageAt = Date.now();
+    lastAisFrameAt = upstreamCurrentLastMessageAt;
+    upstreamReconnectFailures = 0;
+    if (firstFrameOnSocket) console.log('[Relay] AIS data plane live (first frame received)');
 
     const raw = data instanceof Buffer ? data : Buffer.from(data);
     if (getUpstreamQueueSize() >= UPSTREAM_QUEUE_HARD_CAP) {
@@ -11950,6 +12000,9 @@ function connectUpstream() {
   socket.on('close', () => {
     if (upstreamSocket === socket) {
       upstreamSocket = null;
+      upstreamOpenedAt = 0;
+      upstreamCurrentLastMessageAt = 0;
+      lastSnapshotAt = 0;
       clearUpstreamQueue();
       upstreamPaused = false;
       console.log('[Relay] Disconnected');
@@ -11961,6 +12014,19 @@ function connectUpstream() {
     console.error('[Relay] Upstream error:', err.message);
   });
 }
+
+setInterval(() => {
+  if (relayShuttingDown || upstreamSocket?.readyState !== WebSocket.OPEN) return;
+  const health = aisUpstreamHealthInput();
+  if (!shouldRecycleAisUpstream(health)) return;
+  const state = deriveAisUpstreamState(health);
+  console.warn(`[Relay] AIS upstream ${state}; recycling socket with backoff`);
+  // Force the next snapshot to carry connected=false before any cached body is
+  // served. terminate() triggers the normal close/reconnect lifecycle.
+  lastSnapshotAt = 0;
+  buildSnapshot();
+  try { upstreamSocket.terminate(); } catch {}
+}, AIS_WATCHDOG_INTERVAL_MS).unref?.();
 
 const wss = new WebSocketServer({ server });
 
