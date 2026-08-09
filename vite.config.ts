@@ -356,23 +356,18 @@ function shouldDeferDashboardStylesheet(tag: string, bundle: OutputBundle): bool
 
   const bundleKey = href.replace(/^\//, '');
   const asset = bundle[bundleKey];
-  if (!asset || asset.type !== 'asset') return false;
-
-  const sourceLength = typeof asset.source === 'string'
-    ? Buffer.byteLength(asset.source)
-    : asset.source.byteLength;
-  return sourceLength >= 100 * 1024;
+  return Boolean(asset && asset.type === 'asset');
 }
 
-// Rewrite large render-blocking dashboard <link rel=stylesheet> tags into a
+// Rewrite dashboard <link rel=stylesheet> tags into a
 // deferred form (media="print" + data-wm-deferred-style="dashboard") plus a
 // <noscript> copy of the original blocking link, so the ~492KB app CSS no
 // longer blocks first paint. src/main.ts activateDeferredDashboardStyles()
 // flips media -> "all" at startup; the attribute name + values written here MUST
-// stay in lockstep with that runtime selector. Only assets >=100KB are deferred
-// (shouldDeferDashboardStylesheet) so small stylesheets stay blocking; links
-// that already set media= (an intentionally print/screen-scoped sheet) or are
-// already deferred are skipped. NOTE: during the defer window only the UNLAYERED
+// stay in lockstep with that runtime selector. Every dashboard-owned stylesheet
+// follows the same activation path; links that already set media= (an intentionally
+// print/screen-scoped sheet) or are already deferred are skipped. NOTE: during
+// the defer window only the UNLAYERED
 // inline critical CSS in index.html applies (the bundle is @layer base), so any
 // future *unconditional* inline rule will beat the bundle (see PR #4346) — keep
 // inline rules scoped to a transient/closed state.

@@ -21,7 +21,17 @@ export const BASELINE_ADVISORIES_BY_LOCKFILE = {
   // the browser ML worker (src/workers/ml.worker.ts) — its Node-only sharp
   // binary never executes server-side. The clean fix (sharp 0.35.x) is
   // semver-major across both chains; baselined until the parents bump.
-  'package-lock.json': ['GHSA-f88m-g3jw-g9cj'],
+  // GHSA-5p2g-fcmc-qvqq / GHSA-w3rx-r6r6-pgpr require attacker-controlled
+  // ICNS, JXL, or HEIF bytes to reach image-size. The root copies are pulled
+  // in by Clerk's React Native/Metro support and loaders.gl texture tooling;
+  // neither path accepts public image uploads in the Vantage web/runtime
+  // build. There is no patched image-size release yet (2.0.2 is both latest
+  // and affected), so keep these explicit until the parent chains can move.
+  'package-lock.json': [
+    'GHSA-f88m-g3jw-g9cj',
+    'GHSA-5p2g-fcmc-qvqq',
+    'GHSA-w3rx-r6r6-pgpr',
+  ],
   'consumer-prices-core/package-lock.json': [],
   'blog-site/package-lock.json': [],
   // GHSA-395f-4hp3-45gv (shell-quote quadratic-complexity DoS in parse()) reaches
@@ -31,7 +41,15 @@ export const BASELINE_ADVISORIES_BY_LOCKFILE = {
   // `overrides` pin bump) would drag an otherwise-untouched public/pro/ rebuild
   // into a lockfile-hygiene change. Baselined rather than patched here; drop it
   // once react-native leaves pro-test's tree.
-  'pro-test/package-lock.json': ['GHSA-395f-4hp3-45gv'],
+  // The same image-size advisories reach pro-test only through Clerk's
+  // React Native -> Metro dependency chain. The shipped Vite web bundle does
+  // not execute Metro or expose image parsing to user input, and npm has not
+  // published a fixed image-size version yet.
+  'pro-test/package-lock.json': [
+    'GHSA-395f-4hp3-45gv',
+    'GHSA-5p2g-fcmc-qvqq',
+    'GHSA-w3rx-r6r6-pgpr',
+  ],
   'scripts/package-lock.json': [],
   'docker/runtime-package-lock.json': [],
 };

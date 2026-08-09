@@ -5,7 +5,14 @@ const SOCIAL_PREVIEW_UA =
   /twitterbot|facebookexternalhit|linkedinbot|slackbot|telegrambot|whatsapp|discordbot|redditbot/i;
 
 const SOCIAL_PREVIEW_PATHS = new Set(['/api/story', '/api/og-story']);
-const LEGACY_DASHBOARD_ROOT_QUERY_KEYS = ['lat', 'lon', 'zoom', 'view', 'timeRange', 'layers'] as const;
+// Every query key the dashboard treats as state. A root URL carrying any of
+// these is a dashboard deep link (e.g. the /countries/* SEO pages link to
+// /?country=XX&expanded=1) and must 308 to /dashboard, not fall through to the
+// marketing welcome rewrite.
+const LEGACY_DASHBOARD_ROOT_QUERY_KEYS = [
+  'lat', 'lon', 'zoom', 'view', 'timeRange', 'layers',
+  'country', 'expanded', 'chokepoint', 'focus', 'c', 'classic',
+] as const;
 
 // Paths that bypass bot/script UA filtering below. Each must carry its own
 // auth (API key, shared secret, or intentionally-public semantics) because
@@ -63,10 +70,28 @@ function hasLegacyDashboardRootState(searchParams: URLSearchParams): boolean {
   return LEGACY_DASHBOARD_ROOT_QUERY_KEYS.some((key) => searchParams.has(key));
 }
 
+// Variant subdomains retired with the single-variant strip. Anything still
+// hitting one of these hosts is a stale bookmark/link, so canonicalize to
+// www.worldmonitor.app (path + query preserved) instead of serving content
+// under a retired host name. The root maps to /dashboard because those
+// bookmarks pointed at a dashboard product, not the marketing welcome page.
+// Coverage is the matcher below: '/', '/api/*', and the deep paths retired
+// hosts ever emitted or got bookmarked (/dashboard, /countries/*, /country/*,
+// /embed) — a predictable set rather than root-only.
+const RETIRED_VARIANT_HOST_RE =
+  /^(?:tech|finance|commodity|happy|energy)\.worldmonitor\.app$/;
+
 export default function middleware(request: Request) {
   const url = new URL(request.url);
   const ua = request.headers.get('user-agent') ?? '';
   const path = url.pathname;
+
+  if (RETIRED_VARIANT_HOST_RE.test(url.hostname) && !path.startsWith('/api/')) {
+    const canonicalUrl = new URL(request.url);
+    canonicalUrl.hostname = 'www.worldmonitor.app';
+    if (path === '/') canonicalUrl.pathname = '/dashboard';
+    return Response.redirect(canonicalUrl.toString(), 308);
+  }
 
   if (path === '/' && hasLegacyDashboardRootState(url.searchParams)) {
     const dashboardUrl = new URL(request.url);
@@ -156,5 +181,15 @@ export default function middleware(request: Request) {
 }
 
 export const config = {
-  matcher: ['/', '/api/:path*'],
+  matcher: [
+    '/',
+    '/api/:path*',
+    // Deep paths that must canonicalize off the retired variant hosts. For
+    // canonical hosts the middleware falls through untouched on these.
+    '/dashboard',
+    '/dashboard/:path*',
+    '/countries/:path*',
+    '/country/:path*',
+    '/embed',
+  ],
 };

@@ -1,6 +1,7 @@
 import * as d3 from 'd3';
 import { Panel } from './Panel';
 import { fetchServerInsights, getServerInsights, type ServerInsights } from '@/services/insights-loader';
+import { t } from '@/services/i18n';
 import { escapeHtml, sanitizeUrl, unsafeRawHtml } from '@/utils/sanitize';
 import type { ClusteredEvent } from '@/types';
 import {
@@ -104,7 +105,11 @@ export class ThreatTimelinePanel extends Panel {
       ? `<div class="threat-timeline-note">${escapeHtml(state.degradedReasons.join(' | '))}</div>`
       : '';
 
-    this.setDataBadge(state.status === 'ok' ? 'live' : 'cached', state.status === 'ok' ? sourceLabel : 'degraded');
+    this.setDataBadge(
+      state.status === 'ok' ? 'live' : 'cached',
+      state.status === 'ok' ? sourceLabel : t('components.cii.sourceStates.degraded'),
+      state.status === 'ok' ? undefined : state.degradedReasons.join(' | ') || undefined,
+    );
     this.setSafeContent(unsafeRawHtml(`
       <div class="threat-timeline-panel">
         <div class="threat-timeline-summary">

@@ -106,7 +106,8 @@
       "activeSirens": "Còi báo động hoạt động",
       "sirens24h": "Còi báo động / 24h",
       "aviationDisruptions": "Gián đoạn hàng không",
-      "gpsJammingZones": "Vùng nhiễu GPS"
+      "gpsJammingZones": "Vùng nhiễu GPS",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "fallback": {
       "instabilityIndex": "**Chỉ số Bất ổn: {{score}}/100** ({{level}}, {{trend}})",
@@ -177,7 +178,20 @@
       "corridorConditions": "Điều kiện hành lang",
       "activityNowcast": "Dự báo hoạt động hiện tại",
       "decisionSignalsUnavailable": "Ảnh chụp nhanh tín hiệu quyết định của Trung Quốc hiện không có sẵn."
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "THẾ GIỚI",
@@ -723,7 +737,11 @@
         "base": "Căn cứ Quân sự",
         "nuclear": "Hạt nhân lân cận",
         "port": "Cảng biển"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -993,12 +1011,7 @@
       "positions": "Vị trí máy bay",
       "navalVesselsLoading": "Tàu hải quân",
       "theaterAnalysis": "Phân tích chiến trường",
-      "connectingStreams": "Đang kết nối luồng ADS-B & AIS trực tiếp...",
       "initialLoadNote": "Lần tải đầu mất 30-60 giây khi dữ liệu theo dõi tích lũy",
-      "acquiringData": "Đang Thu thập Dữ liệu",
-      "acquiringDesc": "Đang kết nối mạng ADS-B để lấy dữ liệu bay quân sự. Có thể mất 30-60 giây lần đầu.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "Luồng Tàu AIS",
       "retryNow": "Thử lại Ngay",
       "feedRateLimited": "Nguồn bị Giới hạn Tốc độ",
       "rateLimitedDesc": "API OpenSky có giới hạn yêu cầu. Bảng sẽ tự động thử lại sau vài phút, hoặc bạn có thể thử ngay.",
@@ -1030,7 +1043,17 @@
       },
       "emojiKeyLabel": "Chú giải Emoji",
       "emojiKeyAir": "Tài sản hàng không",
-      "emojiKeyNaval": "Tài sản hải quân"
+      "emojiKeyNaval": "Tài sản hải quân",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareLink": "Chia sẻ liên kết",
@@ -1353,7 +1376,8 @@
       "provenanceTitle": "Nguồn gốc bài viết: số lượng bài viết được nhập và các nguồn riêng biệt mà bài viết này được chọn từ đó",
       "compiledFrom": "Được biên soạn từ {{stories}} câu chuyện trên {{sources}} nguồn",
       "briefFreshness": "Được tạo {{minutes}}m trước · nguồn mới nhất {{hours}}h tuổi",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "settings": {
       "exportSettings": "Xuất cài đặt",
@@ -1670,7 +1694,8 @@
     },
     "countryTimeline": {
       "now": "hiện tại",
-      "noEventsIn7Days": "Không có sự kiện trong 7 ngày"
+      "noEventsIn7Days": "Không có sự kiện trong 7 ngày",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>Tình báo tin tức</strong> Giám sát tin tức toàn cầu thời gian thực:<ul><li>Danh mục chủ đề được chọn lọc (xung đột, mạng, v.v.)</li><li>Bài viết từ hơn 100 ngôn ngữ được dịch</li><li>Cập nhật mỗi 15 phút</li><li>14-day media tone &amp; volume trend per topic</li></ul>Nguồn: GDELT Project (gdeltproject.org)"

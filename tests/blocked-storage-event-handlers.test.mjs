@@ -17,11 +17,11 @@ const panelLayoutSrc = readFileSync(
 );
 
 describe('blocked-storage event handlers', () => {
-  it('reloads local variant navigation after a guarded storage write', () => {
-    assert.match(
-      eventHandlersSrc,
-      /if \(this\.ctx\.isDesktopApp \|\| options\.isLocalDev\) \{\s*writeStorageValue\('worldmonitor-variant', variant\);\s*window\.location\.reload\(\);/,
-    );
+  // Variant navigation was removed with the single-variant strip; keep the
+  // negative pin so an unguarded `localStorage.setItem('worldmonitor-variant'`
+  // never reappears in event-handlers.
+  it('has no variant navigation storage writes left', () => {
+    assert.doesNotMatch(eventHandlersSrc, /worldmonitor-variant/);
   });
 
   it('reloads layout reset after guarded storage removals', () => {

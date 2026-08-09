@@ -408,7 +408,11 @@
         "base": "Militärbaser",
         "nuclear": "Närliggande kärnteknisk",
         "port": "Hamnar"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     },
     "story": {
       "shareTitle": "Dela berättelse",
@@ -821,12 +825,7 @@
       "positions": "Flygplanspositioner",
       "navalVesselsLoading": "Marinfartyg",
       "theaterAnalysis": "Teateranalys",
-      "connectingStreams": "Ansluter till live ADS-B & AIS-strömmar...",
       "initialLoadNote": "Första laddningen tar 30-60 sekunder medan spårningsdata ackumuleras",
-      "acquiringData": "Hämtar data",
-      "acquiringDesc": "Ansluter till ADS-B-nätverket för militära flygdata. Detta kan ta 30-60 sekunder vid första laddningen.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "AIS Fartygsström",
       "retryNow": "Försök igen nu",
       "feedRateLimited": "Flöde hastighetsbegränsat",
       "rateLimitedDesc": "OpenSky API har begränsningar. Panelen försöker automatiskt igen om några minuter, eller så kan du prova nu.",
@@ -858,7 +857,17 @@
       },
       "emojiKeyLabel": "Emoji-nyckel",
       "emojiKeyAir": "Luftresurser",
-      "emojiKeyNaval": "Sjöresurser"
+      "emojiKeyNaval": "Sjöresurser",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "techEvents": {
       "loading": "Laddar tekniska händelser...",
@@ -1075,7 +1084,8 @@
     },
     "countryTimeline": {
       "now": "nu",
-      "noEventsIn7Days": "Inga händelser på 7 dagar"
+      "noEventsIn7Days": "Inga händelser på 7 dagar",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "cii": {
       "infoTooltip": "<strong>Metodik</strong><ul><li><strong>U</strong>nrest: civila störningar och protester</li><li><strong>C</strong>konflikt: väpnad konfliktintensitet</li><li><strong>S</strong>kurv: militärflyg territorium</li><li><strong>I</strong>information: nyhetshastighet och brännpunktskorrelation</li><li>Hotspot-närhetsförstärkning (strategiska platser)</li></ul><em>U:C:S:I-värden visar komponentpoäng för komponentavkänningar för 7__punkter.__PH korrekt poängsättning.",
@@ -1280,7 +1290,8 @@
       "provenanceTitle": "Täckningshärkomst: hur många inmatade historier och unika källor denna kortfattade sammanfattning valdes från",
       "compiledFrom": "Kompilerat från {{stories}} berättelser från {{sources}} källor",
       "briefFreshness": "Genererad {{minutes}}m sedan · senaste källa {{hours}}h gammal",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "techHubs": {
       "infoTooltip": "<strong>Teknisk hubbaktivitet</strong><br>Visar tekniska nav med mest nyhetsaktivitet.<br><br><em>Aktivitetsnivåer:</em><br>• <span style=\"color: {{highColor}}\">Hög</span> — Nyheter från 50+ PH_• 50+ stil: {{elevatedColor}}\">Höjd</span> — Poäng 20-49<br>• <span style=\"color: {{lowColor}}\">Låg</span> — Poäng under 20<br><br>Klicka på ett nav för att zooma till dess plats."
@@ -3109,7 +3120,8 @@
       "activeSirens": "Aktiva sirener",
       "sirens24h": "Sirener / 24h",
       "aviationDisruptions": "Flygstörningar",
-      "gpsJammingZones": "GPS-störningszoner"
+      "gpsJammingZones": "GPS-störningszoner",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "countryFacts": "Fakta om landet",
     "loadingFacts": "Laddar fakta om landet...",
@@ -3173,7 +3185,20 @@
       "corridorConditions": "Korridorförhållanden",
       "activityNowcast": "Aktivitetsnowcast",
       "decisionSignalsUnavailable": "Ögonblicksbilden av Kinas beslutssignaler är för närvarande inte tillgänglig."
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "preferences": {
     "display": "Visning",

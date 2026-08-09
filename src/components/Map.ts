@@ -2957,9 +2957,14 @@ export class MapComponent {
         if (!pos) return;
 
         const div = document.createElement('div');
-        div.className = `military-vessel-marker ${vessel.operator} ${vessel.vesselType}${vessel.isDark ? ' dark-vessel' : ''}${vessel.isInteresting ? ' interesting' : ''}`;
+        div.className = `military-vessel-marker ${vessel.operator} ${vessel.vesselType}${vessel.isDark ? ' dark-vessel' : ''}${vessel.isInteresting ? ' interesting' : ''}${vessel.usniSource ? ' usni-approx' : ''}`;
         div.style.left = `${pos[0]}px`;
         div.style.top = `${pos[1]}px`;
+        // Synthetic USNI-derived position: disclose at the marker, not only in
+        // the click-through popup (parity with the GlobeMap/DeckGL renderers).
+        if (vessel.usniSource) {
+          div.title = `${t('popups.militaryVessel.estPosition')} — ${t('popups.militaryVessel.approximatePosition')}`;
+        }
 
         const icon = document.createElement('div');
         icon.className = `military-vessel-icon ${vessel.vesselType}`;

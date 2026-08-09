@@ -188,27 +188,32 @@ describe('homepage WebMCP registration — runtime behaviour', () => {
     }
   });
 
-  it('launchWorldMonitor navigates to the requested variant and defaults to world', async () => {
-    const finance = run(collectRegister);
-    const res = await finance.registered.find((t) => t.name === 'launchWorldMonitor').execute({ monitor: 'finance' });
-    assert.equal(res.isError, false);
-    assert.equal(finance.navigatedTo, 'https://finance.worldmonitor.app/dashboard');
-
+  it('launchWorldMonitor navigates to the single canonical dashboard', async () => {
     const dflt = run(collectRegister);
-    await dflt.registered.find((t) => t.name === 'launchWorldMonitor').execute({});
+    const res = await dflt.registered.find((t) => t.name === 'launchWorldMonitor').execute({});
+    assert.equal(res.isError, false);
     assert.equal(dflt.navigatedTo, 'https://www.worldmonitor.app/dashboard');
   });
 
-  it('launchWorldMonitor never resolves off-enum or prototype keys into navigation', async () => {
-    // "constructor"/"__proto__" are truthy on a plain object's prototype chain;
-    // an own-property guard must keep them (and any unknown key) on the world map.
-    for (const bad of ['xyz', 'constructor', '__proto__', 'toString', 'valueOf']) {
+  it('launchWorldMonitor ignores stray arguments and never navigates off-catalog (single-variant)', async () => {
+    // The variant enum was removed with the single-variant strip: whatever an
+    // agent passes, the only navigation target is the canonical dashboard.
+    for (const stray of [{ monitor: 'finance' }, { monitor: '__proto__' }, { anything: true }]) {
       const r = run(collectRegister);
-      await r.registered.find((t) => t.name === 'launchWorldMonitor').execute({ monitor: bad });
+      await r.registered.find((t) => t.name === 'launchWorldMonitor').execute(stray);
       assert.equal(
         r.navigatedTo,
         'https://www.worldmonitor.app/dashboard',
-        `monitor="${bad}" must fall back to the world dashboard, not a prototype value`,
+        `args ${JSON.stringify(stray)} must land on the canonical dashboard`,
+      );
+    }
+  });
+
+  it('the welcome WebMCP script carries no retired variant hosts', () => {
+    for (const host of ['tech.', 'finance.', 'commodity.', 'happy.', 'energy.']) {
+      assert.ok(
+        !IIFE.includes(`${host}worldmonitor.app`),
+        `welcome.html WebMCP script must not reference ${host}worldmonitor.app`,
       );
     }
   });

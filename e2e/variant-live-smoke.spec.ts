@@ -8,7 +8,8 @@ import {
 } from './variant-live-smoke-response-capture';
 import { PREMIUM_RPC_PATHS } from '../src/shared/premium-paths';
 
-type VariantName = 'full' | 'tech' | 'finance' | 'commodity' | 'energy' | 'happy';
+// Single-variant product: 'full' is the only variant that ships.
+type VariantName = 'full';
 
 type PanelDiagnostic = {
   id: string;
@@ -19,11 +20,6 @@ type PanelDiagnostic = {
 
 const EXPECTED_BOOT_PANELS: Record<VariantName, string[]> = {
   full: ['live-news', 'insights', 'strategic-posture'],
-  tech: ['live-news', 'insights', 'ai', 'tech'],
-  finance: ['live-news', 'insights', 'markets'],
-  commodity: ['live-news', 'insights', 'commodity-news', 'markets'],
-  energy: ['chokepoint-strip', 'pipeline-status', 'live-news'],
-  happy: ['positive-feed', 'progress', 'counters'],
 };
 
 const AUTH_OR_PREMIUM_401_PREFIXES = [
@@ -44,18 +40,7 @@ const IGNORABLE_PAGE_ERROR_PATTERNS = [
   /Failed to fetch dynamically imported module/i,
 ];
 
-const normalizeVariant = (variant: string | undefined): VariantName => {
-  if (
-    variant === 'tech' ||
-    variant === 'finance' ||
-    variant === 'commodity' ||
-    variant === 'energy' ||
-    variant === 'happy'
-  ) {
-    return variant;
-  }
-  return 'full';
-};
+const normalizeVariant = (_variant: string | undefined): VariantName => 'full';
 
 const isExpected401 = (path: string): boolean => {
   if (
@@ -170,7 +155,9 @@ test.describe('variant live reliability smoke', () => {
         const locked = Boolean(panel.querySelector('.panel-locked-state')) || panel.classList.contains('panel-is-locked');
         const badgeUnavailable = Boolean(panel.querySelector('.panel-data-badge.unavailable'));
         const error = Boolean(panel.querySelector('.panel-error-state'));
-        const loading = Boolean(panel.querySelector('.panel-loading'));
+        // Strategic Posture renders its own loading markup (.posture-loading),
+        // not .panel-loading — without it a hung posture panel passes smoke.
+        const loading = Boolean(panel.querySelector('.panel-loading, .posture-loading'));
         const newsOrTech =
           /news|headline|tech|ai|github|startup/i.test(id) ||
           /news|headline|technology|ai|github|startup/i.test(title);

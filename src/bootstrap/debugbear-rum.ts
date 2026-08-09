@@ -4,14 +4,11 @@ export const DEBUGBEAR_RUM_SCRIPT_SRC = 'https://cdn.debugbear.com/lpMwA9KpC6pf.
 // RUM needs only a fraction. Keep in sync with pro-test/src/debugbear-rum.ts (asserted by the test).
 export const DEBUGBEAR_RUM_SAMPLE_RATE = 10;
 const DEBUGBEAR_RUM_SCRIPT_PATHNAME = new URL(DEBUGBEAR_RUM_SCRIPT_SRC).pathname;
+// Single-variant product: retired variant subdomains 308 to www at the edge,
+// so only the canonical hosts can ever run this bootstrap.
 const DEBUGBEAR_RUM_HOSTS = new Set([
   'worldmonitor.app',
   'www.worldmonitor.app',
-  'tech.worldmonitor.app',
-  'finance.worldmonitor.app',
-  'commodity.worldmonitor.app',
-  'happy.worldmonitor.app',
-  'energy.worldmonitor.app',
 ]);
 
 import type { BootstrapR2RumSample } from './bootstrap-r2-rum';

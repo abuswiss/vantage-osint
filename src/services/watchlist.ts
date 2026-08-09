@@ -5,7 +5,9 @@
  * 'wm-watchlist-v1', and browser-notification preferences under
  * 'wm-watchlist-alerts-v1'. Every read re-parses localStorage defensively, so
  * a corrupt or foreign value degrades to an empty list instead of throwing.
- * Change notification is a simple in-page listener set — no cross-tab sync.
+ * Change notification is an in-page listener set, plus a `storage` listener
+ * so edits in another tab re-notify here — safe precisely because every
+ * getter re-reads localStorage rather than holding an in-memory copy.
  */
 
 const WATCHLIST_KEY = 'wm-watchlist-v1';
@@ -47,11 +49,15 @@ function readJson(key: string): unknown {
   }
 }
 
-function writeJson(key: string, value: unknown): void {
+/** Returns whether the value was actually persisted. */
+function writeJson(key: string, value: unknown): boolean {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+    return true;
   } catch {
-    // Quota exceeded or storage unavailable — in-memory callers still notify.
+    // Quota exceeded or storage unavailable — nothing changed on disk, so
+    // callers must not notify or report the mutation as having happened.
+    return false;
   }
 }
 
@@ -94,7 +100,12 @@ export function getWatchlist(): Watchlist {
   return sanitizeWatchlist(readJson(WATCHLIST_KEY));
 }
 
-/** Toggle a country on the watchlist. Returns true when it is now watched. */
+/**
+ * Toggle a country on the watchlist. Returns true when it is now watched —
+ * re-read from persisted state after the write, so an add refused by the
+ * entry cap OR a failed localStorage write reports the state the store is
+ * actually in instead of claiming a watch that was never stored.
+ */
 export function toggleCountry(code: string): boolean {
   const iso = normalizeCountry(code);
   if (!iso) return false;
@@ -102,12 +113,15 @@ export function toggleCountry(code: string): boolean {
   const index = list.countries.indexOf(iso);
   if (index >= 0) list.countries.splice(index, 1);
   else if (list.countries.length < MAX_ENTRIES) list.countries.push(iso);
-  writeJson(WATCHLIST_KEY, list);
-  notify();
-  return index < 0;
+  else return false;
+  if (writeJson(WATCHLIST_KEY, list)) notify();
+  return getWatchlist().countries.includes(iso);
 }
 
-/** Toggle a topic keyword on the watchlist. Returns true when it is now watched. */
+/**
+ * Toggle a topic keyword on the watchlist. Returns true when it is now
+ * watched — re-read from persisted state (see toggleCountry).
+ */
 export function toggleTopic(rawTopic: string): boolean {
   const topic = normalizeTopic(rawTopic);
   if (!topic) return false;
@@ -115,9 +129,9 @@ export function toggleTopic(rawTopic: string): boolean {
   const index = list.topics.indexOf(topic);
   if (index >= 0) list.topics.splice(index, 1);
   else if (list.topics.length < MAX_ENTRIES) list.topics.push(topic);
-  writeJson(WATCHLIST_KEY, list);
-  notify();
-  return index < 0;
+  else return false;
+  if (writeJson(WATCHLIST_KEY, list)) notify();
+  return getWatchlist().topics.includes(topic);
 }
 
 export function isWatched(kind: 'country' | 'topic', value: string): boolean {
@@ -144,8 +158,10 @@ export function setAlertPrefs(patch: Partial<AlertPrefs>): void {
   const next = { ...getAlertPrefs(), ...patch };
   next.escalationThreshold = Math.min(100, Math.max(0, Math.round(next.escalationThreshold)));
   next.enabled = next.enabled === true;
-  writeJson(ALERT_PREFS_KEY, next);
-  notify();
+  // Notify only when the prefs actually persisted: getAlertPrefs() re-reads
+  // localStorage, so notifying after a failed write would fan out a change
+  // that no reader can observe.
+  if (writeJson(ALERT_PREFS_KEY, next)) notify();
 }
 
 /** Subscribe to watchlist/alert-pref changes. Returns an unsubscribe function. */
@@ -154,4 +170,14 @@ export function subscribe(listener: WatchlistListener): () => void {
   return () => {
     listeners.delete(listener);
   };
+}
+
+// Cross-tab sync: `storage` fires only in OTHER tabs, so this never
+// double-notifies the writing tab. key === null means storage.clear().
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === null || event.key === WATCHLIST_KEY || event.key === ALERT_PREFS_KEY) {
+      notify();
+    }
+  });
 }

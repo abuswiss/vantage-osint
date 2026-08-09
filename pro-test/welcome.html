@@ -24,43 +24,19 @@
         function text(t, isError) {
           return { content: [{ type: 'text', text: t }], isError: !!isError };
         }
-        var MONITORS = {
-          world: 'https://www.worldmonitor.app/dashboard',
-          tech: 'https://tech.worldmonitor.app/dashboard',
-          finance: 'https://finance.worldmonitor.app/dashboard',
-          commodity: 'https://commodity.worldmonitor.app/dashboard',
-          energy: 'https://energy.worldmonitor.app/dashboard',
-          happy: 'https://happy.worldmonitor.app/dashboard'
-        };
+        var DASHBOARD_URL = 'https://www.worldmonitor.app/dashboard';
         var tools = [
           {
             name: 'launchWorldMonitor',
-            description: 'Open the live World Monitor intelligence dashboard in this tab. Optionally choose a specialized monitor variant (world, tech, finance, commodity, energy, happy). Navigates to the real-time map — conflicts, markets, shipping chokepoints, flights and cyber on one surface.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                monitor: {
-                  type: 'string',
-                  enum: ['world', 'tech', 'finance', 'commodity', 'energy', 'happy'],
-                  description: 'Which monitor to open. Defaults to "world".'
-                }
-              },
-              additionalProperties: false
-            },
-            execute: function (args) {
-              var key = args && typeof args.monitor === 'string' ? args.monitor.toLowerCase() : 'world';
-              // Own-property lookup only — self-validate here rather than trust the
-              // host to enforce inputSchema, so an off-enum key (incl. prototype
-              // keys like "constructor"/"__proto__") can never resolve into
-              // window.location. Unknown keys fall back to the world map.
-              var url = Object.prototype.hasOwnProperty.call(MONITORS, key) ? MONITORS[key] : MONITORS.world;
-              if (url === MONITORS.world) key = 'world';
+            description: 'Open the live World Monitor intelligence dashboard in this tab. Navigates to the real-time map — conflicts, markets, shipping chokepoints, flights and cyber on one surface.',
+            inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+            execute: function () {
               try {
-                window.location.assign(url);
+                window.location.assign(DASHBOARD_URL);
               } catch (e) {
                 return Promise.resolve(text('Could not open the dashboard: ' + ((e && e.message) || e), true));
               }
-              return Promise.resolve(text('Opening the ' + key + ' monitor: ' + url));
+              return Promise.resolve(text('Opening the World Monitor dashboard: ' + DASHBOARD_URL));
             }
           },
           {
@@ -114,7 +90,7 @@
          site as the dashboard so acquisition → dashboard → checkout joins.
          data-domains must list www (exact-hostname match; apex 301s to www).
          Static nonce satisfies the strict-dynamic CSP (deploy-config CSP). -->
-    <script async defer src="https://abacus.worldmonitor.app/script.js" data-website-id="e8800335-c853-46a8-8497-c993ed2f58bc" data-domains="worldmonitor.app,www.worldmonitor.app,happy.worldmonitor.app" nonce="wm-static-bootstrap"></script>
+    <script async defer src="https://abacus.worldmonitor.app/script.js" data-website-id="e8800335-c853-46a8-8497-c993ed2f58bc" data-domains="worldmonitor.app,www.worldmonitor.app" nonce="wm-static-bootstrap"></script>
     <title>World Monitor — Free Real-Time Global Intelligence Dashboard</title>
     <meta name="description" content="By the time it's news, you already knew. Conflicts, shipping chokepoints, military flights, markets and cyber on one free live world map, with AI analysis. No signup." />
     <meta name="keywords" content="global intelligence dashboard, real-time world map, geopolitical monitoring, conflict tracking, OSINT dashboard, market monitoring, shipping chokepoints, satellite tracking, situational awareness, free intelligence platform, world news dashboard, AI news analysis" />
@@ -315,14 +291,14 @@
         {
           "@type": "ListItem",
           "position": 2,
-          "url": "https://commodity.worldmonitor.app/dashboard",
+          "url": "https://www.worldmonitor.app/dashboard",
           "name": "Commodity disruption monitoring",
           "description": "Track AIS vessel movement, ports, pipelines, LNG, refineries, waterways, chokepoints, weather, fires, outages, conflicts, oil, gas, gold, metals, grains and commodity-linked currencies together."
         },
         {
           "@type": "ListItem",
           "position": 3,
-          "url": "https://tech.worldmonitor.app/dashboard",
+          "url": "https://www.worldmonitor.app/dashboard",
           "name": "AI infrastructure risk",
           "description": "Map AI datacenters beside grids, pipelines, LNG, nuclear facilities, cloud regions, power markets, outages, heat, fire and weather layers."
         },
@@ -343,7 +319,7 @@
       <div style="max-width:800px;margin:0 auto;padding:40px 20px;font-family:system-ui,sans-serif;color:#e5e5e5;background:#0a0a0a;">
         <h2>World Monitor — By the time it's news, you already knew.</h2>
         <p>Headlines are the lag. World Monitor is a free, real-time global intelligence dashboard that streams the world's raw signals — ships, jets, sirens, cables, markets — onto one live map, with AI that flags when they converge into something that matters. Free, no signup required.</p>
-        <p><a href="https://www.worldmonitor.app/dashboard" style="color:#4ade80;">Launch the dashboard</a> or explore the specialized variants: <a href="https://tech.worldmonitor.app/dashboard" style="color:#4ade80;">Tech Monitor</a>, <a href="https://finance.worldmonitor.app/dashboard" style="color:#4ade80;">Finance Monitor</a>, <a href="https://commodity.worldmonitor.app/dashboard" style="color:#4ade80;">Commodity Monitor</a>, <a href="https://energy.worldmonitor.app/dashboard" style="color:#4ade80;">Energy Monitor</a>, and <a href="https://happy.worldmonitor.app/dashboard" style="color:#4ade80;">Happy Monitor</a>.</p>
+        <p><a href="https://www.worldmonitor.app/dashboard" style="color:#4ade80;">Launch the dashboard</a> — conflicts, markets, shipping, infrastructure and cyber intelligence on one live surface.</p>
         <p>Data comes from <a href="https://acleddata.com/" style="color:#4ade80;" rel="noopener noreferrer">ACLED</a>, <a href="https://ucdp.uu.se/" style="color:#4ade80;" rel="noopener noreferrer">UCDP</a>, <a href="https://firms.modaps.eosdis.nasa.gov/" style="color:#4ade80;" rel="noopener noreferrer">NASA FIRMS</a>, <a href="https://finnhub.io/" style="color:#4ade80;" rel="noopener noreferrer">Finnhub</a>, <a href="https://fred.stlouisfed.org/" style="color:#4ade80;" rel="noopener noreferrer">FRED</a>, <a href="https://aisstream.io/" style="color:#4ade80;" rel="noopener noreferrer">AISStream</a>, <a href="https://opensky-network.org/" style="color:#4ade80;" rel="noopener noreferrer">OpenSky</a>, and 60+ other live providers. Full source on <a href="https://github.com/koala73/worldmonitor" style="color:#4ade80;" rel="noopener noreferrer">GitHub (AGPL-3.0)</a>.</p>
         <h3>What you can do</h3>
         <ul>

@@ -219,6 +219,8 @@ export function exportToCSV(data: ExportData, filename = 'worldmonitor-export'):
     if (intel.usniFleet) {
       lines.push('=== USNI FLEET ===');
       lines.push('# See JSON export for full fleet data');
+      // No commas: this is a comment row in a CSV — a comma would split it across cells.
+      lines.push('# Positions are approximate — inferred from USNI weekly text reports; not live AIS fixes');
       lines.push(`Vessels,${intel.usniFleet.vessels?.length ?? 0}`);
       lines.push('');
     }

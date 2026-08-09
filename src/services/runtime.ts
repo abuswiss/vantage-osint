@@ -217,7 +217,6 @@ function extractHostnames(...urls: (string | undefined)[]): string[] {
 const APP_HOSTS = new Set([
   'worldmonitor.app',
   'www.worldmonitor.app',
-  'tech.worldmonitor.app',
   'api.worldmonitor.app',
   'localhost',
   '127.0.0.1',

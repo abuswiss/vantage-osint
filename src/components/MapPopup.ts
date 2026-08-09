@@ -3107,6 +3107,7 @@ ${isFeatureAvailable('wingbitsEnrichment') ? '<div class="wingbits-live-section"
             ${vesselSummary}
           </div>
         </div>
+        ${cluster.approximate ? `<p class="popup-description" style="opacity:0.7;font-size:0.85em">${t('popups.militaryVessel.approximatePosition')}</p>` : ''}
       </div>
     `;
   }

@@ -649,6 +649,20 @@
   gap: 6px;
 }
 
+/* Muted single-line qualifiers under the signal chips/totals: the severity
+   window declaration and the coverage-gap note. Quiet by design — they carry
+   semantics, not emphasis. */
+.cdp-signal-window,
+.cdp-signal-coverage {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.cdp-signal-coverage {
+  margin-bottom: 6px;
+}
+
 .cdp-metric {
   display: flex;
   align-items: center;

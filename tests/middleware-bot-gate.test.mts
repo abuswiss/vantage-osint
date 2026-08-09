@@ -308,3 +308,104 @@ describe('middleware /mcp — no variant redirect machinery remains', () => {
     assert.equal(res, undefined, 'POST /mcp must fall through to the /api/mcp rewrite');
   });
 });
+
+// ── legacy dashboard state on the root URL ───────────────────────────────────
+// The apex `/` is rewritten to the marketing welcome page in vercel.json, so
+// any root URL that actually carries dashboard state must 308 to /dashboard
+// first. That includes the country deep links every prebuilt SEO page emits
+// (/?country=XX&expanded=1) — before those keys were added, all 197 country
+// pages linked visitors to the welcome page instead of the country brief.
+
+describe('middleware root URL — dashboard state redirects to /dashboard', () => {
+  const DASHBOARD_STATE_QUERIES = [
+    '?lat=48.3&lon=31.1&zoom=4',
+    '?country=UA&expanded=1',
+    '?country=UA',
+    '?chokepoint=bab_el_mandeb',
+    '?focus=news:abc123',
+    '?c=IR',
+    '?classic=1',
+  ];
+
+  for (const query of DASHBOARD_STATE_QUERIES) {
+    it(`308s / ${query} to /dashboard preserving the query`, () => {
+      const res = call(`https://www.worldmonitor.app/${query}`, CHROME_UA);
+      assert.ok(res instanceof Response, `expected a redirect for ${query}`);
+      assert.equal(res.status, 308);
+      const location = new URL(res.headers.get('location') ?? '');
+      assert.equal(location.pathname, '/dashboard');
+      assert.equal(location.search, query);
+    });
+  }
+
+  it('leaves a bare root URL alone (welcome rewrite handles it)', () => {
+    assert.equal(call('https://www.worldmonitor.app/', CHROME_UA), undefined);
+  });
+
+  it('leaves unrelated root queries alone (e.g. utm-only)', () => {
+    assert.equal(call('https://www.worldmonitor.app/?utm_source=newsletter', CHROME_UA), undefined);
+  });
+});
+
+// ── retired variant subdomains ───────────────────────────────────────────────
+// tech/finance/commodity/happy/energy.worldmonitor.app were retired with the
+// single-variant strip. Their roots previously served the full dashboard under
+// the dead host; now they canonicalize to www.worldmonitor.app/dashboard with
+// the query preserved so old bookmarks and deep links keep working.
+
+describe('middleware retired variant hosts — root canonicalizes to /dashboard', () => {
+  for (const host of ['tech', 'finance', 'commodity', 'happy', 'energy']) {
+    it(`308s https://${host}.worldmonitor.app/ to the canonical dashboard`, () => {
+      const res = call(`https://${host}.worldmonitor.app/?country=UA`, CHROME_UA);
+      assert.ok(res instanceof Response, `expected a redirect for ${host}`);
+      assert.equal(res.status, 308);
+      const location = new URL(res.headers.get('location') ?? '');
+      assert.equal(location.hostname, 'www.worldmonitor.app');
+      assert.equal(location.pathname, '/dashboard');
+      assert.equal(location.search, '?country=UA');
+    });
+  }
+
+  it('does not touch the apex or www roots', () => {
+    assert.equal(call('https://worldmonitor.app/', CHROME_UA), undefined);
+    assert.equal(call('https://www.worldmonitor.app/', CHROME_UA), undefined);
+  });
+});
+
+// Deep paths on retired hosts must ALSO canonicalize (path + query preserved).
+// The welcome/pro surfaces and old share links emitted /dashboard deep links
+// on variant hosts for years — root-only coverage silently served the full
+// dashboard under a dead hostname for all of them.
+describe('middleware retired variant hosts — deep paths canonicalize with path preserved', () => {
+  const DEEP_PATHS = [
+    '/dashboard',
+    '/dashboard?country=UA&expanded=1',
+    '/countries/ukraine/',
+    '/country/israel',
+    '/embed',
+  ];
+
+  for (const pathAndQuery of DEEP_PATHS) {
+    it(`308s https://tech.worldmonitor.app${pathAndQuery} to www with path preserved`, () => {
+      const res = call(`https://tech.worldmonitor.app${pathAndQuery}`, CHROME_UA);
+      assert.ok(res instanceof Response, `expected a redirect for ${pathAndQuery}`);
+      assert.equal(res.status, 308);
+      const source = new URL(`https://tech.worldmonitor.app${pathAndQuery}`);
+      const location = new URL(res.headers.get('location') ?? '');
+      assert.equal(location.hostname, 'www.worldmonitor.app');
+      assert.equal(location.pathname, source.pathname);
+      assert.equal(location.search, source.search);
+    });
+  }
+
+  it('leaves retired-host /api/* requests to the normal API gate (no redirect)', () => {
+    // API clients configured against an old host keep working; the bot gate
+    // still applies as on any host.
+    assert.equal(call('https://tech.worldmonitor.app/api/health', CHROME_UA), undefined);
+  });
+
+  it('leaves canonical-host deep paths alone', () => {
+    assert.equal(call('https://www.worldmonitor.app/dashboard?country=UA', CHROME_UA), undefined);
+    assert.equal(call('https://www.worldmonitor.app/countries/ukraine/', CHROME_UA), undefined);
+  });
+});

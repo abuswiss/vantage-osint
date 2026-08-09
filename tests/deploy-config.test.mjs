@@ -626,11 +626,20 @@ describe('welcome landing page routing', () => {
   });
 
   it('redirects legacy root map-state deep links to /dashboard before welcome routing', () => {
-    assert.match(
-      middlewareSource,
-      /LEGACY_DASHBOARD_ROOT_QUERY_KEYS = \['lat', 'lon', 'zoom', 'view', 'timeRange', 'layers'\]/,
-      'middleware must list dashboard URL-state params that bypass the root welcome page',
+    // The key list must cover every query param the dashboard treats as
+    // state — including the country deep links the prebuilt SEO pages emit
+    // (/?country=XX&expanded=1) — or those URLs fall through to the welcome
+    // rewrite instead of the dashboard.
+    const keyListMatch = middlewareSource.match(
+      /LEGACY_DASHBOARD_ROOT_QUERY_KEYS = \[([\s\S]*?)\] as const;/,
     );
+    assert.ok(keyListMatch, 'middleware must list dashboard URL-state params that bypass the root welcome page');
+    for (const key of ['lat', 'lon', 'zoom', 'view', 'timeRange', 'layers', 'country', 'expanded', 'chokepoint', 'focus', 'c', 'classic']) {
+      assert.ok(
+        keyListMatch[1].includes(`'${key}'`),
+        `LEGACY_DASHBOARD_ROOT_QUERY_KEYS must include '${key}'`,
+      );
+    }
     assert.match(
       middlewareSource,
       /path === '\/' && hasLegacyDashboardRootState\(url\.searchParams\)/,

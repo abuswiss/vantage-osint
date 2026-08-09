@@ -1,6 +1,8 @@
 import { Panel } from './Panel';
 import { escapeHtml, unsafeRawHtml } from '@/utils/sanitize';
-import { fetchCachedTheaterPosture, type CachedTheaterPosture } from '@/services/cached-theater-posture';
+import { withTimeout, TimeoutError } from '@/utils/with-timeout';
+import { fetchCachedTheaterPosture, getCachedPosture, type CachedTheaterPosture } from '@/services/cached-theater-posture';
+import { getAisStatus, type MaritimeAvailability } from '@/services/maritime';
 import { getMilitaryVesselsModule, isVesselRuntimeStoppedError } from '@/services/military-vessels-lazy';
 import { recalcPostureWithVessels, type TheaterPostureSummary } from '@/services/military-surge';
 import { isDesktopRuntime } from '@/services/runtime';
@@ -8,6 +10,12 @@ import { t } from '../services/i18n';
 import type { NewsItem, DeductContextDetail } from '@/types';
 import { buildNewsContext } from '@/utils/news-context';
 import { VANTAGE_PUBLIC_MODE, VANTAGE_RELAY_ENABLED } from '@/config/product-policy';
+
+// Budgets for the two awaited legs of fetchAndRender. A try/catch alone cannot
+// end the loading state: a hung upstream keeps the promise pending forever, so
+// each leg races a deadline and degrades to last-known-good/unavailable.
+const POSTURE_FETCH_TIMEOUT_MS = 12_000;
+const VESSEL_AUGMENT_TIMEOUT_MS = 8_000;
 
 export class StrategicPosturePanel extends Panel {
   private postures: TheaterPostureSummary[] = [];
@@ -111,7 +119,7 @@ export class StrategicPosturePanel extends Panel {
               <span>${t('components.strategicPosture.theaterAnalysis')}</span>
             </div>
           </div>
-          <div class="posture-loading-tip">${t('components.strategicPosture.connectingStreams')}</div>
+          <div class="posture-loading-tip">${t('components.strategicPosture.contactingService')}</div>
           <div class="posture-loading-elapsed">${t('components.strategicPosture.elapsed', { elapsed: '0' })}</div>
           <div class="posture-loading-note">${t('components.strategicPosture.initialLoadNote')}</div>
         </div>
@@ -161,7 +169,11 @@ export class StrategicPosturePanel extends Panel {
     try {
       // Fetch aircraft data from server
       this.showLoadingStage('aircraft');
-      const data = await fetchCachedTheaterPosture(this.signal);
+      const data = await withTimeout(
+        fetchCachedTheaterPosture(this.signal),
+        POSTURE_FETCH_TIMEOUT_MS,
+        'strategic-posture-fetch',
+      );
       if (!this.element?.isConnected) return;
       if (!data || !data.postures?.length) {
         this.showNoData();
@@ -176,9 +188,17 @@ export class StrategicPosturePanel extends Panel {
       this.lastTimestamp = data.timestamp;
       this.isStale = data.stale || false;
 
-      // Try to augment with vessel data (client-side)
+      // Try to augment with vessel data (client-side). Vessel data is
+      // additive: on timeout render aircraft-only with last-known counts
+      // instead of blocking the whole panel on AIS.
       this.showLoadingStage('vessels');
-      await this.augmentWithVessels();
+      try {
+        await withTimeout(this.augmentWithVessels(), VESSEL_AUGMENT_TIMEOUT_MS, 'strategic-posture-vessels');
+      } catch (vesselError) {
+        if (!(vesselError instanceof TimeoutError)) throw vesselError;
+        this.restoreVesselCounts();
+        recalcPostureWithVessels(this.postures);
+      }
       if (!this.element?.isConnected) return;
 
       this.showLoadingStage('analysis');
@@ -194,6 +214,25 @@ export class StrategicPosturePanel extends Panel {
     } catch (error) {
       if (this.isAbortError(error)) return;
       console.error('[StrategicPosturePanel] Fetch error:', error);
+      if (error instanceof TimeoutError) {
+        // The posture fetch hung. Prefer honest last-known-good over an
+        // endless loading state; render() surfaces the stale warning.
+        const cached = getCachedPosture();
+        if (!this.element?.isConnected) return;
+        if (cached?.postures?.length) {
+          this.postures = cached.postures.map((p) => ({
+            ...p,
+            byOperator: { ...p.byOperator },
+          }));
+          this.lastTimestamp = cached.timestamp;
+          this.isStale = true;
+          this.updateBadges();
+          this.render();
+        } else {
+          this.showUnavailable();
+        }
+        return;
+      }
       this.showFetchError();
     }
   }
@@ -350,6 +389,35 @@ export class StrategicPosturePanel extends Panel {
     return this.fetchAndRender();
   }
 
+  // Source rows reflect actual runtime relay state — AIR/SHIPS must never be
+  // presented as an in-progress connection when nothing is arriving.
+  private sourceStatusRows(): string {
+    let aisAvailability: MaritimeAvailability = 'unavailable';
+    try {
+      aisAvailability = getAisStatus().availability;
+    } catch { /* default stays 'unavailable' */ }
+    const aisKey = aisAvailability === 'live'
+      ? 'sourceAisLive'
+      : aisAvailability === 'traffic'
+        ? 'sourceAisTraffic'
+        : aisAvailability === 'unknown'
+          ? 'sourceAisChecking'
+          : 'sourceAisUnavailable';
+    const aisIconClass = aisAvailability === 'live' || aisAvailability === 'traffic' ? '' : ' waiting';
+    return `
+      <div class="posture-data-sources">
+        <div class="posture-source">
+          <span class="posture-source-icon waiting">✈️</span>
+          <span>${t('components.strategicPosture.sourceAirNoData')}</span>
+        </div>
+        <div class="posture-source">
+          <span class="posture-source-icon${aisIconClass}">🚢</span>
+          <span>${t(`components.strategicPosture.${aisKey}`)}</span>
+        </div>
+      </div>
+    `;
+  }
+
   private showNoData(): void {
     if (this.isRelayPending()) {
       this.showRelayPending();
@@ -360,21 +428,30 @@ export class StrategicPosturePanel extends Panel {
     this.setSafeContent(unsafeRawHtml(`
       <div class="posture-panel">
         <div class="posture-no-data">
-          <div class="posture-no-data-icon pulse">📡</div>
-          <div class="posture-no-data-title">${t('components.strategicPosture.acquiringData')}</div>
+          <div class="posture-no-data-icon">📡</div>
+          <div class="posture-no-data-title">${t('components.strategicPosture.noPostureTitle')}</div>
           <div class="posture-no-data-desc">
-            ${t('components.strategicPosture.acquiringDesc')}
+            ${t('components.strategicPosture.noPostureDesc')}
           </div>
-          <div class="posture-data-sources">
-            <div class="posture-source">
-              <span class="posture-source-icon connecting">✈️</span>
-              <span>${t('components.strategicPosture.openSkyAdsb')}</span>
-            </div>
-            <div class="posture-source">
-              <span class="posture-source-icon waiting">🚢</span>
-              <span>${t('components.strategicPosture.aisVesselStream')}</span>
-            </div>
+          ${this.sourceStatusRows()}
+          <button class="posture-retry-btn" data-panel-retry>↻ ${t('components.strategicPosture.retryNow')}</button>
+        </div>
+      </div>
+    `, 'legacy Panel.setContent() migration'));
+    this.setRetryCallback(() => this.refresh());
+  }
+
+  private showUnavailable(): void {
+    this.stopLoadingTimer();
+    this.setSafeContent(unsafeRawHtml(`
+      <div class="posture-panel">
+        <div class="posture-no-data">
+          <div class="posture-no-data-icon">📡</div>
+          <div class="posture-no-data-title">${t('components.strategicPosture.unavailableTitle')}</div>
+          <div class="posture-no-data-desc">
+            ${t('components.strategicPosture.unavailableDesc')}
           </div>
+          ${this.sourceStatusRows()}
           <button class="posture-retry-btn" data-panel-retry>↻ ${t('components.strategicPosture.retryNow')}</button>
         </div>
       </div>

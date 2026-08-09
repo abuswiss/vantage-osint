@@ -42,7 +42,17 @@ import {
   fetchBriefHistory,
   fetchBriefSnapshot,
   type ArchivedBriefSnapshot,
+  type BriefDiffResponse,
 } from '@/services/brief-history';
+import {
+  loadStoredMissionPreset,
+  MISSION_PRESETS,
+  OPS_MISSION_PRESET_IDS,
+  type MissionPreset,
+  type MissionPresetId,
+} from '@/services/mission-presets';
+import { activityTracker } from '@/services/activity-tracker';
+import { pickSinceBaseline } from '@/utils/brief-baseline';
 import {
   getAlertPrefs,
   getWatchlist,
@@ -60,6 +70,10 @@ import { getStrategicRiskDisplayLevel } from '@/utils/strategic-risk-band';
 export interface OpsShellHooks {
   onToggleLayer: (layer: keyof MapLayers, enabled: boolean) => void;
   onOpenSearch: () => void;
+  /** Apply a mission preset via the shared event-handler machinery. */
+  onApplyMission: (presetId: MissionPresetId) => void;
+  /** Clear the active mission and restore default layers/view/time. */
+  onResetMission: () => void;
 }
 
 /**
@@ -69,7 +83,8 @@ export interface OpsShellHooks {
  */
 export interface OpsCountryIntel {
   getSignals(): Promise<CountryBriefSignals>;
-  getSignalDetails(): Promise<CountryDeepDiveSignalDetails>;
+  // null = signal aggregation unavailable; render nothing rather than zeros.
+  getSignalDetails(): Promise<CountryDeepDiveSignalDetails | null>;
   openFullBrief(): void;
 }
 
@@ -165,6 +180,9 @@ export class OpsShell {
   private timelineMeta: HTMLElement | null = null;
   private layerPopover: HTMLElement | null = null;
   private moreLayersButton: HTMLButtonElement | null = null;
+  private missionPopover: HTMLElement | null = null;
+  private missionButton: HTMLButtonElement | null = null;
+  private missionReturnFocus: HTMLElement | null = null;
   private briefButton: HTMLButtonElement | null = null;
   private systemStatus: HTMLElement | null = null;
   private briefPreviewHost: HTMLElement | null = null;
@@ -191,6 +209,7 @@ export class OpsShell {
   private watchBell: HTMLButtonElement | null = null;
   private watchFilter: WatchFilter | null = null;
   private watchSettingsOpen = false;
+  private watchAddFocusPending = false;
   private unsubscribeWatchlist: (() => void) | null = null;
   private lastAlertScore: number | null = null;
   private alertsSeeded = false;
@@ -456,6 +475,20 @@ export class OpsShell {
     this.layerPopover.setAttribute('role', 'dialog');
     this.layerPopover.setAttribute('aria-label', 'Map layers');
 
+    this.missionButton = el('button', 'ops-mission-button') as HTMLButtonElement;
+    this.missionButton.type = 'button';
+    this.missionButton.setAttribute('aria-haspopup', 'dialog');
+    this.missionButton.setAttribute('aria-expanded', 'false');
+    this.missionButton.setAttribute('aria-controls', 'opsMissionPopover');
+    this.missionButton.addEventListener('click', () => this.toggleMissionPopover());
+
+    this.missionPopover = el('div', 'ops-layer-popover ops-mission-popover');
+    this.missionPopover.id = 'opsMissionPopover';
+    this.missionPopover.hidden = true;
+    this.missionPopover.setAttribute('role', 'dialog');
+    this.missionPopover.setAttribute('aria-label', 'Missions');
+    this.syncMissionButton();
+
     const divider = el('span', 'ops-top-divider');
     divider.setAttribute('aria-hidden', 'true');
 
@@ -485,8 +518,97 @@ export class OpsShell {
     right.appendChild(counts);
     right.id = 'opsTopRight';
 
-    top.append(brand, chips, this.moreLayersButton, divider, timeSeg, right, this.layerPopover);
+    top.append(brand, chips, this.moreLayersButton, this.missionButton, divider, timeSeg, right, this.layerPopover, this.missionPopover);
     return top;
+  }
+
+  // ---- missions ----
+
+  private opsMissionPresets(): MissionPreset[] {
+    return OPS_MISSION_PRESET_IDS
+      .map((id) => MISSION_PRESETS.find((preset) => preset.id === id))
+      .filter((preset): preset is MissionPreset => preset !== undefined);
+  }
+
+  private syncMissionButton(): void {
+    if (!this.missionButton) return;
+    const active = loadStoredMissionPreset();
+    const opsActive = active && OPS_MISSION_PRESET_IDS.includes(active.id) ? active : null;
+    this.missionButton.textContent = opsActive ? `Mission: ${opsActive.shortLabel}` : 'Missions';
+    this.missionButton.setAttribute(
+      'aria-label',
+      opsActive ? `Missions — ${opsActive.label} active` : 'Missions',
+    );
+  }
+
+  private toggleMissionPopover(force?: boolean): void {
+    if (!this.missionPopover || !this.missionButton) return;
+    const open = force ?? this.missionPopover.hidden;
+    if (open) {
+      this.missionReturnFocus = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : this.missionButton;
+      this.renderMissionPopover();
+    }
+    this.missionPopover.hidden = !open;
+    this.missionButton.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      this.missionPopover.querySelector<HTMLButtonElement>('.ops-mission-option')?.focus();
+    } else if (this.missionReturnFocus?.isConnected) {
+      const restore = this.missionReturnFocus;
+      this.missionReturnFocus = null;
+      requestAnimationFrame(() => restore.focus());
+    }
+  }
+
+  private renderMissionPopover(): void {
+    if (!this.missionPopover) return;
+    const header = el('div', 'ops-layer-popover-head');
+    const title = el('div');
+    title.textContent = 'Missions';
+    const close = iconButton('×', 'Close missions', () => this.toggleMissionPopover(false));
+    header.append(title, close);
+
+    const activeId = loadStoredMissionPreset()?.id ?? null;
+    const list = el('div', 'ops-mission-list');
+    for (const preset of this.opsMissionPresets()) {
+      const active = preset.id === activeId;
+      const button = el('button', 'ops-mission-option') as HTMLButtonElement;
+      button.type = 'button';
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      const label = el('span', 'ops-mission-option-label');
+      label.textContent = preset.label;
+      const description = el('span', 'ops-mission-option-desc');
+      description.textContent = preset.description;
+      button.append(label, description);
+      button.addEventListener('click', () => this.applyMission(preset.id));
+      list.appendChild(button);
+    }
+
+    const reset = el('button', 'ops-mission-reset') as HTMLButtonElement;
+    reset.type = 'button';
+    reset.textContent = 'Standard view';
+    reset.title = 'Clear the mission: default layers, global view, 7-day window';
+    reset.disabled = activeId === null;
+    reset.addEventListener('click', () => {
+      this.hooks.onResetMission();
+      this.toggleMissionPopover(false);
+      this.syncMissionButton();
+      this.syncLayerChips();
+    });
+
+    this.missionPopover.replaceChildren(header, list, reset);
+  }
+
+  private applyMission(presetId: MissionPresetId): void {
+    this.hooks.onApplyMission(presetId);
+    this.toggleMissionPopover(false);
+    this.syncMissionButton();
+    // The mission machinery mutates layers/view/time outside the shell's own
+    // toggle path, so pull chips and window buttons back in sync explicitly.
+    this.syncLayerChips();
+    this.syncTimeChips(this.ctx.map?.getTimeRange() ?? this.ctx.currentTimeRange);
+    this.renderFeed();
   }
 
   private createPrimaryLayerChip(definition: LayerChipDef): HTMLButtonElement {
@@ -636,6 +758,7 @@ export class OpsShell {
       ['J / K', 'Move through live feed'],
       ['Enter', 'Inspect selected item'],
       ['L', 'Open map layers'],
+      ['M', 'Open missions'],
       ['Esc', 'Close the active surface'],
       ['?', 'Show this reference'],
     ];
@@ -744,9 +867,17 @@ export class OpsShell {
 
     this.boundOutsidePointer = (event) => {
       const target = event.target as Node | null;
-      if (!target || this.layerPopover?.hidden) return;
-      if (this.layerPopover?.contains(target) || this.moreLayersButton?.contains(target)) return;
-      this.toggleLayerPopover(false);
+      if (!target) return;
+      if (!this.layerPopover?.hidden
+        && !this.layerPopover?.contains(target)
+        && !this.moreLayersButton?.contains(target)) {
+        this.toggleLayerPopover(false);
+      }
+      if (!this.missionPopover?.hidden
+        && !this.missionPopover?.contains(target)
+        && !this.missionButton?.contains(target)) {
+        this.toggleMissionPopover(false);
+      }
     };
     document.addEventListener('pointerdown', this.boundOutsidePointer);
 
@@ -773,6 +904,9 @@ export class OpsShell {
       } else if (!this.layerPopover?.hidden) {
         event.preventDefault();
         this.toggleLayerPopover(false);
+      } else if (!this.missionPopover?.hidden) {
+        event.preventDefault();
+        this.toggleMissionPopover(false);
       } else if (this.selection) {
         event.preventDefault();
         this.closeInspector();
@@ -793,6 +927,9 @@ export class OpsShell {
     } else if (event.key.toLowerCase() === 'l') {
       event.preventDefault();
       this.toggleLayerPopover();
+    } else if (event.key.toLowerCase() === 'm') {
+      event.preventDefault();
+      this.toggleMissionPopover();
     } else if (event.key === '?') {
       event.preventDefault();
       this.toggleShortcuts(true);
@@ -1030,7 +1167,7 @@ export class OpsShell {
       corroboration.textContent = item.sourceCount > 1 ? `${item.sourceCount} outlets` : '';
       meta.append(source, when, corroboration);
       const title = el('div', 'title');
-      title.textContent = item.title;
+      title.textContent = feedDisplayTitle(item);
       button.append(meta, title);
       button.addEventListener('click', () => this.inspectFeedItem(item));
       this.feedList.appendChild(button);
@@ -1157,7 +1294,7 @@ export class OpsShell {
     }
     const content = this.beginInspector(
       item.alert ? 'Priority report' : 'Intelligence report',
-      item.title,
+      feedDisplayTitle(item),
       `${item.source} · ${formatTimeAgo(item.when)}`,
     );
 
@@ -1408,8 +1545,17 @@ export class OpsShell {
       try {
         const details = await intel.getSignalDetails();
         if (this.destroyed || this.selection !== selection || !detailsHost.isConnected) return;
-        this.renderCountrySignalDetails(detailsHost, details);
-        revealAsyncContent(detailsHost);
+        if (details) {
+          this.renderCountrySignalDetails(detailsHost, details);
+          revealAsyncContent(detailsHost);
+        } else {
+          // Aggregation offline: an explicit note, not silence — silence next
+          // to the summary counts reads as "no severity activity".
+          const note = el('p', 'ops-inspector-copy');
+          note.textContent = 'Severity totals unavailable — signal aggregation is offline.';
+          detailsHost.appendChild(note);
+          revealAsyncContent(detailsHost);
+        }
       } catch {
         // Signal-detail chunk unavailable — the summary above stands alone.
       }
@@ -1474,6 +1620,16 @@ export class OpsShell {
 
   private renderCountrySignalDetails(host: HTMLElement, details: CountryDeepDiveSignalDetails): void {
     const total = details.critical + details.high + details.medium + details.low;
+    if (details.incomplete && total === 0 && details.recentHigh.length === 0) {
+      // The bounded aggregator dropped this country's signals — absence is
+      // capacity loss, not observed quiet, so say so instead of staying blank.
+      const heading = el('h3', 'ops-inspector-section-title');
+      heading.textContent = 'Signal severity';
+      const note = el('p', 'ops-inspector-copy');
+      note.textContent = 'Severity totals unavailable — signal volume exceeded the 24h aggregation capacity. Absence here does not mean quiet.';
+      host.append(heading, note);
+      return;
+    }
     if (total === 0 && details.recentHigh.length === 0) return;
     const heading = el('h3', 'ops-inspector-section-title');
     heading.textContent = 'Signal severity';
@@ -1487,6 +1643,11 @@ export class OpsShell {
       fact('Low', String(details.low)),
     );
     host.appendChild(facts);
+    if (details.incomplete) {
+      const note = el('p', 'ops-inspector-copy');
+      note.textContent = 'May under-count: the 24h aggregator hit capacity and dropped older signals for this country.';
+      host.appendChild(note);
+    }
 
     if (details.recentHigh.length > 0) {
       const list = el('div', 'ops-country-recent');
@@ -1567,12 +1728,73 @@ export class OpsShell {
       row.appendChild(clear);
     }
 
-    if (this.watchSettingsOpen) row.appendChild(this.buildAlertSettings(prefs));
+    if (this.watchSettingsOpen) {
+      row.appendChild(this.buildAlertSettings(prefs));
+      if (this.watchAddFocusPending) {
+        this.watchAddFocusPending = false;
+        row.querySelector<HTMLInputElement>('.ops-watch-add-input')?.focus();
+      }
+    }
   }
 
   private buildAlertSettings(prefs: AlertPrefs): HTMLElement {
     const wrap = el('div', 'ops-watch-settings');
     const supported = typeof Notification !== 'undefined';
+
+    // Add-entry input: one field for both kinds. A two-letter value that
+    // resolves to a real region name is a country; everything else is a
+    // topic keyword. Matching stays substring-based (watchEntryMatches).
+    const addForm = el('form', 'ops-watch-add') as HTMLFormElement;
+    const addInput = el('input', 'ops-watch-add-input') as HTMLInputElement;
+    addInput.type = 'text';
+    addInput.placeholder = 'Add country code or keyword';
+    addInput.setAttribute('aria-label', 'Add a country code or topic keyword to the watchlist');
+    addInput.maxLength = 64;
+    const addButton = el('button', 'ops-watch-add-btn') as HTMLButtonElement;
+    addButton.type = 'submit';
+    addButton.textContent = 'Watch';
+    const feedback = el('p', 'ops-watch-feedback');
+    feedback.hidden = true;
+    feedback.setAttribute('role', 'status');
+    feedback.setAttribute('aria-live', 'polite');
+    const showSaveFailure = (message: string): void => {
+      feedback.textContent = message;
+      feedback.hidden = false;
+      addInput.setAttribute('aria-invalid', 'true');
+    };
+    addInput.addEventListener('input', () => {
+      feedback.hidden = true;
+      feedback.textContent = '';
+      addInput.removeAttribute('aria-invalid');
+    });
+    addForm.append(addInput, addButton);
+    addForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const value = addInput.value.trim();
+      if (!value) return;
+      const isCountry = /^[A-Za-z]{2}$/.test(value)
+        && regionName(value).toUpperCase() !== value.toUpperCase();
+      // Focus is restored after the subscription-driven re-render.
+      this.watchAddFocusPending = true;
+      if (isCountry) {
+        if (!isWatched('country', value)) {
+          if (!toggleCountry(value)) {
+            this.watchAddFocusPending = false;
+            showSaveFailure('Could not add this watch. The list may be full or browser storage unavailable.');
+            addInput.focus();
+          }
+        } else this.renderWatchlistStrip();
+      } else if (!isWatched('topic', value)) {
+        if (!toggleTopic(value)) {
+          this.watchAddFocusPending = false;
+          showSaveFailure('Could not add this watch. The list may be full or browser storage unavailable.');
+          addInput.focus();
+        }
+      } else {
+        this.renderWatchlistStrip();
+      }
+    });
+    wrap.append(addForm, feedback);
 
     const toggleLabel = el('label', 'ops-watch-setting');
     const checkbox = el('input') as HTMLInputElement;
@@ -1580,9 +1802,16 @@ export class OpsShell {
     checkbox.checked = prefs.enabled;
     checkbox.disabled = !supported;
     checkbox.addEventListener('change', () => {
-      setAlertPrefs({ enabled: checkbox.checked });
+      const requested = checkbox.checked;
+      setAlertPrefs({ enabled: requested });
+      const persisted = getAlertPrefs().enabled;
+      checkbox.checked = persisted;
+      if (persisted !== requested) {
+        showSaveFailure('Could not save alert settings because browser storage is unavailable.');
+        return;
+      }
       // Permission is only ever requested on an explicit toggle-on.
-      if (checkbox.checked && supported && Notification.permission === 'default') {
+      if (persisted && supported && Notification.permission === 'default') {
         void Notification.requestPermission().then(() => this.renderWatchlistStrip());
       }
     });
@@ -1598,7 +1827,14 @@ export class OpsShell {
     threshold.setAttribute('aria-label', 'Escalation alert threshold');
     threshold.addEventListener('change', () => {
       const parsed = Number.parseInt(threshold.value, 10);
-      if (Number.isFinite(parsed)) setAlertPrefs({ escalationThreshold: parsed });
+      if (!Number.isFinite(parsed)) return;
+      const requested = Math.min(100, Math.max(0, Math.round(parsed)));
+      setAlertPrefs({ escalationThreshold: requested });
+      const persisted = getAlertPrefs().escalationThreshold;
+      threshold.value = String(persisted);
+      if (persisted !== requested) {
+        showSaveFailure('Could not save alert settings because browser storage is unavailable.');
+      }
     });
     thresholdLabel.append(document.createTextNode('Threshold '), threshold);
 
@@ -1682,7 +1918,7 @@ export class OpsShell {
     if (this.briefLoading) return;
     this.briefLoading = true;
 
-    const loading = this.beginInspector('Cited brief', 'Compiling the current picture', 'Cached · public');
+    const loading = this.beginInspector('Cited brief', 'Compiling the current picture', 'Loading latest brief…');
     const loadingCopy = loadingState('Loading the latest validated brief and its evidence trail', 4);
     loading.appendChild(loadingCopy);
     this.inspector?.setAttribute('aria-busy', 'true');
@@ -1773,7 +2009,9 @@ export class OpsShell {
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         link.dataset.sourceIndex = String(source.index);
-        link.textContent = `[${source.index}] ${source.source} — ${source.title}`;
+        link.textContent = source.title
+          ? `[${source.index}] ${source.source} — ${source.title}`
+          : `[${source.index}] ${source.source}`;
         list.appendChild(link);
       }
       content.append(evidenceTitle, list);
@@ -1868,7 +2106,18 @@ export class OpsShell {
         box.appendChild(row);
       }
       const diffHost = el('div', 'ops-diff');
-      box.appendChild(actionButton('What changed vs yesterday', () => this.renderBriefDiff(diffHost)));
+      const diffActions = el('div', 'ops-inspector-actions');
+      diffActions.appendChild(actionButton('What changed vs yesterday', () => this.renderBriefDiff(diffHost)));
+      // "Since your last visit" is only offered when a previous visit is
+      // recorded — one disclosure action, sharing the same diff host.
+      const previousVisit = activityTracker.getPreviousVisitTime();
+      if (previousVisit > 0) {
+        diffActions.appendChild(actionButton(
+          'Since your last visit',
+          () => this.renderBriefDiffSinceLastVisit(diffHost, history.entries, previousVisit),
+        ));
+      }
+      box.appendChild(diffActions);
       box.appendChild(diffHost);
       revealAsyncContent(box);
       }).catch(() => {
@@ -1904,28 +2153,7 @@ export class OpsShell {
       const meta = el('p', 'ops-history-status');
       meta.textContent = baseline;
       host.appendChild(meta);
-
-      let lines = 0;
-      for (const text of diff.added) {
-        host.appendChild(diffLine('added', `+ ${text}`));
-        lines++;
-      }
-      for (const text of diff.removed) {
-        host.appendChild(diffLine('removed', `− ${text}`));
-        lines++;
-      }
-      for (const kept of diff.kept) {
-        if (!kept.changed) continue;
-        const line = diffLine('changed', `~ ${kept.text}`);
-        line.title = `Was: ${kept.previousText}`;
-        host.appendChild(line);
-        lines++;
-      }
-      if (lines === 0) {
-        const same = el('p', 'ops-history-status');
-        same.textContent = 'No substantive line changes vs yesterday.';
-        host.appendChild(same);
-      }
+      this.appendDiffLines(host, diff, 'No substantive line changes vs yesterday.');
       revealAsyncContent(host);
     }).catch(() => {
       if (this.destroyed || !host.isConnected) return;
@@ -1936,6 +2164,80 @@ export class OpsShell {
       host.appendChild(failed);
       revealAsyncContent(host);
     });
+  }
+
+  /**
+   * "Since your last visit": diff the newest archive entry at or before the
+   * recorded previous visit against the latest archived brief. Honest by
+   * construction: a snapshot from after the visit would already contain the
+   * changes the diff exists to surface, so only entries at/before the visit
+   * qualify; if none lands within the drift window, it says the baseline is
+   * unavailable instead of silently comparing across a different period, and
+   * the output is line-level brief changes — never claimed as complete event
+   * coverage.
+   */
+  private renderBriefDiffSinceLastVisit(
+    host: HTMLElement,
+    entries: Array<{ generatedAt: string }>,
+    previousVisitMs: number,
+  ): void {
+    host.replaceChildren();
+    const visitLabel = formatTimeAgo(new Date(previousVisitMs));
+    const baseline = pickSinceBaseline(entries, previousVisitMs);
+    if (!baseline) {
+      const missing = el('p', 'ops-history-status');
+      missing.textContent = `No archived brief from shortly before your last visit (${visitLabel}) — the archive covers a limited window. "What changed vs yesterday" is still available.`;
+      host.appendChild(missing);
+      revealAsyncContent(host);
+      return;
+    }
+
+    host.setAttribute('aria-busy', 'true');
+    host.appendChild(loadingState('Comparing against your last visit', 3, 'ops-history-loading'));
+
+    void fetchBriefDiff(baseline.generatedAt, 'latest').then((diff) => {
+      if (this.destroyed || !host.isConnected) return;
+      host.removeAttribute('aria-busy');
+      host.replaceChildren();
+      const meta = el('p', 'ops-history-status');
+      meta.textContent = `Baseline ${formatAbsoluteTime(coerceDate(baseline.generatedAt))} — the newest archived brief from before your last visit (${visitLabel}). Line-level brief changes, not a complete record of events.`;
+      host.appendChild(meta);
+      this.appendDiffLines(host, diff, 'No substantive line changes since your last visit.');
+      revealAsyncContent(host);
+    }).catch(() => {
+      if (this.destroyed || !host.isConnected) return;
+      host.removeAttribute('aria-busy');
+      host.replaceChildren();
+      const failed = el('p', 'ops-history-status');
+      failed.textContent = 'History unavailable';
+      host.appendChild(failed);
+      revealAsyncContent(host);
+    });
+  }
+
+  /** Shared +/−/~ line rendering for the yesterday and since-last-visit diffs. */
+  private appendDiffLines(host: HTMLElement, diff: BriefDiffResponse, emptyText: string): void {
+    let lines = 0;
+    for (const text of diff.added) {
+      host.appendChild(diffLine('added', `+ ${text}`));
+      lines++;
+    }
+    for (const text of diff.removed) {
+      host.appendChild(diffLine('removed', `− ${text}`));
+      lines++;
+    }
+    for (const kept of diff.kept) {
+      if (!kept.changed) continue;
+      const line = diffLine('changed', `~ ${kept.text}`);
+      line.title = `Was: ${kept.previousText}`;
+      host.appendChild(line);
+      lines++;
+    }
+    if (lines === 0) {
+      const same = el('p', 'ops-history-status');
+      same.textContent = emptyText;
+      host.appendChild(same);
+    }
   }
 
   private async inspectArchivedBrief(at: string): Promise<void> {
@@ -2010,7 +2312,9 @@ export class OpsShell {
         link.href = source.url;
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
-        link.textContent = `[${source.index}] ${source.source} — ${source.title}`;
+        link.textContent = source.title
+          ? `[${source.index}] ${source.source} — ${source.title}`
+          : `[${source.index}] ${source.source}`;
         list.appendChild(link);
       }
       content.append(evidenceTitle, list);
@@ -2631,6 +2935,13 @@ function formatTimelineDate(when: Date): string {
     timeZone: 'UTC',
     hour12: false,
   }).format(when);
+}
+
+// Ingestion (rss.ts, data-loader digest mapping) drops titleless items, so an
+// empty title here means an unnormalized cache survivor — render a labelled
+// placeholder rather than a blank row (same idiom as threat-timeline-utils).
+export function feedDisplayTitle(item: Pick<OpsFeedItem, 'title'>): string {
+  return item.title.trim() || 'Untitled intelligence item';
 }
 
 function feedItemFromNews(item: NewsItem): OpsFeedItem {

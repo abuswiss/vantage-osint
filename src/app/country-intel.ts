@@ -24,7 +24,8 @@ import {
   iso3ToIso2Code,
   nameToCountryCode,
 } from '@/services/country-geometry';
-import { getCountryData, TIER1_COUNTRIES, type CountryScore } from '@/services/country-instability';
+import { getCountryData, hasAnyIntelligenceData, TIER1_COUNTRIES, type CountryScore } from '@/services/country-instability';
+import { buildCountryBriefCoverage, type CountryBriefCoverage } from '@/services/country-signal-coverage';
 import { getCachedCountryScore, normalizeCiiCountryCode } from '@/services/cached-risk-scores';
 import { dataFreshness } from '@/services/data-freshness';
 import { fetchCountryMarkets } from '@/services/prediction';
@@ -338,6 +339,7 @@ export class CountryIntelManager implements AppModule {
 
       page.show(country, code, score, signals);
       pageShown = true;
+      page.updateSignalCoverage?.(this.buildSignalCoverage());
       const updateChinaSummary = (data: ChinaCountrySummaryData): void => {
         if (!isChina || token !== this.briefRequestToken || this.ctx.countryBriefPage?.getCode()?.toUpperCase() !== 'CN') return;
         this.ctx.countryBriefPage.updateChinaCountrySummary?.(data);
@@ -976,10 +978,23 @@ export class CountryIntelManager implements AppModule {
     const score = getCachedCountryScore(scoreCode);
     void this.getCountrySignals(code, name)
       .then((signals) => {
-        if (page.isVisible() && page.getCode() === code) page.updateScore?.(score, signals);
+        if (page.isVisible() && page.getCode() === code) {
+          // updateScore refreshes header AND chips; refresh severity totals
+          // and coverage in the same pass so the surfaces advance together
+          // instead of drifting apart over the life of an open brief.
+          page.updateScore?.(score, signals);
+          page.updateSignalCoverage?.(this.buildSignalCoverage());
+        }
       })
       .catch((err) => {
         console.warn('[CountryBrief] refreshOpenBrief signal fetch failed:', err);
+      });
+    void this.buildSignalDetails(code)
+      .then((details) => {
+        if (page.isVisible() && page.getCode() === code) page.updateSignalDetails?.(details);
+      })
+      .catch((err) => {
+        console.warn('[CountryBrief] refreshOpenBrief severity refresh failed:', err);
       });
   }
 
@@ -1047,6 +1062,16 @@ export class CountryIntelManager implements AppModule {
     lines.push(
       `Signals: critical_news=${signals.criticalNews}, protests=${signals.protests}, active_strikes=${signals.activeStrikes}, military_flights=${signals.militaryFlights}, military_vessels=${signals.militaryVessels}, outages=${signals.outages}, aviation_disruptions=${signals.aviationDisruptions}, travel_advisories=${signals.travelAdvisories}, oref_sirens=${signals.orefSirens}, oref_24h=${signals.orefHistory24h}, gps_jamming_hexes=${signals.gpsJammingHexes}, ais_disruptions=${signals.aisDisruptions}, satellite_fires=${signals.satelliteFires}, radiation_anomalies=${signals.radiationAnomalies}, temporal_anomalies=${signals.temporalAnomalies}, cyber_threats=${signals.cyberThreats}, earthquakes=${signals.earthquakes}, conflict_events=${signals.conflictEvents}, thermal_escalations=${signals.thermalEscalations}`,
     );
+
+    // The narrative must not describe a coverage gap as calm: name the
+    // domains whose feeds are unavailable so zero counts above are read as
+    // unknown, not observed quiet.
+    const coverage = this.buildSignalCoverage();
+    if (coverage.hasGaps) {
+      lines.push(
+        `Signal coverage unavailable for: ${coverage.unavailableDomains.join(', ')} — treat these domains as unknown, not zero or calm.`,
+      );
+    }
 
     if (signals.travelAdvisoryMaxLevel) {
       lines.push(`Travel advisory max level: ${signals.travelAdvisoryMaxLevel}`);
@@ -1232,7 +1257,28 @@ export class CountryIntelManager implements AppModule {
     }
 
     this.ctx.countryTimeline = new CountryTimeline(mount);
-    this.ctx.countryTimeline.render(events.filter(e => e.timestamp >= sevenDaysAgo));
+    this.ctx.countryTimeline.render(events.filter(e => e.timestamp >= sevenDaysAgo), {
+      // Lanes with no backing source say "coverage unavailable", never
+      // "no events in 7 days".
+      unavailableLanes: this.buildSignalCoverage().timelineUnavailableLanes,
+    });
+  }
+
+  /**
+   * Which country-brief data sources are actually loaded right now. One model
+   * feeds every surface (chips note, timeline lanes, narrative context) so
+   * "unavailable" can never render as "zero" on one card and "quiet" on
+   * another.
+   */
+  buildSignalCoverage(): CountryBriefCoverage {
+    return buildCountryBriefCoverage({
+      news: this.ctx.allNews.length > 0 || this.ctx.latestClusters.length > 0,
+      protests: this.ctx.intelligenceCache.protests !== undefined,
+      military: this.ctx.intelligenceCache.military !== undefined,
+      outages: this.ctx.intelligenceCache.outages !== undefined,
+      earthquakes: this.ctx.intelligenceCache.earthquakes !== undefined,
+      cii: hasAnyIntelligenceData(),
+    });
   }
 
   async getCountrySignals(code: string, country: string): Promise<CountryBriefSignals> {
@@ -1288,13 +1334,18 @@ export class CountryIntelManager implements AppModule {
     let militaryVessels = 0;
     let militaryFlightsInCountry = 0;
     let militaryVesselsInCountry = 0;
+    let militaryVesselsApproximate = false;
     if (this.ctx.intelligenceCache.military) {
       militaryFlights = this.ctx.intelligenceCache.military.flights.filter((f) =>
         hasGeoShape ? this.isNearCountry(f.lat, f.lon, code) : f.operatorCountry?.toUpperCase() === code
       ).length;
-      militaryVessels = this.ctx.intelligenceCache.military.vessels.filter((v) =>
+      const nearVessels = this.ctx.intelligenceCache.military.vessels.filter((v) =>
         hasGeoShape ? this.isNearCountry(v.lat, v.lon, code) : v.operatorCountry?.toUpperCase() === code
-      ).length;
+      );
+      militaryVessels = nearVessels.length;
+      // USNI-derived positions are synthetic (report-inferred, scattered) —
+      // counts that include them must be disclosed as approximate.
+      militaryVesselsApproximate = nearVessels.some((v) => v.usniSource === true);
       militaryFlightsInCountry = this.ctx.intelligenceCache.military.flights.filter((f) =>
         hasGeoShape ? this.isInCountry(f.lat, f.lon, code) : f.operatorCountry?.toUpperCase() === code
       ).length;
@@ -1400,6 +1451,7 @@ export class CountryIntelManager implements AppModule {
       thermalEscalations,
       sanctionsDesignations,
       sanctionsNewDesignations,
+      militaryVesselsApproximate,
     };
   }
 
@@ -1413,10 +1465,29 @@ export class CountryIntelManager implements AppModule {
     return 1;
   }
 
-  private async buildSignalDetails(code: string): Promise<CountryDeepDiveSignalDetails> {
-    const cluster = (await getSignalAggregator()).getCountryClusters().find((entry) => entry.country === code);
+  /**
+   * Severity totals from the 24h signal aggregator. Returns null when the
+   * aggregator chunk itself is unavailable — "no aggregation" and "aggregated
+   * and quiet" must not both render as zeros.
+   */
+  private async buildSignalDetails(code: string): Promise<CountryDeepDiveSignalDetails | null> {
+    let clusters: CountrySignalCluster[];
+    let capEvicted = false;
+    try {
+      const aggregator = await getSignalAggregator();
+      clusters = aggregator.getCountryClusters();
+      capEvicted = aggregator.wasCountryCapEvicted(code);
+    } catch (err) {
+      console.warn('[CountryBrief] signal aggregator unavailable for severity totals:', err);
+      return null;
+    }
+    const cluster = clusters.find((entry) => entry.country === code);
     if (!cluster) {
-      return { critical: 0, high: 0, medium: 0, low: 0, recentHigh: [] };
+      // No cluster means either a true quiet state (honest zeros) or every
+      // signal for the country was dropped by the bounded cap — `incomplete`
+      // carries that distinction so renderers never show capacity loss as
+      // calm.
+      return { critical: 0, high: 0, medium: 0, low: 0, recentHigh: [], ...(capEvicted && { incomplete: true }) };
     }
 
     const details: CountryDeepDiveSignalDetails = {
@@ -1425,6 +1496,7 @@ export class CountryIntelManager implements AppModule {
       medium: 0,
       low: 0,
       recentHigh: [],
+      ...(capEvicted && { incomplete: true }),
     };
 
     const rankedSignals = [...cluster.signals]

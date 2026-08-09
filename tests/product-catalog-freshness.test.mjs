@@ -20,6 +20,7 @@ const PRODUCT_ID_ALLOWED_EXTENSIONS = ['.ts', '.tsx', '.mjs', '.js'];
 const PRODUCT_ID_EXCLUDE_PATTERNS = [
   'node_modules',
   'dist/',
+  '.vercel/',
   '.git',
   '.claude/worktrees/',
   'convex/_generated/',

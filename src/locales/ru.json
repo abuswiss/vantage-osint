@@ -106,7 +106,8 @@
       "activeSirens": "Активные сирены",
       "sirens24h": "Сирены / 24ч",
       "aviationDisruptions": "Авиационные сбои",
-      "gpsJammingZones": "Зоны глушения GPS"
+      "gpsJammingZones": "Зоны глушения GPS",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "fallback": {
       "instabilityIndex": "**Индекс нестабильности: {{score}}/100** ({{level}}, {{trend}})",
@@ -181,7 +182,20 @@
       "corridorConditions": "Условия в коридоре",
       "activityNowcast": "Нокаст активности",
       "decisionSignalsUnavailable": "Снимок сигналов принятия решений Китая в настоящее время недоступен."
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "МИР",
@@ -727,7 +741,11 @@
         "base": "Военные базы",
         "nuclear": "Ближайшие ядерные",
         "port": "Порты"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -997,12 +1015,7 @@
       "positions": "Позиции авиации",
       "navalVesselsLoading": "Военные корабли",
       "theaterAnalysis": "Анализ театра",
-      "connectingStreams": "Подключение к потокам ADS-B и AIS в реальном времени...",
       "initialLoadNote": "Первая загрузка занимает 30-60 секунд, пока накапливаются данные отслеживания",
-      "acquiringData": "Получение данных",
-      "acquiringDesc": "Подключение к сети ADS-B для получения данных военных полётов. Первая загрузка может занять 30-60 секунд.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "Поток AIS судов",
       "retryNow": "Повторить сейчас",
       "feedRateLimited": "Ограничение частоты запросов",
       "rateLimitedDesc": "API OpenSky имеет лимиты запросов. Панель автоматически повторит попытку через несколько минут, или вы можете попробовать сейчас.",
@@ -1034,7 +1047,17 @@
       },
       "emojiKeyLabel": "Легенда эмодзи",
       "emojiKeyAir": "Авиационные активы",
-      "emojiKeyNaval": "Военно-морские активы"
+      "emojiKeyNaval": "Военно-морские активы",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareLink": "Поделиться ссылкой",
@@ -1359,7 +1382,8 @@
       "provenanceTitle": "Происхождение охвата: количество полученных историй и отдельных источников, из которых была выбрана эта сводка",
       "compiledFrom": "Собрано из {{stories}} историй из {{sources}} источников",
       "briefFreshness": "Сгенерировано {{minutes}}м назад · последний источник {{hours}}ч старый",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "settings": {
       "exportSettings": "Экспорт настроек",
@@ -1676,7 +1700,8 @@
     },
     "countryTimeline": {
       "now": "сейчас",
-      "noEventsIn7Days": "Нет событий за 7 дней"
+      "noEventsIn7Days": "Нет событий за 7 дней",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>Новостная разведка</strong> Мониторинг мировых новостей в реальном времени:<ul><li>Курированные тематические категории (конфликты, кибер и др.)</li><li>Статьи на 100+ языках с переводом</li><li>Обновление каждые 15 минут</li><li>14-day media tone &amp; volume trend per topic</li></ul>Источник: GDELT Project (gdeltproject.org)"

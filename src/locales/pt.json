@@ -408,7 +408,11 @@
         "base": "Bases Militares",
         "nuclear": "Nuclear próximo",
         "port": "Portos"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     },
     "story": {
       "shareTitle": "Compartilhar história",
@@ -821,12 +825,7 @@
       "positions": "Posições de aeronaves",
       "navalVesselsLoading": "Embarcações navais",
       "theaterAnalysis": "Análise do teatro",
-      "connectingStreams": "Conectando aos fluxos ADS-B e AIS ao vivo...",
       "initialLoadNote": "O carregamento inicial leva 30-60 segundos enquanto os dados de rastreamento se acumulam",
-      "acquiringData": "Adquirindo dados",
-      "acquiringDesc": "Conectando à rede ADS-B para dados de voos militares. Pode levar 30-60 segundos no primeiro carregamento.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "AIS Vessel Stream",
       "retryNow": "Tentar novamente",
       "feedRateLimited": "Feed com limite de requisições",
       "rateLimitedDesc": "A API OpenSky tem limites de requisições. O painel tentará novamente automaticamente em alguns minutos, ou você pode tentar agora.",
@@ -858,7 +857,17 @@
       },
       "emojiKeyLabel": "Legenda de Emoji",
       "emojiKeyAir": "Ativos Aéreos",
-      "emojiKeyNaval": "Ativos Navais"
+      "emojiKeyNaval": "Ativos Navais",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "techEvents": {
       "loading": "Carregando eventos de tecnologia...",
@@ -1075,7 +1084,8 @@
     },
     "countryTimeline": {
       "now": "agora",
-      "noEventsIn7Days": "Nenhum evento em 7 dias"
+      "noEventsIn7Days": "Nenhum evento em 7 dias",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "cii": {
       "infoTooltip": "<strong>Metodologia</strong><ul><li><strong>U</strong>descanso: desordem civil e protestos</li><li><strong>C</strong>conflito: intensidade do conflito armado</li><li><strong>S</strong>segurança: voos militares/navios sobrevoados território</li><li><strong>I</strong>nformação: velocidade das notícias e correlação do ponto focal</li><li>Aumento de proximidade do ponto de acesso (locais estratégicos)</li></ul><em>U:C:S:I valores mostram pontuações de componentes.</em> A detecção de ponto focal correlaciona entidades de notícias com sinais de mapa para pontuação precisa.",
@@ -1281,7 +1291,8 @@
       "provenanceTitle": "Proveniência de cobertura: quantas histórias ingeridas e fontes distintas foram selecionadas para este resumo",
       "compiledFrom": "Compilado de {{stories}} histórias em {{sources}} fontes",
       "briefFreshness": "Gerado há {{minutes}}m · fonte mais recente com {{hours}}h",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "techHubs": {
       "infoTooltip": "<strong>Atividade do Tech Hub</strong><br>Mostra os hubs de tecnologia com mais atividade de notícias.<br><br><em>Níveis de atividade:</em><br>• <span style=\"color: {{highColor}}\">Alto</span> — Notícias de última hora ou pontuação acima de 50<br>• <span style=\"color: {{elevatedColor}}\">Elevado</span> — Pontuação 20-49<br>• <span style=\"color: {{lowColor}}\">Baixo</span> — Pontuação abaixo de 20<br><br>Clique em um hub para ampliar sua localização."
@@ -3125,7 +3136,8 @@
       "activeSirens": "Sirenes ativas",
       "sirens24h": "Sirenes / 24h",
       "aviationDisruptions": "Perturbações aéreas",
-      "gpsJammingZones": "Zonas de interferência GPS"
+      "gpsJammingZones": "Zonas de interferência GPS",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "countryFacts": "Dados do país",
     "loadingFacts": "Carregando dados do país...",
@@ -3191,7 +3203,20 @@
       "corridorConditions": "Condições do corredor",
       "activityNowcast": "Previsão de atividade",
       "decisionSignalsUnavailable": "O instantâneo de sinais de decisão da China está atualmente indisponível."
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "preferences": {
     "display": "Tela",

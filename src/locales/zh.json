@@ -106,7 +106,8 @@
       "activeSirens": "警报启动中",
       "sirens24h": "警报 / 24小时",
       "aviationDisruptions": "航空中断",
-      "gpsJammingZones": "GPS干扰区域"
+      "gpsJammingZones": "GPS干扰区域",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "fallback": {
       "instabilityIndex": "**不稳定指数：{{score}}/100**（{{level}}，{{trend}}）",
@@ -177,7 +178,20 @@
       "corridorConditions": "通道状况",
       "activityNowcast": "活动即时预测",
       "decisionSignalsUnavailable": "中国决策信号快照当前不可用。"
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "世界",
@@ -723,7 +737,11 @@
         "base": "军事基地",
         "nuclear": "附近核设施",
         "port": "港口"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -993,12 +1011,7 @@
       "positions": "飞机位置",
       "navalVesselsLoading": "海军舰艇",
       "theaterAnalysis": "战区分析",
-      "connectingStreams": "正在连接ADS-B和AIS实时数据流...",
       "initialLoadNote": "初始加载需要30-60秒以积累追踪数据",
-      "acquiringData": "正在获取数据",
-      "acquiringDesc": "正在连接ADS-B网络获取军用飞行数据。首次加载可能需要30-60秒。",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "AIS船舶数据流",
       "retryNow": "立即重试",
       "feedRateLimited": "数据源请求受限",
       "rateLimitedDesc": "OpenSky API有请求限制。面板将在几分钟后自动重试，或您可以立即重试。",
@@ -1030,7 +1043,17 @@
       },
       "emojiKeyLabel": "表情符号图例",
       "emojiKeyAir": "空中资产",
-      "emojiKeyNaval": "海军资产"
+      "emojiKeyNaval": "海军资产",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareLink": "分享链接",
@@ -1353,7 +1376,8 @@
       "compiledFrom": "编译自 {{stories}} 条故事和 {{sources}} 个来源",
       "provenanceTitle": "覆盖来源：此摘要选自多少条摄取的故事和不同的来源",
       "briefFreshness": "生成于 {{minutes}}m 前 · 最新来源 {{hours}}h 前",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "settings": {
       "exportSettings": "导出设置",
@@ -1670,7 +1694,8 @@
     },
     "countryTimeline": {
       "now": "现在",
-      "noEventsIn7Days": "7天内无事件"
+      "noEventsIn7Days": "7天内无事件",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>新闻情报</strong>实时全球新闻监测：<ul><li>精选主题分类（冲突、网络安全等）</li><li>100+语言的文章已翻译</li><li>每15分钟更新</li><li>14-day media tone &amp; volume trend per topic</li></ul>来源：GDELT Project (gdeltproject.org)"

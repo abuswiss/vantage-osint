@@ -116,7 +116,8 @@
       "activeSirens": "Aktivní sirény",
       "sirens24h": "Sirény / 24h",
       "aviationDisruptions": "Letecké poruchy",
-      "gpsJammingZones": "Zóny rušení GPS"
+      "gpsJammingZones": "Zóny rušení GPS",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "countryFacts": "Fakta o zemi",
     "loadingFacts": "Načítání faktů o zemi...",
@@ -181,7 +182,20 @@
       "corridorConditions": "Podmínky koridoru",
       "activityNowcast": "Nowcast aktivity",
       "decisionSignalsUnavailable": "Snímek rozhodovacích signálů Číny je momentálně nedostupný."
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "SVĚT",
@@ -727,7 +741,11 @@
         "base": "Vojenské základny",
         "nuclear": "Blízká jaderná",
         "port": "Přístavy"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -985,12 +1003,7 @@
       "positions": "Pozice letadel",
       "navalVesselsLoading": "Námořní plavidla",
       "theaterAnalysis": "Analýza válčiště",
-      "connectingStreams": "Připojování k živým streamům ADS-B a AIS...",
       "initialLoadNote": "Úvodní načtení trvá 30-60 sekund, než se nahromadí sledovací data",
-      "acquiringData": "Získávání dat",
-      "acquiringDesc": "Připojování k síti ADS-B pro vojenská letová data. Při prvním načtení to může trvat 30-60 sekund.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "AIS Stream Plavidel",
       "retryNow": "Zkusit znovu",
       "feedRateLimited": "Zdroj omezen rychlostí (Rate Limited)",
       "rateLimitedDesc": "API OpenSky má limity požadavků. Panel to zkusí znovu za několik minut automaticky, nebo to můžete zkusit hned.",
@@ -1022,7 +1035,17 @@
       },
       "emojiKeyLabel": "Legenda emojis",
       "emojiKeyAir": "Letecké prostředky",
-      "emojiKeyNaval": "Námořní prostředky"
+      "emojiKeyNaval": "Námořní prostředky",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareStory": "Sdílet příběh",
@@ -1347,7 +1370,8 @@
       "provenanceTitle": "Původ pokrytí: počet příjatých příběhů a odlišných zdrojů, ze kterých byl tento přehled vybrán",
       "compiledFrom": "Sestaveno z {{stories}} příběhů z {{sources}} zdrojů",
       "briefFreshness": "Vygenerováno před {{minutes}}m · nejnovější zdroj starý {{hours}}h",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "cascade": {
       "filters": {
@@ -1655,7 +1679,8 @@
     },
     "countryTimeline": {
       "now": "nyní",
-      "noEventsIn7Days": "Žádné události za 7 dní"
+      "noEventsIn7Days": "Žádné události za 7 dní",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>Zpravodajství o zprávách</strong> Globální sledování zpráv v reálném čase:<ul><li>Vybrané tematické kategorie (konflikty, kybernetika atd.)</li><li>Články ze 100+ jazyků přeloženy</li><li>Aktualizace každých 15 minut</li><li>14-day media tone &amp; volume trend per topic</li></ul>Zdroj: Projekt GDELT (gdeltproject.org)"

@@ -285,7 +285,8 @@ body.ops-mode .ops-top-right .ops-brief-button:hover,
 body.ops-mode .ops-top-right .ops-brief-button:focus-visible {
   background: color-mix(in srgb, var(--ops-accent) 18%, transparent);
 }
-.ops-more-layers {
+.ops-more-layers,
+.ops-mission-button {
   flex: 0 0 auto;
   padding: 5px 12px;
   border: none;
@@ -297,11 +298,13 @@ body.ops-mode .ops-top-right .ops-brief-button:focus-visible {
   cursor: pointer;
   transition: color var(--motion-fast), background var(--motion-fast);
 }
-.ops-more-layers:hover {
+.ops-more-layers:hover,
+.ops-mission-button:hover {
   color: var(--ops-text);
   background: var(--overlay-subtle, rgba(255, 255, 255, 0.025));
 }
-.ops-more-layers[aria-expanded='true'] {
+.ops-more-layers[aria-expanded='true'],
+.ops-mission-button[aria-expanded='true'] {
   color: var(--ops-text);
   background: var(--ops-accent-soft);
 }
@@ -336,6 +339,62 @@ body.ops-mode .ops-top-right .ops-brief-button:focus-visible {
     transform: translateY(-5px) scale(0.99);
   }
 }
+/* Missions popover shares the layer-popover base; it is a short list, so
+   keep it compact instead of the full-width layer grid. */
+.ops-mission-popover {
+  left: 232px;
+  width: min(360px, calc(100vw - 24px));
+}
+.ops-mission-list {
+  display: grid;
+  gap: 4px;
+}
+.ops-mission-option {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--ops-border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ops-text);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--motion-fast), border-color var(--motion-fast);
+}
+.ops-mission-option:hover {
+  background: var(--overlay-subtle, rgba(255, 255, 255, 0.025));
+}
+.ops-mission-option[aria-pressed='true'] {
+  border-color: var(--ops-accent);
+  background: var(--ops-accent-soft);
+}
+.ops-mission-option-label {
+  font: 600 12px/1.3 var(--font-body);
+}
+.ops-mission-option-desc {
+  color: var(--ops-text-dim);
+  font: 400 11px/1.4 var(--font-body);
+}
+.ops-mission-reset {
+  margin-top: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--ops-border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ops-text-dim);
+  font: 500 11px/1.4 var(--font-body);
+  cursor: pointer;
+  transition: color var(--motion-fast), background var(--motion-fast);
+}
+.ops-mission-reset:hover:not(:disabled) {
+  color: var(--ops-text);
+  background: var(--overlay-subtle, rgba(255, 255, 255, 0.025));
+}
+.ops-mission-reset:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .ops-layer-popover-head {
   display: flex;
   align-items: center;
@@ -1430,6 +1489,44 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   color: var(--ops-text-faint);
   font-size: 11px;
 }
+.ops-watch-add {
+  flex-basis: 100%;
+  display: flex;
+  gap: 6px;
+}
+.ops-watch-add-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--ops-border);
+  border-radius: var(--r-sm);
+  background: var(--ops-bg-raised);
+  color: var(--ops-text);
+  font: 500 11px/1.4 var(--font-body);
+}
+.ops-watch-add-input::placeholder { color: var(--ops-text-faint); }
+.ops-watch-add-input[aria-invalid='true'] { border-color: var(--sev-high-text); }
+.ops-watch-add-btn {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border: 1px solid var(--ops-border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ops-text-dim);
+  font: 500 11px/1.4 var(--font-body);
+  cursor: pointer;
+  transition: color var(--motion-fast), background var(--motion-fast);
+}
+.ops-watch-add-btn:hover {
+  color: var(--ops-text);
+  background: var(--overlay-subtle, rgba(255, 255, 255, 0.025));
+}
+.ops-watch-feedback {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--sev-high-text);
+  font: 500 10px/1.4 var(--font-body);
+}
 
 /* ---- Loading states ----
    Reserve the shape of the content that will arrive. The label remains real
@@ -1643,7 +1740,12 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
 .ops-citation:focus-visible,
 .ops-brief-button:focus-visible,
 .ops-more-layers:focus-visible,
+.ops-mission-button:focus-visible,
 .ops-layer-option:focus-visible,
+.ops-mission-option:focus-visible,
+.ops-mission-reset:focus-visible,
+.ops-watch-add-input:focus-visible,
+.ops-watch-add-btn:focus-visible,
 .ops-icon-btn:focus-visible,
 .ops-help-btn:focus-visible,
 .ops-hud:focus-visible,
@@ -1713,6 +1815,7 @@ body.ops-mode .ops-top-right button:focus-visible {
   .ops-feed-order-button,
   .ops-brief-preview,
   .ops-more-layers,
+  .ops-mission-button,
   .ops-feed-item,
   .ops-hud,
   .ops-timeline-bar,
@@ -1725,6 +1828,9 @@ body.ops-mode .ops-top-right button:focus-visible {
   .ops-watch-chip-label,
   .ops-watch-remove,
   .ops-watch-clear,
+  .ops-mission-option,
+  .ops-mission-reset,
+  .ops-watch-add-btn,
   .ops-history-entry {
     transition: none;
   }

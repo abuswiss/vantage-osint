@@ -42,6 +42,7 @@ import type {
   CountryEnergyProfileData,
   CountryPortActivityData,
 } from './CountryBriefPanel';
+import type { CountryBriefCoverage } from '@/services/country-signal-coverage';
 import type {
   GetCountryChokepointIndexResponse,
   SectorExposureSummary,
@@ -133,6 +134,8 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
   private maximizeButton: HTMLButtonElement | null = null;
   private currentHeadlineCount = 0;
   private signalsBody: HTMLElement | null = null;
+  private signalChipsEl: HTMLElement | null = null;
+  private signalCoverageEl: HTMLElement | null = null;
   private signalBreakdownBody: HTMLElement | null = null;
   private signalRecentBody: HTMLElement | null = null;
   private newsBody: HTMLElement | null = null;
@@ -368,10 +371,37 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     return this.timelineBody;
   }
 
-  public updateSignalDetails(details: CountryDeepDiveSignalDetails): void {
+  public updateSignalDetails(details: CountryDeepDiveSignalDetails | null): void {
     if (!this.signalBreakdownBody || !this.signalRecentBody) return;
+    if (!details) {
+      // Aggregation offline is not "0 critical / 0 high" — say so.
+      this.signalBreakdownBody.replaceChildren(this.makeEmpty(t('countryBrief.severityUnavailable')));
+      this.signalRecentBody.replaceChildren();
+      return;
+    }
+    if (details.incomplete && details.critical + details.high + details.medium + details.low === 0) {
+      // Every signal for this country was dropped by the bounded 24h cap —
+      // zeros here would read as observed quiet, which we cannot claim.
+      this.signalBreakdownBody.replaceChildren(this.makeEmpty(t('countryBrief.severityOmitted')));
+      this.signalRecentBody.replaceChildren();
+      return;
+    }
     this.renderSignalBreakdown(details);
     this.renderRecentSignals(details.recentHigh);
+  }
+
+  public updateSignalCoverage(coverage: CountryBriefCoverage): void {
+    if (!this.signalCoverageEl) return;
+    if (!coverage.hasGaps) {
+      this.signalCoverageEl.hidden = true;
+      this.signalCoverageEl.textContent = '';
+      return;
+    }
+    const domains = coverage.unavailableDomains
+      .map((domain) => t(`countryBrief.coverageDomains.${domain}`))
+      .join(', ');
+    this.signalCoverageEl.hidden = false;
+    this.signalCoverageEl.textContent = t('countryBrief.coverageGaps', { domains });
   }
 
   public updateNews(headlines: NewsItem[]): void {
@@ -600,7 +630,24 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     if (!this.factsBody) return;
     this.factsBody.replaceChildren();
 
-    if (!data.headOfState && !data.wikipediaSummary && data.population === 0 && !data.capital) {
+    const hasPopulation = Number.isFinite(data.population) && data.population > 0;
+    const hasArea = Number.isFinite(data.areaSqKm) && data.areaSqKm > 0;
+    const capital = data.capital.trim();
+    const headOfState = data.headOfState.trim();
+    const languages = data.languages.map((value) => value.trim()).filter(Boolean);
+    const currencies = data.currencies.map((value) => value.trim()).filter(Boolean);
+    const hasAnyFact = Boolean(
+      headOfState
+      || data.wikipediaSummary
+      || data.wikipediaThumbnailUrl
+      || hasPopulation
+      || capital
+      || hasArea
+      || languages.length
+      || currencies.length,
+    );
+
+    if (!hasAnyFact) {
       this.factsBody.append(this.makeEmpty(t('countryBrief.noFacts')));
       return;
     }
@@ -622,22 +669,24 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
 
     const grid = this.el('div', 'cdp-facts-grid');
 
-    const popStr = data.population >= 1_000_000_000
-      ? `${(data.population / 1_000_000_000).toFixed(1)}B`
-      : data.population >= 1_000_000
-        ? `${(data.population / 1_000_000).toFixed(1)}M`
-        : data.population.toLocaleString();
-    grid.append(this.factItem(t('countryBrief.facts.population'), popStr));
-    grid.append(this.factItem(t('countryBrief.facts.capital'), data.capital));
-    grid.append(this.factItem(t('countryBrief.facts.area'), `${data.areaSqKm.toLocaleString()} km\u00B2`));
+    if (hasPopulation) {
+      const popStr = data.population >= 1_000_000_000
+        ? `${(data.population / 1_000_000_000).toFixed(1)}B`
+        : data.population >= 1_000_000
+          ? `${(data.population / 1_000_000).toFixed(1)}M`
+          : data.population.toLocaleString();
+      grid.append(this.factItem(t('countryBrief.facts.population'), popStr));
+    }
+    if (capital) grid.append(this.factItem(t('countryBrief.facts.capital'), capital));
+    if (hasArea) grid.append(this.factItem(t('countryBrief.facts.area'), `${data.areaSqKm.toLocaleString()} km\u00B2`));
 
     const rawTitle = data.headOfStateTitle || '';
     const hosLabel = rawTitle.length > 30 ? t('countryBrief.facts.headOfState') : (rawTitle || t('countryBrief.facts.headOfState'));
-    grid.append(this.factItem(hosLabel, data.headOfState));
-    grid.append(this.factItem(t('countryBrief.facts.languages'), data.languages.join(', ')));
-    grid.append(this.factItem(t('countryBrief.facts.currencies'), data.currencies.join(', ')));
+    if (headOfState) grid.append(this.factItem(hosLabel, headOfState));
+    if (languages.length > 0) grid.append(this.factItem(t('countryBrief.facts.languages'), languages.join(', ')));
+    if (currencies.length > 0) grid.append(this.factItem(t('countryBrief.facts.currencies'), currencies.join(', ')));
 
-    this.factsBody.append(grid);
+    if (grid.childElementCount > 0) this.factsBody.append(grid);
   }
 
   public updateHousingCycle(data: {
@@ -2276,7 +2325,14 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     return wrapper;
   }
 
-  public updateScore(score: CountryScore | null, _signals: CountryBriefSignals): void {
+  public updateScore(score: CountryScore | null, signals: CountryBriefSignals): void {
+    // Keep the signal chips in step with the header on refresh — the panel
+    // previously updated only the CII header, so chips/totals aged in place
+    // and drifted from it for the life of the open brief.
+    if (this.signalChipsEl) {
+      const nextChips = this.renderSignalChips(signals);
+      this.signalChipsEl.replaceChildren(...Array.from(nextChips.children));
+    }
     if (!this.scoreCard) return;
     // Partial DOM update: score number, level color, trend, component bars only
     const top = this.scoreCard.firstElementChild as HTMLElement | null;
@@ -2390,11 +2446,16 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     const text = this.el('div', 'cdp-assessment-text cdp-summary-only');
     setTrustedHtml(text, trustedHtml(summaryHtml, "legacy direct innerHTML migration"));
 
+    // Same provenance vocabulary as the brief footer: "Grounded summary"
+    // (locally assembled because the AI brief was unavailable) beats a bare
+    // "Fallback", and each state carries its explanation as a tooltip.
     const metaTokens: string[] = [];
-    if (data.cached) metaTokens.push('Cached');
-    if (data.fallback) metaTokens.push('Fallback');
+    if (data.fallback) metaTokens.push(t('modals.countryBrief.groundedFallback'));
+    else if (data.cached) metaTokens.push(t('modals.countryBrief.cached'));
     if (data.generatedAt) metaTokens.push(`Updated ${new Date(data.generatedAt).toLocaleTimeString()}`);
     const meta = this.el('div', 'cdp-assessment-meta', metaTokens.join(' • '));
+    if (data.fallback) meta.title = t('modals.countryBrief.groundedFallbackTitle');
+    else if (data.cached) meta.title = t('modals.countryBrief.cachedTitle');
     this.briefBody.append(text, meta);
     const sourcesFooter = renderBriefSourcesFooter(briefSources, { className: 'cdp-brief-sources' });
     if (sourcesFooter) {
@@ -2782,11 +2843,37 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     if (!this.signalsBody) return;
     this.signalsBody.replaceChildren();
 
+    this.signalChipsEl = this.renderSignalChips(signals);
+    this.signalCoverageEl = this.el('div', 'cdp-signal-coverage');
+    this.signalCoverageEl.hidden = true;
+    this.signalsBody.append(this.signalChipsEl, this.signalCoverageEl);
+
+    this.signalBreakdownBody = this.el('div', 'cdp-signal-breakdown');
+    this.signalRecentBody = this.el('div', 'cdp-signal-recent');
+    this.signalsBody.append(this.signalBreakdownBody, this.signalRecentBody);
+
+    // Severity totals come exclusively from the 24h signal aggregator via
+    // updateSignalDetails(). They must not be seeded from the (unwindowed)
+    // chip counts above — the two sources disagree and the visible flip from
+    // one to the other read as a contradiction.
+    this.signalBreakdownBody.append(this.makeLoading('Aggregating signal severity…'));
+    this.signalRecentBody.append(this.makeLoading('Loading top high-severity signals…'));
+  }
+
+  private renderSignalChips(signals: CountryBriefSignals): HTMLElement {
     const chips = this.el('div', 'cdp-signal-chips');
     this.addSignalChip(chips, signals.criticalNews, t('countryBrief.chips.criticalNews'), '🚨', 'conflict');
     this.addSignalChip(chips, signals.protests, t('countryBrief.chips.protests'), '📢', 'protest');
     this.addSignalChip(chips, signals.militaryFlights, t('countryBrief.chips.militaryAir'), '✈️', 'military', `${signals.militaryFlights} near · ${signals.militaryFlightsInCountry} inside borders`);
-    this.addSignalChip(chips, signals.militaryVessels, t('countryBrief.chips.navalVessels'), '⚓', 'military', `${signals.militaryVessels} near · ${signals.militaryVesselsInCountry} inside borders`);
+    this.addSignalChip(
+      chips,
+      signals.militaryVessels,
+      t('countryBrief.chips.navalVessels'),
+      '⚓',
+      'military',
+      `${signals.militaryVessels} near · ${signals.militaryVesselsInCountry} inside borders`
+        + (signals.militaryVesselsApproximate ? ` · ${t('countryBrief.chips.vesselsApproximate')}` : ''),
+    );
     this.addSignalChip(chips, signals.outages, t('countryBrief.chips.outages'), '🌐', 'outage');
     this.addSignalChip(chips, signals.aisDisruptions, t('countryBrief.chips.aisDisruptions'), '🚢', 'outage');
     this.addSignalChip(chips, signals.satelliteFires, t('countryBrief.chips.satelliteFires'), '🔥', 'climate');
@@ -2813,21 +2900,7 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     this.addSignalChip(chips, signals.orefHistory24h, t('countryBrief.chips.sirens24h'), '🕓', 'conflict');
     this.addSignalChip(chips, signals.aviationDisruptions, t('countryBrief.chips.aviationDisruptions'), '🚫', 'outage');
     this.addSignalChip(chips, signals.gpsJammingHexes, t('countryBrief.chips.gpsJammingZones'), '📡', 'outage');
-    this.signalsBody.append(chips);
-
-    this.signalBreakdownBody = this.el('div', 'cdp-signal-breakdown');
-    this.signalRecentBody = this.el('div', 'cdp-signal-recent');
-    this.signalsBody.append(this.signalBreakdownBody, this.signalRecentBody);
-
-    const seeded: CountryDeepDiveSignalDetails = {
-      critical: signals.criticalNews + Math.max(0, signals.activeStrikes),
-      high: signals.militaryFlights + signals.militaryVessels + signals.protests,
-      medium: signals.outages + signals.cyberThreats + signals.aisDisruptions + signals.radiationAnomalies,
-      low: signals.earthquakes + signals.temporalAnomalies + signals.satelliteFires,
-      recentHigh: [],
-    };
-    this.renderSignalBreakdown(seeded);
-    this.signalRecentBody.append(this.makeLoading('Loading top high-severity signals…'));
+    return chips;
   }
 
   private addSignalChip(container: HTMLElement, count: number, label: string, icon: string, cls: string, tooltip?: string): void {
@@ -2880,6 +2953,13 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
       this.metric(t('countryBrief.levels.moderate'), String(details.medium), 'cdp-chip-neutral'),
       this.metric(t('countryBrief.levels.low'), String(details.low), 'cdp-chip-success'),
     );
+    // Totals are windowed (24h aggregated signals) while the chips above are
+    // current-cache counts — declare the window so the two cannot read as a
+    // contradiction.
+    this.signalBreakdownBody.append(this.el('div', 'cdp-signal-window', t('countryBrief.severityWindow')));
+    if (details.incomplete) {
+      this.signalBreakdownBody.append(this.el('div', 'cdp-signal-window', t('countryBrief.severityIncomplete')));
+    }
   }
 
   private renderRecentSignals(items: CountryDeepDiveSignalItem[]): void {

@@ -13,29 +13,39 @@ const csp = vercelConfig.headers
   ?.headers
   ?.find((header) => header.key === 'Content-Security-Policy')
   ?.value ?? '';
-const variantBootstrapScript = indexHtml.match(/<script data-wm-prepaint>([\s\S]*?)<\/script>/)?.[1];
+const prepaintScript = indexHtml.match(/<script data-wm-prepaint>([\s\S]*?)<\/script>/)?.[1];
 
-describe('variant inline bootstrap', () => {
-  it('detects every public variant host before the app bundle loads', () => {
+describe('single-variant inline prepaint', () => {
+  it('does not restore retired host-based variant detection', () => {
     for (const variant of ['happy', 'tech', 'finance', 'commodity', 'energy']) {
-      assert.ok(
+      assert.equal(
         indexHtml.includes(`h.startsWith('${variant}.'))v='${variant}'`),
-        `index.html inline bootstrap must set data-variant for ${variant}.worldmonitor.app`,
+        false,
+        `index.html must not restore host sniffing for retired ${variant}.worldmonitor.app`,
       );
     }
+    assert.ok(
+      prepaintScript?.includes("removeAttribute('data-variant')"),
+      'the canonical prepaint must clear stale data-variant state before the app loads',
+    );
+    assert.equal(
+      prepaintScript?.includes('document.documentElement.dataset.variant'),
+      false,
+      'the prepaint must not assign a runtime variant',
+    );
   });
 
-  it('allows the inline variant bootstrap through the CSP', () => {
-    assert.ok(variantBootstrapScript, 'index.html must include the inline variant bootstrap script');
+  it('allows the canonical theme/layout prepaint through the CSP', () => {
+    assert.ok(prepaintScript, 'index.html must include the inline prepaint script');
     assert.ok(
-      variantBootstrapScript.includes('worldmonitor-variant') && variantBootstrapScript.includes('document.documentElement.dataset.variant'),
-      'the marked pre-paint script must retain variant bootstrapping',
+      prepaintScript.includes('worldmonitor-theme') && prepaintScript.includes('no-transition'),
+      'the marked prepaint must retain theme and transition bootstrapping',
     );
 
-    const hash = createHash('sha256').update(variantBootstrapScript).digest('base64');
+    const hash = createHash('sha256').update(prepaintScript).digest('base64');
     assert.ok(
       csp.includes(`'sha256-${hash}'`),
-      `Vercel Content-Security-Policy must include sha256-${hash} for the inline variant bootstrap script`,
+      `Vercel Content-Security-Policy must include sha256-${hash} for the inline prepaint script`,
     );
   });
 });

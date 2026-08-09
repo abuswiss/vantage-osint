@@ -273,7 +273,14 @@ export async function fetchFeed(feed: Feed): Promise<NewsItem[]> {
     const itemNodes = Array.from(items).slice(0, 5);
     const parsed: Array<NewsItem & { threat: ReturnType<typeof classifyByKeyword> }> = [];
     for (const [index, item] of itemNodes.entries()) {
-      const title = item.querySelector('title')?.textContent || '';
+      // Same rule as the server digest parser (list-feed-digest.ts): an item
+      // without a usable title never becomes a NewsItem — otherwise it pollutes
+      // the feed cache, clustering, and the OpsShell feed with blank rows.
+      const title = (item.querySelector('title')?.textContent || '').trim();
+      if (!title) {
+        if (isMobile && index < itemNodes.length - 1) await yieldToMain();
+        continue;
+      }
       let link = '';
       if (isAtom) {
         const linkEl = item.querySelector('link[href]');

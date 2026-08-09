@@ -106,7 +106,8 @@
       "activeSirens": "サイレン作動中",
       "sirens24h": "サイレン / 24時間",
       "aviationDisruptions": "航空障害",
-      "gpsJammingZones": "GPS妨害区域"
+      "gpsJammingZones": "GPS妨害区域",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "fallback": {
       "instabilityIndex": "**不安定性指数：{{score}}/100**（{{level}}、{{trend}}）",
@@ -177,7 +178,20 @@
       "corridorConditions": "回廊状況",
       "activityNowcast": "活動ナウキャスト",
       "decisionSignalsUnavailable": "中国の意思決定シグナルのスナップショットは現在利用できません。"
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "世界",
@@ -723,7 +737,11 @@
         "base": "軍事基地",
         "nuclear": "近隣の核施設",
         "port": "港湾"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -993,12 +1011,7 @@
       "positions": "航空機の位置",
       "navalVesselsLoading": "海軍艦艇",
       "theaterAnalysis": "戦域分析",
-      "connectingStreams": "ADS-BおよびAISライブストリームに接続中...",
       "initialLoadNote": "追跡データの蓄積に30〜60秒かかります",
-      "acquiringData": "データ取得中",
-      "acquiringDesc": "軍用飛行データのためADS-Bネットワークに接続中。初回ロードには30〜60秒かかる場合があります。",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "AIS船舶ストリーム",
       "retryNow": "今すぐ再試行",
       "feedRateLimited": "フィードレート制限",
       "rateLimitedDesc": "OpenSky APIにはリクエスト制限があります。パネルは数分後に自動的に再試行するか、今すぐ再試行できます。",
@@ -1030,7 +1043,17 @@
       },
       "emojiKeyLabel": "絵文字キー",
       "emojiKeyAir": "空中資産",
-      "emojiKeyNaval": "海上資産"
+      "emojiKeyNaval": "海上資産",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareLink": "リンクを共有",
@@ -1353,7 +1376,8 @@
       "provenanceTitle": "カバレッジプロヴェナンス: このブリーフが選択された取り込まれたストーリーと個別ソースの数",
       "compiledFrom": "{{stories}}件のストーリーから{{sources}}個のソースをコンパイル",
       "briefFreshness": "{{minutes}}m前に生成 · 最新ソース{{hours}}h前",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "settings": {
       "exportSettings": "設定をエクスポート",
@@ -1670,7 +1694,8 @@
     },
     "countryTimeline": {
       "now": "現在",
-      "noEventsIn7Days": "7日間にイベントなし"
+      "noEventsIn7Days": "7日間にイベントなし",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>ニュースインテリジェンス</strong> リアルタイムグローバルニュース監視:<ul><li>厳選されたトピックカテゴリ（紛争、サイバー等）</li><li>100以上の言語から翻訳された記事</li><li>15分ごとに更新</li><li>14-day media tone &amp; volume trend per topic</li></ul>ソース: GDELT Project (gdeltproject.org)"

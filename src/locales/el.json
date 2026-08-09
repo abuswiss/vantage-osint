@@ -106,7 +106,8 @@
       "activeSirens": "Ενεργές σειρήνες",
       "sirens24h": "Σειρήνες / 24ώρο",
       "aviationDisruptions": "Αεροπορικές αναταράξεις",
-      "gpsJammingZones": "Ζώνες παρεμβολής GPS"
+      "gpsJammingZones": "Ζώνες παρεμβολής GPS",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "fallback": {
       "instabilityIndex": "**Δείκτης Αστάθειας: {{score}}/100** ({{level}}, {{trend}})",
@@ -177,7 +178,20 @@
       "corridorConditions": "Συνθήκες διαδρόμου",
       "activityNowcast": "Nowcast δραστηριότητας",
       "decisionSignalsUnavailable": "Το στιγμιότυπο σημάτων απόφασης της Κίνας δεν είναι διαθέσιμο αυτή τη στιγμή."
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "ΚΟΣΜΟΣ",
@@ -723,7 +737,11 @@
         "base": "Στρατιωτικές Βάσεις",
         "nuclear": "Κοντινά Πυρηνικά",
         "port": "Λιμάνια"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -993,12 +1011,7 @@
       "positions": "Θέσεις αεροσκαφών",
       "navalVesselsLoading": "Πολεμικά πλοία",
       "theaterAnalysis": "Ανάλυση θεάτρου",
-      "connectingStreams": "Σύνδεση σε ζωντανές ροές ADS-B & AIS...",
       "initialLoadNote": "Η αρχική φόρτωση χρειάζεται 30-60 δευτερόλεπτα καθώς συγκεντρώνονται δεδομένα",
-      "acquiringData": "Λήψη Δεδομένων",
-      "acquiringDesc": "Σύνδεση στο δίκτυο ADS-B για δεδομένα στρατιωτικών πτήσεων. Μπορεί να χρειαστούν 30-60 δευτερόλεπτα στην πρώτη φόρτωση.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "Ροή Πλοίων AIS",
       "retryNow": "Επανάληψη Τώρα",
       "feedRateLimited": "Περιορισμός Ρυθμού Ροής",
       "rateLimitedDesc": "Το OpenSky API έχει όρια αιτημάτων. Ο πίνακας θα επαναλάβει αυτόματα σε λίγα λεπτά, ή μπορείτε να δοκιμάσετε τώρα.",
@@ -1030,7 +1043,17 @@
       },
       "emojiKeyLabel": "Κλειδί Emoji",
       "emojiKeyAir": "Αεροπορικά Περιουσιακά Στοιχεία",
-      "emojiKeyNaval": "Ναυτικά Περιουσιακά Στοιχεία"
+      "emojiKeyNaval": "Ναυτικά Περιουσιακά Στοιχεία",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareLink": "Κοινοποίηση συνδέσμου",
@@ -1353,7 +1376,8 @@
       "provenanceTitle": "Προέλευση κάλυψης: πόσες καταχωρημένες ιστορίες και διακριτές πηγές επιλέχθησαν για αυτή τη σύνοψη",
       "compiledFrom": "Συντάχθηκε από {{stories}} ιστορίες σε {{sources}} πηγές",
       "briefFreshness": "Δημιουργήθηκε πριν {{minutes}}λ · νεότερη πηγή {{hours}}ώ παλιά",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "settings": {
       "exportSettings": "Εξαγωγή ρυθμίσεων",
@@ -1670,7 +1694,8 @@
     },
     "countryTimeline": {
       "now": "τώρα",
-      "noEventsIn7Days": "Κανένα συμβάν σε 7 ημέρες"
+      "noEventsIn7Days": "Κανένα συμβάν σε 7 ημέρες",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>Ειδησεογραφική Υπηρεσία Πληροφοριών</strong> Παρακολούθηση παγκόσμιων ειδήσεων σε πραγματικό χρόνο:<ul><li>Επιμελημένες κατηγορίες θεμάτων (συγκρούσεις, κυβερνοαπειλές, κ.λπ.)</li><li>Άρθρα από 100+ γλώσσες μεταφρασμένα</li><li>Ενημερώσεις κάθε 15 λεπτά</li><li>14-day media tone &amp; volume trend per topic</li></ul>Πηγή: GDELT Project (gdeltproject.org)"

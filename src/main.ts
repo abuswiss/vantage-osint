@@ -2,7 +2,6 @@ import './styles/base-layer.css';
 // Vantage skin — unlayered, so it wins over the @layer base styles above.
 import './styles/vantage-theme.css';
 import './bootstrap/zod-csp';
-import { SITE_VARIANT } from '@/config/variant';
 import { installLcpAttributionDebug } from '@/bootstrap/lcp-attribution';
 import { markLcpDebug } from '@/utils/lcp-debug';
 import { enqueueSentryCall, installPreInitErrorQueue, scheduleSentryInit } from '@/bootstrap/sentry-defer';
@@ -10,20 +9,10 @@ import { registerClsReporting } from '@/bootstrap/cls-report';
 import { registerInpReporting } from '@/bootstrap/inp-report';
 import { registerLcpReporting } from '@/bootstrap/lcp-report';
 import { initVercelAnalytics } from '@/bootstrap/secondary-startup';
-import { loadVariantThemeStylesheet } from '@/bootstrap/variant-theme';
 import { App } from './App';
 import { installUtmInterceptor } from './utils/utm';
 import { captureContentAttributionFromUrl } from '../shared/content-attribution';
 
-if (SITE_VARIANT === 'happy') {
-  // Keeps happy-theme.css off other variants' eager CSS graph. On happy, the
-  // stylesheet applies asynchronously, so a brief base-theme flash is possible.
-  // The import is fire-and-forget, so its rejection must be consumed: Vite's
-  // preload helper rejects with `Unable to preload CSS for <url>` when the
-  // injected <link> errors, and a bare `void import(...)` let that escape to
-  // onunhandledrejection (WORLDMONITOR-XT). See bootstrap/variant-theme.ts.
-  void loadVariantThemeStylesheet('happy', () => import('./styles/happy-theme.css'));
-}
 
 // Activate the deferred dashboard app stylesheet. The build
 // (deferDashboardStylesheetLinks in vite.config.ts) emits the large dashboard
@@ -418,18 +407,6 @@ loadDesktopSecrets().catch(() => {});
 // Apply stored theme preference before app initialization (safety net for inline script)
 applyStoredTheme();
 applyFont();
-
-// Set data-variant on <html> so CSS theme overrides activate
-if (SITE_VARIANT && SITE_VARIANT !== 'full') {
-  document.documentElement.dataset.variant = SITE_VARIANT;
-
-  // Swap favicons to variant-specific versions before browser finishes fetching defaults
-  document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="apple-touch-icon"]').forEach(link => {
-    link.href = link.href
-      .replace(/\/favico\/favicon/g, `/favico/${SITE_VARIANT}/favicon`)
-      .replace(/\/favico\/apple-touch-icon/g, `/favico/${SITE_VARIANT}/apple-touch-icon`);
-  });
-}
 
 // Remove no-transition class after first paint to enable smooth theme transitions
 requestAnimationFrame(() => {

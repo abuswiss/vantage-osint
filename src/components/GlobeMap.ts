@@ -148,6 +148,7 @@ interface ClusterMarker extends BaseMarker {
   vesselCount: number;
   activityType?: string;
   region?: string;
+  approximate?: boolean;
 }
 interface WeatherMarker extends BaseMarker {
   _kind: 'weather';
@@ -1485,7 +1486,8 @@ export class GlobeMap {
       html = `<span style="color:${cc};font-weight:bold;">⚓ ${esc(d.name)}</span>`
         + `<br><span style="opacity:.7;">${d.vesselCount} vessel${d.vesselCount !== 1 ? 's' : ''}</span>`
         + (actLabel ? `<br><span style="opacity:.6;font-size:10px;">Activity: ${esc(actLabel)}</span>` : '')
-        + (d.region ? `<br><span style="opacity:.6;font-size:10px;">${esc(d.region)}</span>` : '');
+        + (d.region ? `<br><span style="opacity:.6;font-size:10px;">${esc(d.region)}</span>` : '')
+        + (d.approximate ? '<br><span style="color:#ffaa44;font-size:9px;">⚠ EST. POSITION — Approx. via USNI</span>' : '');
     } else if (d._kind === 'weather') {
       const wc = d.severity === 'Extreme' ? '#ff0044' : d.severity === 'Severe' ? '#ff6600' : '#88aaff';
       html = `<span style="color:${wc};font-weight:bold;">⚡ ${esc(d.severity)}</span>` +
@@ -2706,6 +2708,7 @@ export class GlobeMap {
       vesselCount: c.vesselCount,
       activityType: c.activityType,
       region: c.region,
+      approximate: c.approximate,
     }));
     this.flushMarkers();
   }
