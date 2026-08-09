@@ -359,6 +359,23 @@ describe('createRelayHandler', () => {
     assert.equal(body.fallback, true);
   });
 
+  it('calls fallback when the response-level policy rejects a nominal 2xx', async () => {
+    mockFetch(async () => new Response('{"states":[]}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'X-Cache': 'NEG' },
+    }));
+    const handler = createRelayHandler({
+      relayPath: '/test',
+      shouldFallback: (response) => response.headers.get('x-cache') === 'NEG',
+      fallback: (_req, cors) => new Response('{"fallback":true}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ...cors },
+      }),
+    });
+    const res = await handler(makeRequest('https://worldmonitor.app/api/test'));
+    assert.deepEqual(await res.json(), { fallback: true });
+  });
+
   it('passes through non-2xx when onlyOk is false', async () => {
     mockFetchStatus(502, '{"upstream":"error"}');
     const handler = createRelayHandler({ relayPath: '/test' });

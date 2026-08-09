@@ -65,6 +65,7 @@ const EXPOSED_HEADERS = [
   'X-WorldMonitor-Bbox-Missing',
   'X-WorldMonitor-Bbox-Invalid',
   'X-Military-Bbox',
+  'X-Data-Source',
 ].join(', ');
 
 function isAllowedOrigin(origin) {

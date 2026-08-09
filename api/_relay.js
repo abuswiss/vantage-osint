@@ -102,6 +102,9 @@ export function createRelayHandler(cfg) {
         headers: getRelayHeaders(reqHeaders),
       }, cfg.timeout || 15000);
 
+      if (cfg.fallback && cfg.shouldFallback?.(response)) {
+        return cfg.fallback(req, corsHeaders);
+      }
       if (cfg.onlyOk && !response.ok && cfg.fallback) {
         return cfg.fallback(req, corsHeaders);
       }

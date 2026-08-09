@@ -29,6 +29,7 @@ COPY scripts/ais-relay.cjs ./scripts/ais-relay.cjs
 # Shared ingestion outcome/cooldown helpers imported by ais-relay.cjs.
 COPY scripts/_ingestion-coverage.cjs ./scripts/_ingestion-coverage.cjs
 COPY scripts/_proxy-utils.cjs ./scripts/_proxy-utils.cjs
+COPY scripts/shared/ais-upstream-health.cjs ./scripts/shared/ais-upstream-health.cjs
 # Authenticated Yahoo sector valuation client required at relay startup.
 COPY scripts/_yahoo-sector-valuations.cjs ./scripts/_yahoo-sector-valuations.cjs
 COPY scripts/lib/usni-fleet-parser.cjs ./scripts/lib/usni-fleet-parser.cjs
@@ -78,6 +79,7 @@ COPY scripts/_climate-news-helpers.mjs ./scripts/_climate-news-helpers.mjs
 # other seeders migrated in #5436). Same ERR_MODULE_NOT_FOUND risk as above.
 COPY scripts/_html-entities.mjs ./scripts/_html-entities.mjs
 COPY scripts/seed-climate-news.mjs ./scripts/seed-climate-news.mjs
+COPY scripts/seed-portwatch.mjs ./scripts/seed-portwatch.mjs
 COPY scripts/seed-chokepoint-flows.mjs ./scripts/seed-chokepoint-flows.mjs
 COPY scripts/seed-ember-electricity.mjs ./scripts/seed-ember-electricity.mjs
 
