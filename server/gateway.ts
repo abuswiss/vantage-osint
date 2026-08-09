@@ -417,6 +417,7 @@ const RPC_CACHE_TIER: Record<string, CacheTier> = {
 };
 
 import { PREMIUM_RPC_PATHS } from '../src/shared/premium-paths';
+import { isPublicVantageGatewayRequest } from './_shared/vantage-public-mode';
 
 export const PUBLIC_NO_AUTH_RPC_PATHS = new Set<string>([
   '/api/conflict/v1/list-acled-events',
@@ -1147,10 +1148,17 @@ export function createDomainGateway(
     // happens before this function sees them; the public URL must therefore
     // have one response contract for every caller.
     const isPublicNoAuthRpc = PUBLIC_NO_AUTH_RPC_PATHS.has(pathname)
-      || isPublicSharedRpcRequest(request.url, request.method);
+      || isPublicSharedRpcRequest(request.url, request.method)
+      || isPublicVantageGatewayRequest(request);
     const seedRefreshVerified = await isResilienceRankingSeedRefreshRequest(request, pathname);
     const relayWarmPingVerified = await isRelayWarmPingRequest(request, pathname);
-    const requiresDirectLlmQuota = !internalMcpVerified && await shouldReserveGatewayDirectLlmQuota(request, pathname);
+    // Public Vantage country briefs use the handler's caller-invariant,
+    // six-hour country/language cache and the ordinary fail-closed endpoint
+    // limiter. They have no user identity to charge against the paid
+    // per-account direct-LLM meter.
+    const requiresDirectLlmQuota = !internalMcpVerified
+      && !isPublicNoAuthRpc
+      && await shouldReserveGatewayDirectLlmQuota(request, pathname);
     const isTierGated = !internalMcpVerified && !isPublicNoAuthRpc && !seedRefreshVerified && !relayWarmPingVerified && getRequiredTier(pathname) !== null;
     const needsLegacyProBearerGate = !internalMcpVerified && !isPublicNoAuthRpc && PREMIUM_RPC_PATHS.has(pathname) && !isTierGated;
     const isProFreshCacheRpc = PRO_FRESH_CACHE_RPC_PATHS.has(pathname);
@@ -1488,7 +1496,13 @@ export function createDomainGateway(
     // routes require tier 2, but Pro MCP callers only reach the gateway
     // through the MCP edge's whitelisted tool set.
     const isEnterpriseAuth = keyCheck.valid && wmKey && !isUserApiKey && keyCheck.kind === 'enterprise';
-    if (!isEnterpriseAuth && !internalMcpVerified && !seedRefreshVerified && !relayWarmPingVerified) {
+    if (
+      !isEnterpriseAuth
+      && !internalMcpVerified
+      && !isPublicNoAuthRpc
+      && !seedRefreshVerified
+      && !relayWarmPingVerified
+    ) {
       const entitlementCheck = await checkEntitlementDetailed(sessionUserId, pathname, corsHeaders, {
         clerkRole: sessionRole,
       });

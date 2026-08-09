@@ -17,6 +17,7 @@ import {
   getInternalMcpVerifiedNonce,
 } from './mcp-internal-hmac';
 import { validateUserApiKey } from './user-api-key';
+import { isPublicVantageFullAccessRequest } from './vantage-public-mode';
 
 export type PremiumCallerIdentity =
   | { isPremium: true; userId: string; kind: 'internal-mcp'; quotaExempt: true }
@@ -192,6 +193,7 @@ export async function requirePremiumRpcAccess<T extends RpcApiErrorLike>(
   ApiErrorConstructor: RpcApiErrorConstructor<T>,
   fallbackMessage: string,
 ): Promise<void> {
+  if (isPublicVantageFullAccessRequest(request)) return;
   const identity = await resolvePremiumCallerIdentity(request);
   if (identity.isPremium) return;
 
@@ -381,5 +383,6 @@ export async function resolvePremiumCallerIdentity(request: Request): Promise<Pr
  * shape than the two edge routes and is deliberately not bundled here.
  */
 export async function isCallerPremium(request: Request): Promise<boolean> {
+  if (isPublicVantageFullAccessRequest(request)) return true;
   return (await resolvePremiumCallerIdentity(request)).isPremium;
 }
