@@ -66,26 +66,6 @@ const ON_DEMAND_CACHE_PROFILES = {
   },
 };
 
-// Vantage is a separate, account-free deployment. Its browser must never be
-// given canonical credentials or Redis access, but it can consume the exact
-// public bootstrap URLs that api.worldmonitor.app already exposes. In public
-// mode, this handler acts as a narrow server-side read facade for only those
-// pre-audited URL shapes.
-const CANONICAL_PUBLIC_BOOTSTRAP_ORIGIN = 'https://api.worldmonitor.app';
-const CANONICAL_PUBLIC_BOOTSTRAP_TIMEOUT_MS = 8_000;
-const CANONICAL_PUBLIC_BOOTSTRAP_USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
-  '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-
-let fetchCanonicalPublicBootstrap = (...args) => globalThis.fetch(...args);
-
-function isVantagePublicBootstrapMirrorEnabled(env = process.env) {
-  const normalized = String(env.VANTAGE_PUBLIC_MODE ?? env.VITE_VANTAGE_PUBLIC_MODE ?? '')
-    .trim()
-    .toLowerCase();
-  return normalized === '1' || normalized === 'true';
-}
-
 // The URL SHAPE shared by every marked single-key public read:
 // `GET /api/bootstrap?keys=<one>&public=1`, no other params, each appearing once.
 // Returns the requested key name, or null when the request is not that shape.
@@ -482,101 +462,6 @@ function successCacheHeaders(tier, authKind, cors, onDemandKey = null) {
   };
 }
 
-function publicBootstrapMirrorDescriptor(req) {
-  const url = new URL(req.url);
-  if (url.hostname === 'api.worldmonitor.app') return null;
-
-  if (isPublicTierBootstrapRequest(req)) {
-    return {
-      authKind: 'public-tier',
-      tier: url.searchParams.get('tier'),
-      onDemandKey: null,
-    };
-  }
-  if (isPublicWeatherBootstrapRequest(req)) {
-    return {
-      authKind: 'public-weather',
-      tier: null,
-      onDemandKey: null,
-    };
-  }
-  if (isPublicOnDemandBootstrapRequest(req)) {
-    return {
-      authKind: 'public-on-demand',
-      tier: null,
-      onDemandKey: url.searchParams.get('keys'),
-    };
-  }
-  return null;
-}
-
-function bootstrapMirrorUnavailableResponse() {
-  return jsonResponse(
-    { error: 'Bootstrap service temporarily unavailable' },
-    503,
-    {
-      ...getPublicCorsHeaders(),
-      'Cache-Control': 'no-store',
-      'Retry-After': '5',
-    },
-  );
-}
-
-function isCanonicalBootstrapPayload(value) {
-  return value != null
-    && typeof value === 'object'
-    && !Array.isArray(value)
-    && value.data != null
-    && typeof value.data === 'object'
-    && !Array.isArray(value.data)
-    && Array.isArray(value.missing)
-    && value.missing.every((name) => typeof name === 'string');
-}
-
-async function mirrorCanonicalPublicBootstrap(req, descriptor) {
-  const incomingUrl = new URL(req.url);
-  const canonicalUrl = new URL(`${incomingUrl.pathname}${incomingUrl.search}`, CANONICAL_PUBLIC_BOOTSTRAP_ORIGIN);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), CANONICAL_PUBLIC_BOOTSTRAP_TIMEOUT_MS);
-
-  try {
-    const upstream = await fetchCanonicalPublicBootstrap(canonicalUrl.href, {
-      method: 'GET',
-      credentials: 'omit',
-      redirect: 'error',
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': CANONICAL_PUBLIC_BOOTSTRAP_USER_AGENT,
-      },
-      signal: controller.signal,
-    });
-    if (!upstream.ok) return bootstrapMirrorUnavailableResponse();
-
-    let payload;
-    try {
-      payload = await upstream.json();
-    } catch {
-      return bootstrapMirrorUnavailableResponse();
-    }
-    if (!isCanonicalBootstrapPayload(payload)) return bootstrapMirrorUnavailableResponse();
-
-    return jsonResponse(
-      payload,
-      200,
-      successCacheHeaders(
-        descriptor.tier,
-        descriptor.authKind,
-        getPublicCorsHeaders(),
-        descriptor.onDemandKey,
-      ),
-    );
-  } catch {
-    return bootstrapMirrorUnavailableResponse();
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 export default async function handler(req, ctx) {
   // no-store because this rejection is decided by the Origin header, which no
   // cache layer here keys on (CF ignores Vary — see TIER_CACHE above). Without
@@ -590,11 +475,6 @@ export default async function handler(req, ctx) {
   const cors = getCorsHeaders(req);
   if (req.method === 'OPTIONS')
     return new Response(null, { status: 204, headers: cors });
-
-  if (isVantagePublicBootstrapMirrorEnabled()) {
-    const mirrorDescriptor = publicBootstrapMirrorDescriptor(req);
-    if (mirrorDescriptor) return mirrorCanonicalPublicBootstrap(req, mirrorDescriptor);
-  }
 
   const auth = await validateBootstrapAuth(req, cors);
   if (!auth.ok) return auth.response;
@@ -702,11 +582,5 @@ export const __testing__ = {
   },
   setBootstrapR2ShadowReaderForTests(reader) {
     readBootstrapR2ShadowTier = reader;
-  },
-  resetCanonicalPublicBootstrapMirrorForTests() {
-    fetchCanonicalPublicBootstrap = (...args) => globalThis.fetch(...args);
-  },
-  setCanonicalPublicBootstrapMirrorFetchForTests(fetchImpl) {
-    fetchCanonicalPublicBootstrap = fetchImpl;
   },
 };

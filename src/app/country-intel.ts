@@ -40,6 +40,7 @@ import { hasPremiumAccess } from '@/services/panel-gating';
 import { getAuthState, subscribeAuthState } from '@/services/auth-state';
 import { showMapContextMenu } from '@/components/MapContextMenu';
 import { BETA_MODE } from '@/config/beta';
+import { VANTAGE_PUBLIC_MODE } from '@/config/product-policy';
 import { mlWorker } from '@/services/ml-worker';
 import { isHeadlineMemoryEnabled } from '@/services/ai-flow-settings';
 import { t, getCurrentLanguage } from '@/services/i18n';
@@ -808,7 +809,14 @@ export class CountryIntelManager implements AppModule {
             if (lines.length > 0) {
               this.ctx.countryBriefPage?.updateBrief({ brief: lines.join('\n'), country, code, fallback: true });
             } else {
-              this.ctx.countryBriefPage?.updateBrief({ brief: '', country, code, error: 'No AI service available. Configure GROQ_API_KEY in Settings for full briefs.' });
+              this.ctx.countryBriefPage?.updateBrief({
+                brief: '',
+                country,
+                code,
+                error: VANTAGE_PUBLIC_MODE
+                  ? 'Intelligence brief is temporarily unavailable.'
+                  : 'No AI service available. Configure GROQ_API_KEY in Settings for full briefs.',
+              });
             }
           }
         }

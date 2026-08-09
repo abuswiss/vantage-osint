@@ -17,7 +17,12 @@ import { PREMIUM_RPC_PATHS } from '@/shared/premium-paths';
 import { hasPremiumIntent } from './premium-intent';
 import { isPublicSharedRpcRequest } from '@/shared/public-rpc-cache';
 import { enqueueSentryCall } from '@/bootstrap/sentry-defer';
+import { VANTAGE_PUBLIC_MODE } from '@/config/product-policy';
 import { PUBLIC_WEATHER_BOOTSTRAP_KEY, bootstrapTierKeyNames } from '../../shared/bootstrap-tier-keys.js';
+import {
+  VANTAGE_BOOTSTRAP_PATH,
+  classifyVantagePublicBootstrapUrl,
+} from '../../shared/vantage-public-bootstrap.js';
 
 const STORAGE_KEY = 'wm-session-exp';
 // Refresh well before expiry so a half-loaded page doesn't fail mid-flight.
@@ -643,6 +648,13 @@ function isCredentiallessPublicDataRequest(
   const pathname = parsed.pathname.length > 1 ? parsed.pathname.replace(/\/+$/, '') : parsed.pathname;
   const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
   if (isPublicSharedRpcRequest(parsed, method)) return true;
+  if (
+    VANTAGE_PUBLIC_MODE
+    && pathname === VANTAGE_BOOTSTRAP_PATH
+    && classifyVantagePublicBootstrapUrl(parsed, { method, expectedPath: VANTAGE_BOOTSTRAP_PATH })
+  ) {
+    return true;
+  }
   if (pathname !== '/api/bootstrap' || method.toUpperCase() !== 'GET') return false;
 
   const params = Array.from(parsed.searchParams.keys());

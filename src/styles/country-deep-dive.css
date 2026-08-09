@@ -1395,6 +1395,14 @@
 }
 
 @media (max-width: 560px) {
+  .cdp-header {
+    flex-direction: column;
+  }
+
+  .cdp-header-right {
+    flex-wrap: wrap;
+  }
+
   .resilience-widget__bar-block {
     grid-template-columns: 1fr;
   }

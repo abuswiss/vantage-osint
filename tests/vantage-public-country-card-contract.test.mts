@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { createCountryDeepDivePanelHarness } from './helpers/country-deep-dive-panel-harness.mjs';
 
@@ -47,6 +49,18 @@ function click(element: Element): void {
 }
 
 describe('Vantage public country-card boundary', () => {
+  it('never directs a public user to configure a private LLM key', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '../src/app/country-intel.ts'), 'utf8');
+    assert.match(
+      source,
+      /VANTAGE_PUBLIC_MODE\s*\?\s*'Intelligence brief is temporarily unavailable\.'/,
+    );
+    assert.doesNotMatch(
+      source,
+      /VANTAGE_PUBLIC_MODE\s*\?\s*'[^']*GROQ_API_KEY/,
+    );
+  });
+
   it('renders every country-card module without a sign-in, upgrade, or lock surface', async () => {
     const harness = await createCountryDeepDivePanelHarness({ premiumAccess: true });
     try {
