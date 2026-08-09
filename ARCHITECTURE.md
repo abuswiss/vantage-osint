@@ -372,6 +372,7 @@ Runs before every `git push`:
 | `security-audit.yml` | PR, push to main, daily cron, manual | Production dependency audits for every tracked `package-lock.json` workspace, failing on unbaselined high/critical advisories |
 | `seed-freshness-monitor.yml` | 15-minute cron, manual | Enforces production ingestion acceptance after a green scheduled main gate; fails on every actionable compact-health problem except explicitly on-demand sources without grading production before Railway deploys or runs |
 | `vantage-intelligence-refresh.yml` | 10-minute cron, manual | Warms the public news digest, refreshes escalation scores, generates a strictly grounded cited AI brief with retries, and verifies the Vantage public data plane |
+| `vantage-portwatch-refresh.yml` | 6-hourly cron, manual | Publishes the independent IMF PortWatch batch fallback to Redis and verifies complete canonical plus public traffic coverage without coupling ArcGIS work to the always-on AIS relay |
 | `analytics-collector-monitor.yml` | 15-minute cron, manual | Probes the self-hosted Umami collector directly (heartbeat, tracker script, ingest route) and fails when events are being dropped — Railway reported a green deployment through the 4-day #5565 blackout, so deployment status is not trusted here |
 | `umami-storage-monitor.yml` | 15-minute cron, manual | Reads the Umami Postgres Railway volume without mutation, caches a bounded history, and fails on capacity or projected days-to-full thresholds |
 | `contributor-trust.yml` | PR | Gates untrusted first-time-contributor runs |
