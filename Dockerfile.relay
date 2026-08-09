@@ -79,7 +79,6 @@ COPY scripts/_climate-news-helpers.mjs ./scripts/_climate-news-helpers.mjs
 # other seeders migrated in #5436). Same ERR_MODULE_NOT_FOUND risk as above.
 COPY scripts/_html-entities.mjs ./scripts/_html-entities.mjs
 COPY scripts/seed-climate-news.mjs ./scripts/seed-climate-news.mjs
-COPY scripts/seed-portwatch.mjs ./scripts/seed-portwatch.mjs
 COPY scripts/seed-chokepoint-flows.mjs ./scripts/seed-chokepoint-flows.mjs
 COPY scripts/seed-ember-electricity.mjs ./scripts/seed-ember-electricity.mjs
 

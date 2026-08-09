@@ -6320,88 +6320,6 @@ function startClimateNewsSeedLoop() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// PortWatch traffic fallback — delegated to standalone seed script
-//
-// Vantage runs the relay on Render without the historical Railway cron fleet.
-// Keep the compact maritime fallback alive in the same persistent process so
-// an upstream AIS outage degrades to daily chokepoint traffic instead of an
-// empty Ships layer after the 12-hour Redis TTL expires.
-// ─────────────────────────────────────────────────────────────
-
-const PORTWATCH_SEED_INTERVAL_MS = 6 * 60 * 60 * 1000;
-const PORTWATCH_SEED_TIMEOUT_MS = 5 * 60 * 1000;
-const PORTWATCH_SEED_RETRY_MS = 20 * 60 * 1000;
-const PORTWATCH_SEED_SCRIPT = path.join(__dirname, 'seed-portwatch.mjs');
-let portwatchSeedInFlight = false;
-let portwatchSeedRetryTimer = null;
-
-function runPortWatchSeedScript() {
-  return new Promise((resolve, reject) => {
-    execFile(process.execPath, [PORTWATCH_SEED_SCRIPT], {
-      env: process.env,
-      timeout: PORTWATCH_SEED_TIMEOUT_MS,
-      maxBuffer: 1024 * 1024,
-    }, (err, stdout, stderr) => {
-      relayLogScriptOutput('[PortWatchSeed]', stdout);
-      if (stderr) {
-        const trimmedErr = String(stderr).trim();
-        if (trimmedErr) {
-          for (const line of trimmedErr.split('\n')) console.warn(`[PortWatchSeed] ${line}`);
-        }
-      }
-      if (err) return reject(err);
-      resolve();
-    });
-  });
-}
-
-async function seedPortWatchFallback() {
-  if (portwatchSeedInFlight) {
-    console.log('[PortWatchSeed] Skipped (in-flight)');
-    return;
-  }
-  portwatchSeedInFlight = true;
-  if (portwatchSeedRetryTimer) {
-    clearTimeout(portwatchSeedRetryTimer);
-    portwatchSeedRetryTimer = null;
-  }
-  const startedAt = Date.now();
-  try {
-    await runPortWatchSeedScript();
-    const durMs = Date.now() - startedAt;
-    console.log(`[PortWatchSeed] Completed in ${(durMs / 1000).toFixed(1)}s`);
-    // Publish the compact transit projection immediately; otherwise a healthy
-    // PortWatch refresh can wait up to the independent 10-minute loop.
-    await seedTransitSummaries();
-  } catch (error) {
-    const message = error?.killed ? 'timeout' : (error?.message || error);
-    console.warn('[PortWatchSeed] Seed error:', message);
-    portwatchSeedRetryTimer = setTimeout(() => {
-      seedPortWatchFallback().catch(() => {});
-    }, PORTWATCH_SEED_RETRY_MS);
-    portwatchSeedRetryTimer.unref?.();
-  } finally {
-    portwatchSeedInFlight = false;
-  }
-}
-
-function startPortWatchSeedLoop() {
-  if (!UPSTASH_ENABLED) {
-    console.log('[PortWatchSeed] Disabled (no Upstash Redis)');
-    return;
-  }
-  console.log(`[PortWatchSeed] Seed loop starting (interval ${PORTWATCH_SEED_INTERVAL_MS / 1000 / 60}min)`);
-  startBootSeedLoop(
-    'PortWatchSeed',
-    'seed-meta:supply_chain:portwatch',
-    PORTWATCH_SEED_INTERVAL_MS,
-    seedPortWatchFallback,
-    (error) => console.warn('[PortWatchSeed] Initial seed error:', error?.message || error),
-    (error) => console.warn('[PortWatchSeed] Seed error:', error?.message || error),
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
 // Chokepoint Flow Calibration — delegated to standalone seed script
 // Reads portwatch DWT data → computes live mb/d flow ratios per chokepoint.
 // Runs every 6h (matching portwatch seed cadence).
@@ -12149,7 +12067,6 @@ server.listen(PORT, () => {
   startSocialVelocitySeedLoop();
   startWsbTickersSeedLoop();
   startClimateNewsSeedLoop();
-  startPortWatchSeedLoop();
   startChokepointFlowsSeedLoop();
   startPizzintSeedLoop();
   startDodoPriceSeedLoop();
