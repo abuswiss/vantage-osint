@@ -269,6 +269,20 @@ const withMapPanel = (panels: string[]): string[] => {
   return Array.from(new Set(ordered));
 };
 
+/**
+ * The subset of presets surfaced in the OpsShell mission switcher: three
+ * clear operator outcomes (crisis response, supply-chain risk, energy
+ * security) rather than the full five-persona classic list. The remaining
+ * presets stay available to the classic grid; ops applies the same
+ * machinery (event-handlers applyMissionPreset) so the two shells never
+ * disagree about what a mission does.
+ */
+export const OPS_MISSION_PRESET_IDS: readonly MissionPresetId[] = [
+  'crisis-desk',
+  'supply-chain-risk',
+  'energy-security',
+];
+
 export function getMissionPreset(id: string | null | undefined): MissionPreset | null {
   if (!id) return null;
   return MISSION_PRESETS.find((preset) => preset.id === id) ?? null;

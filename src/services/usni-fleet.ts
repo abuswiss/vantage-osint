@@ -184,14 +184,20 @@ export function mergeUSNIWithAIS(
     const hasParsedCoords = Number.isFinite(usniVessel.regionLat)
       && Number.isFinite(usniVessel.regionLon)
       && !(usniVessel.regionLat === 0 && usniVessel.regionLon === 0);
-    const fallbackCoords = getUSNIRegionApproxCoords(usniVessel.region);
 
-    const baseLat = portResolution?.lat
-      ?? regionCoords?.lat
-      ?? (hasParsedCoords ? usniVessel.regionLat : fallbackCoords.lat);
-    const baseLon = portResolution?.lon
-      ?? regionCoords?.lon
-      ?? (hasParsedCoords ? usniVessel.regionLon : fallbackCoords.lon);
+    // Position provenance ladder: resolved homeport → curated region centroid
+    // → server-parsed report coords → named-ocean approximation. When none of
+    // these resolves, there is NO defensible map location for this report —
+    // skip the map point entirely rather than fabricating one. The report
+    // itself stays in intelligenceCache.usniFleet (lists, counts, exports),
+    // so the evidence is preserved at region level.
+    const base = portResolution
+      ?? regionCoords
+      ?? (hasParsedCoords ? { lat: usniVessel.regionLat, lon: usniVessel.regionLon } : undefined)
+      ?? getUSNIRegionApproxCoords(usniVessel.region);
+    if (!base) continue;
+    const baseLat = base.lat;
+    const baseLon = base.lon;
 
     const offset = portResolution
       ? portScatterOffset(usniVessel.hullNumber, syntheticIndex++)
@@ -262,6 +268,8 @@ function buildUSNIClusters(vessels: MilitaryVessel[]): MilitaryVesselCluster[] {
       vessels: groupVessels,
       region: groupVessels[0]?.usniRegion || name,
       activityType: hasCarrier ? 'deployment' : 'transit',
+      // Centroid of synthetic USNI positions — never a live AIS fix.
+      approximate: true,
     });
   }
 

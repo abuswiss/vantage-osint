@@ -106,7 +106,8 @@
       "activeSirens": "Aktif Sirenler",
       "sirens24h": "Sirenler / 24s",
       "aviationDisruptions": "Havacılık Aksaklıkları",
-      "gpsJammingZones": "GPS Karıştırma Bölgeleri"
+      "gpsJammingZones": "GPS Karıştırma Bölgeleri",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "fallback": {
       "instabilityIndex": "**Istikrarsizlik Endeksi: {{score}}/100** ({{level}}, {{trend}})",
@@ -177,7 +178,20 @@
       "corridorConditions": "Koridor Koşulları",
       "activityNowcast": "Aktivite Nowcast",
       "decisionSignalsUnavailable": "Çin karar sinyali anlık görüntüsü şu anda kullanılamıyor."
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "DUNYA",
@@ -723,7 +737,11 @@
         "base": "Askeri Usler",
         "nuclear": "Yakın nükleer",
         "port": "Limanlar"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -993,12 +1011,7 @@
       "positions": "Ucak konumlari",
       "navalVesselsLoading": "Deniz gemileri",
       "theaterAnalysis": "Harekat alani analizi",
-      "connectingStreams": "Canli ADS-B ve AIS akislarina baglaniyor...",
       "initialLoadNote": "Ilk yukleme, takip verileri biriktikce 30-60 saniye surer",
-      "acquiringData": "Veri Aliniyor",
-      "acquiringDesc": "Askeri ucus verileri icin ADS-B agina baglaniyor. Ilk yuklemede 30-60 saniye surebilir.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "AIS Gemi Akisi",
       "retryNow": "Simdi Yeniden Dene",
       "feedRateLimited": "Veri Akisi Hiz Sinirlamasi",
       "rateLimitedDesc": "OpenSky API istek sinirlarina sahiptir. Panel birkac dakika icinde otomatik olarak yeniden deneyecek veya simdi tekrar deneyebilirsiniz.",
@@ -1030,7 +1043,17 @@
       },
       "emojiKeyLabel": "Emoji Anahtarı",
       "emojiKeyAir": "Hava Varlıkları",
-      "emojiKeyNaval": "Deniz Varlıkları"
+      "emojiKeyNaval": "Deniz Varlıkları",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareLink": "Bağlantıyı paylaş",
@@ -1353,7 +1376,8 @@
       "compiledFrom": "{{stories}} hikaye ve {{sources}} kaynaktan derlenmiştir",
       "provenanceTitle": "Kapsam kaynağı: bu özet için kaç alınan hikaye ve farklı kaynaktan seçildiği",
       "briefFreshness": "{{minutes}}m önce oluşturuldu · en yeni kaynak {{hours}}s eski",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "settings": {
       "exportSettings": "Ayarları Dışa Aktar",
@@ -1670,7 +1694,8 @@
     },
     "countryTimeline": {
       "now": "simdi",
-      "noEventsIn7Days": "7 gunde olay yok"
+      "noEventsIn7Days": "7 gunde olay yok",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>Haber İstihbaratı</strong> Gercek zamanli kuresel haber izleme:<ul><li>Secilmis konu kategorileri (catismalar, siber vb.)</li><li>100+ dilden cevrilen makaleler</li><li>Her 15 dakikada guncelleme</li><li>14-day media tone &amp; volume trend per topic</li></ul>Kaynak: GDELT Project (gdeltproject.org)"

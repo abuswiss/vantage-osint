@@ -224,7 +224,8 @@
       "activeSirens": "Active Sirens",
       "sirens24h": "Sirens / 24h",
       "aviationDisruptions": "Aviation Disruptions",
-      "gpsJammingZones": "GPS Jamming Zones"
+      "gpsJammingZones": "GPS Jamming Zones",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "fallback": {
       "instabilityIndex": "**Instability Index: {{score}}/100** ({{level}}, {{trend}})",
@@ -246,7 +247,20 @@
       "languages": "Languages",
       "currencies": "Currencies",
       "area": "Area"
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "WORLD",
@@ -792,7 +806,11 @@
         "base": "Military Bases",
         "nuclear": "Nuclear Facilities",
         "port": "Ports"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -1134,12 +1152,7 @@
       "positions": "Aircraft positions",
       "navalVesselsLoading": "Naval vessels",
       "theaterAnalysis": "Theater analysis",
-      "connectingStreams": "Connecting to live ADS-B & AIS streams...",
       "initialLoadNote": "Initial load takes 30-60 seconds as tracking data accumulates",
-      "acquiringData": "Acquiring Data",
-      "acquiringDesc": "Connecting to ADS-B network for military flight data. This may take 30-60 seconds on first load.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "AIS Vessel Stream",
       "retryNow": "Retry Now",
       "feedRateLimited": "Feed Rate Limited",
       "rateLimitedDesc": "OpenSky API has request limits. The panel will automatically retry in a few minutes, or you can try again now.",
@@ -1171,7 +1184,17 @@
         "east-med-theater": "Eastern Mediterranean",
         "israel-gaza-theater": "Israel/Gaza",
         "yemen-redsea-theater": "Yemen/Red Sea"
-      }
+      },
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareLink": "Share link",
@@ -1494,7 +1517,8 @@
       "compiledFrom": "Compiled from {{stories}} stories across {{sources}} sources",
       "provenanceTitle": "Coverage provenance: how many ingested stories and distinct sources this brief was selected from",
       "briefFreshness": "Generated {{minutes}}m ago · newest source {{hours}}h old",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "settings": {
       "exportSettings": "Export Settings",
@@ -1814,7 +1838,8 @@
     },
     "countryTimeline": {
       "now": "now",
-      "noEventsIn7Days": "No events in 7 days"
+      "noEventsIn7Days": "No events in 7 days",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>News Intelligence</strong> Real-time global news monitoring:<ul><li>Curated topic categories (conflicts, cyber, etc.)</li><li>Articles from 100+ languages translated</li><li>Updates every 15 minutes</li><li>14-day media tone &amp; volume trend per topic</li><li>14-day media tone &amp; volume trend per topic</li></ul>Source: GDELT Project (gdeltproject.org)"

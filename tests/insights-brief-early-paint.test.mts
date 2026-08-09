@@ -44,7 +44,7 @@ describe('InsightsPanel early cached-brief paint (#4890)', () => {
     );
     assert.match(
       method,
-      /this\.setDataBadge\('cached'\);/,
+      /this\.setDataBadge\(\s*'cached'/,
       'the early paint is stale-by-definition content and must carry the cached badge',
     );
     assert.match(

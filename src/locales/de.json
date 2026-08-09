@@ -116,7 +116,8 @@
       "activeSirens": "Aktive Sirenen",
       "sirens24h": "Sirenen / 24h",
       "aviationDisruptions": "Luftfahrtstörungen",
-      "gpsJammingZones": "GPS-Störzonen"
+      "gpsJammingZones": "GPS-Störzonen",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "countryFacts": "Länderfakten",
     "loadingFacts": "Länderfakten werden geladen...",
@@ -177,7 +178,20 @@
       "corridorConditions": "Korridor-Bedingungen",
       "activityNowcast": "Aktivitäts-Nowcast",
       "decisionSignalsUnavailable": "Der China-Entscheidungssignal-Snapshot ist derzeit nicht verfügbar."
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "WELT",
@@ -682,7 +696,11 @@
         "base": "Militärstützpunkte",
         "nuclear": "Nahe Nuklear",
         "port": "Häfen"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     },
     "settingsWindow": {
       "invokeFail": "{{command}} konnte nicht ausgeführt werden. Überprüfen Sie das Desktop-Protokoll.",
@@ -1240,12 +1258,7 @@
       "positions": "Flugzeugpositionen",
       "navalVesselsLoading": "Marineschiffe",
       "theaterAnalysis": "Theateranalyse",
-      "connectingStreams": "Verbindung zu Live-ADS-B- & AIS-Streams...",
       "initialLoadNote": "Der erste Ladevorgang dauert 30–60 Sekunden, während sich die Tracking-Daten aufbauen",
-      "acquiringData": "Daten werden erfasst",
-      "acquiringDesc": "Verbindung zum ADS-B-Netzwerk für militärische Flugdaten. Dies kann beim ersten Laden 30–60 Sekunden dauern.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "AIS-Schiffsstrom",
       "retryNow": "Jetzt wiederholen",
       "feedRateLimited": "Feed-Ratenbegrenzung",
       "rateLimitedDesc": "Die OpenSky-API hat Anfragelimits. Das Panel versucht es automatisch in wenigen Minuten erneut, oder Sie können es jetzt versuchen.",
@@ -1277,7 +1290,17 @@
       },
       "emojiKeyLabel": "Emoji-Legende",
       "emojiKeyAir": "Luftfahrtressourcen",
-      "emojiKeyNaval": "Marineressourcen"
+      "emojiKeyNaval": "Marineressourcen",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "techEvents": {
       "loading": "Tech-Events werden geladen...",
@@ -1469,7 +1492,8 @@
     },
     "countryTimeline": {
       "now": "Jetzt",
-      "noEventsIn7Days": "Keine Ereignisse in 7 Tagen"
+      "noEventsIn7Days": "Keine Ereignisse in 7 Tagen",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "cii": {
       "noSignals": "Keine Instabilitätssignale erkannt",
@@ -1674,7 +1698,8 @@
       "provenanceTitle": "Abdeckungsherkunft: Anzahl der erfassten Stories und unterschiedlichen Quellen, aus denen dieser Brief ausgewählt wurde",
       "compiledFrom": "Zusammengestellt aus {{stories}} Geschichten über {{sources}} Quellen",
       "briefFreshness": "Generiert vor {{minutes}}m · neueste Quelle {{hours}}h alt",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "etfFlows": {
       "unavailable": "ETF-Daten vorübergehend nicht verfügbar",

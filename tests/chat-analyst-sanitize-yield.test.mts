@@ -46,8 +46,14 @@ test('appendMessage scrolls synchronously only for the synchronous (user) branch
 
 test('both render sites route through the deferred helper, not a sync renderMarkdown (R5)', () => {
   assert.match(src, /this\.renderMarkdownDeferred\(body, content\)/, 'appendMessage uses the helper');
-  assert.match(src, /this\.renderMarkdownDeferred\(bodyEl, text\)/, 'finalizeStreamingBubble uses the helper');
-  // The only remaining `setTrustedHtml(..., renderMarkdown(...))` is inside the helper itself.
+  assert.match(
+    src,
+    /this\.renderMarkdownDeferred\(bodyEl, text, sources\)/,
+    'finalizeStreamingBubble uses the helper and preserves its citation sources',
+  );
+  // Two synchronous renders are intentional inside readStream: the throttled
+  // progressive frame and its final flush. The completed-message render is the
+  // third and remains deferred inside renderMarkdownDeferred.
   const directRenders = src.match(/setTrustedHtml\([^,]+,\s*renderMarkdown\(/g) ?? [];
-  assert.equal(directRenders.length, 1, 'exactly one direct render call — the one inside the helper');
+  assert.equal(directRenders.length, 3, 'only the two bounded streaming renders and the deferred helper render directly');
 });

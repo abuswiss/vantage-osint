@@ -32,12 +32,19 @@ const MARGIN = { top: 20, right: 20, bottom: 30, left: 80 };
 const HEIGHT = 200;
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
+export interface CountryTimelineRenderOptions {
+  // Lanes whose backing data source is unavailable — their empty state must
+  // say "coverage unavailable", never "no events in 7 days".
+  unavailableLanes?: TimelineEvent['lane'][];
+}
+
 export class CountryTimeline {
   private container: HTMLElement;
   private svg: d3.Selection<SVGSVGElement, unknown, null, undefined> | null = null;
   private tooltip: HTMLDivElement | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private currentEvents: TimelineEvent[] = [];
+  private unavailableLanes: Set<TimelineEvent['lane']> = new Set();
   private handleThemeChange: () => void;
 
   constructor(container: HTMLElement) {
@@ -81,8 +88,9 @@ export class CountryTimeline {
     this.container.appendChild(this.tooltip);
   }
 
-  render(events: TimelineEvent[]): void {
+  render(events: TimelineEvent[], options?: CountryTimelineRenderOptions): void {
     this.currentEvents = events;
+    if (options?.unavailableLanes) this.unavailableLanes = new Set(options.unavailableLanes);
     if (this.svg) this.svg.remove();
 
     const width = this.container.clientWidth;
@@ -232,7 +240,12 @@ export class CountryTimeline {
       .attr('fill', getCSSColor('--text-ghost'))
       .attr('font-size', '11px')
       .attr('font-style', 'italic')
-      .text(t('components.countryTimeline.noEventsIn7Days'));
+      // "No events" is a claim about observed quiet; only make it when the
+      // lane's source actually reported. An unavailable source is a coverage
+      // gap, not an empty week.
+      .text((d) => this.unavailableLanes.has(d)
+        ? t('components.countryTimeline.coverageUnavailable')
+        : t('components.countryTimeline.noEventsIn7Days'));
   }
 
   private drawEvents(

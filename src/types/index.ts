@@ -1027,6 +1027,9 @@ export interface MilitaryVesselCluster {
   vessels: MilitaryVessel[];
   region?: string;
   activityType?: 'exercise' | 'deployment' | 'transit' | 'unknown';
+  // True for USNI-derived clusters whose centroid averages synthetic
+  // (report-inferred) positions — consumers must disclose EST. POSITION.
+  approximate?: boolean;
 }
 
 // Combined military activity summary
@@ -1565,4 +1568,7 @@ export interface CountryBriefSignals {
   thermalEscalations: number;
   sanctionsDesignations: number;
   sanctionsNewDesignations: number;
+  // True when the vessel counts include USNI-derived synthetic positions —
+  // consumers disclose the counts as approximate, not AIS-tracked.
+  militaryVesselsApproximate?: boolean;
 }

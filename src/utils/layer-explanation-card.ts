@@ -9,7 +9,9 @@ export function renderLayerExplanationCard(layerLabel: string, explanation: Laye
   const evidence = explanation.evidence.length > 0
     ? `<div class="layer-explanation-grounding"><span>Grounded in</span>${explanation.evidence.map(item => `<code>${escapeHtml(item)}</code>`).join('')}</div>`
     : '';
-  const coverageLabel = explanation.coverage === 'curated' ? 'Curated v1' : 'Fallback';
+  // "Not yet curated" (not a bare "Fallback"): the chip must say what the
+  // state means on its own — the card body carries the full explanation.
+  const coverageLabel = explanation.coverage === 'curated' ? 'Curated v1' : 'Not yet curated';
 
   return `
     <div class="layer-explanation-header">

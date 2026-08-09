@@ -3,14 +3,11 @@ export const DEBUGBEAR_RUM_SCRIPT_SRC = 'https://cdn.debugbear.com/lpMwA9KpC6pf.
 // experiment that justified full sampling is a no-go (KTD7 feasibility failure); ongoing web-vitals
 // RUM needs only a fraction. Keep in sync with src/bootstrap/debugbear-rum.ts (asserted by the test).
 export const DEBUGBEAR_RUM_SAMPLE_RATE = 10;
+// Single-variant product: retired variant subdomains 308 to www at the edge,
+// so only the canonical hosts can ever run this bootstrap.
 const DEBUGBEAR_RUM_HOSTS = new Set([
   'worldmonitor.app',
   'www.worldmonitor.app',
-  'tech.worldmonitor.app',
-  'finance.worldmonitor.app',
-  'commodity.worldmonitor.app',
-  'happy.worldmonitor.app',
-  'energy.worldmonitor.app',
 ]);
 
 type DebugBearRumEvent = ['presampling', number] | ['error' | 'unhandledrejection', Event];

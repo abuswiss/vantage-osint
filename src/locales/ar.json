@@ -116,7 +116,8 @@
       "activeSirens": "صفارات إنذار نشطة",
       "sirens24h": "صفارات / 24 ساعة",
       "aviationDisruptions": "اضطرابات الطيران",
-      "gpsJammingZones": "مناطق تشويش GPS"
+      "gpsJammingZones": "مناطق تشويش GPS",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "countryFacts": "حقائق عن البلد",
     "loadingFacts": "جارٍ تحميل حقائق البلد...",
@@ -185,7 +186,20 @@
       "corridorConditions": "أحوال الممرات",
       "activityNowcast": "التنبؤ الآني للنشاط",
       "decisionSignalsUnavailable": "لقطة إشارات قرار الصين غير متاحة حالياً."
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "العالم",
@@ -731,7 +745,11 @@
         "base": "قواعد عسكرية",
         "nuclear": "نووي قريب",
         "port": "موانئ"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -958,12 +976,7 @@
       "positions": "مواقع الطائرات",
       "navalVesselsLoading": "السفن البحرية",
       "theaterAnalysis": "تحليل مسرح العمليات",
-      "connectingStreams": "جارٍ الاتصال ببث ADS-B و AIS المباشر...",
       "initialLoadNote": "التحميل الأولي يستغرق 30-60 ثانية أثناء تجميع بيانات التتبع",
-      "acquiringData": "جارٍ الحصول على البيانات",
-      "acquiringDesc": "جارٍ الاتصال بشبكة ADS-B للحصول على بيانات الرحلات العسكرية. قد يستغرق 30-60 ثانية عند التحميل الأول.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "بث AIS للسفن",
       "retryNow": "إعادة المحاولة الآن",
       "feedRateLimited": "تم تقييد معدل التغذية",
       "rateLimitedDesc": "واجهة OpenSky API لديها حدود للطلبات. ستعيد اللوحة المحاولة تلقائياً خلال دقائق، أو يمكنك المحاولة الآن.",
@@ -995,7 +1008,17 @@
       },
       "emojiKeyLabel": "مفتاح الرموز التعبيرية",
       "emojiKeyAir": "الأصول الجوية",
-      "emojiKeyNaval": "الأصول البحرية"
+      "emojiKeyNaval": "الأصول البحرية",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareStory": "مشاركة القصة",
@@ -1322,7 +1345,8 @@
       "provenanceTitle": "أصل التغطية: عدد القصص المأخوذة والمصادر المميزة التي تم اختيار هذا الملخص منها",
       "compiledFrom": "مجمّع من {{stories}} قصة عبر {{sources}} مصادر",
       "briefFreshness": "تم الإنشاء منذ {{minutes}}د · أحدث مصدر عمره {{hours}}س",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "cascade": {
       "filters": {
@@ -1546,7 +1570,8 @@
     },
     "countryTimeline": {
       "now": "الآن",
-      "noEventsIn7Days": "لا توجد أحداث خلال 7 أيام"
+      "noEventsIn7Days": "لا توجد أحداث خلال 7 أيام",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>استخبارات الأخبار</strong> مراقبة أخبار عالمية فورية:<ul><li>فئات مواضيع منتقاة (نزاعات، سيبرانية، إلخ.)</li><li>مقالات من 100+ لغة مترجمة</li><li>تُحدّث كل 15 دقيقة</li><li>14-day media tone &amp; volume trend per topic</li></ul>المصدر: مشروع GDELT (gdeltproject.org)"

@@ -203,14 +203,20 @@ export function buildSharedCountryContext(digest: unknown, countryCode: string):
   });
 
   // No country match → ground on the top global items instead. A generic
-  // world-situation brief beats an empty prompt (mirrors the MCP tool).
-  const groundingItems = (countryItems.length > 0 ? countryItems : allItems).slice(0, MAX_GROUNDING_ITEMS);
+  // world-situation brief beats an empty prompt (mirrors the MCP tool) — but
+  // the substitution must be declared, or the model narrates global stories
+  // as country reporting (or reads the absence as "quiet").
+  const usingGlobalFallback = countryItems.length === 0;
+  const groundingItems = (usingGlobalFallback ? allItems : countryItems).slice(0, MAX_GROUNDING_ITEMS);
   const sources = collectBriefSources(groundingItems);
   const sourceLines = sources.length > 0 ? ['Brief source articles:', ...briefSourceContextLines(sources)] : [];
   const headlineLines = groundingItems
     .map((item) => (typeof item.title === 'string' ? item.title : ''))
     .filter(Boolean);
-  const contextSnapshot = [...sourceLines, 'Headlines:', ...headlineLines].join('\n').slice(0, MAX_CONTEXT_CHARS);
+  const fallbackNote = usingGlobalFallback
+    ? ['NOTE: No country-specific headlines matched in the current digest. The items below are top GLOBAL headlines — do not attribute them to this country, and state that country-specific reporting is limited rather than describing the situation as quiet.']
+    : [];
+  const contextSnapshot = [...fallbackNote, ...sourceLines, 'Headlines:', ...headlineLines].join('\n').slice(0, MAX_CONTEXT_CHARS);
   return { contextSnapshot, sources };
 }
 

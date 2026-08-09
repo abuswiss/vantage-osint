@@ -106,7 +106,8 @@
       "activeSirens": "사이렌 작동 중",
       "sirens24h": "사이렌 / 24시간",
       "aviationDisruptions": "항공 장애",
-      "gpsJammingZones": "GPS 교란 구역"
+      "gpsJammingZones": "GPS 교란 구역",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "fallback": {
       "instabilityIndex": "**불안정 지수: {{score}}/100** ({{level}}, {{trend}})",
@@ -177,7 +178,20 @@
       "corridorConditions": "회랑 상황",
       "activityNowcast": "활동 나우캐스트",
       "decisionSignalsUnavailable": "중국 의사결정 신호 스냅샷을 현재 사용할 수 없습니다."
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "세계",
@@ -723,7 +737,11 @@
         "base": "군사 기지",
         "nuclear": "인근 핵시설",
         "port": "항구"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -993,12 +1011,7 @@
       "positions": "항공기 위치",
       "navalVesselsLoading": "해군 함정",
       "theaterAnalysis": "작전지역 분석",
-      "connectingStreams": "실시간 ADS-B 및 AIS 스트림에 연결 중...",
       "initialLoadNote": "추적 정보 축적을 위해 초기 로딩에 30-60초 소요",
-      "acquiringData": "정보 수집 중",
-      "acquiringDesc": "군용 비행 정보를 위해 ADS-B 네트워크에 연결 중입니다. 최초 로딩 시 30-60초 소요될 수 있습니다.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "AIS 함정 스트림",
       "retryNow": "지금 재시도",
       "feedRateLimited": "피드 속도 제한",
       "rateLimitedDesc": "OpenSky API 요청 제한에 도달했습니다. 패널이 수 분 후 자동으로 재시도하거나 수동으로 시도할 수 있습니다.",
@@ -1030,7 +1043,17 @@
       },
       "emojiKeyLabel": "이모지 범례",
       "emojiKeyAir": "항공 자산",
-      "emojiKeyNaval": "해상 자산"
+      "emojiKeyNaval": "해상 자산",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareLink": "링크 공유",
@@ -1353,7 +1376,8 @@
       "provenanceTitle": "커버리지 출처: 이 브리프가 선택된 수집 스토리 및 고유 소스의 개수",
       "compiledFrom": "{{stories}}개의 스토리와 {{sources}}개의 소스에서 컴파일됨",
       "briefFreshness": "{{minutes}}분 전 생성됨 · 최신 소스 {{hours}}시간 전",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "settings": {
       "exportSettings": "설정 내보내기",
@@ -1670,7 +1694,8 @@
     },
     "countryTimeline": {
       "now": "현재",
-      "noEventsIn7Days": "7일간 사건 없음"
+      "noEventsIn7Days": "7일간 사건 없음",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>뉴스 인텔리전스</strong> 실시간 글로벌 뉴스 모니터링:<ul><li>선별된 주제 카테고리 (분쟁, 사이버 등)</li><li>100개 이상 언어의 기사를 번역</li><li>15분마다 업데이트</li><li>14-day media tone &amp; volume trend per topic</li></ul>출처: GDELT Project (gdeltproject.org)"

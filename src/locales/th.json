@@ -106,7 +106,8 @@
       "activeSirens": "ไซเรนทำงาน",
       "sirens24h": "ไซเรน / 24 ชม.",
       "aviationDisruptions": "การหยุดชะงักด้านการบิน",
-      "gpsJammingZones": "เขตรบกวน GPS"
+      "gpsJammingZones": "เขตรบกวน GPS",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "fallback": {
       "instabilityIndex": "**ดัชนีความไม่มั่นคง: {{score}}/100** ({{level}}, {{trend}})",
@@ -177,7 +178,20 @@
       "corridorConditions": "สภาวะทางเดิน",
       "activityNowcast": "การคาดการณ์กิจกรรมปัจจุบัน",
       "decisionSignalsUnavailable": "ภาพรวมสัญญาณการตัดสินใจของจีนไม่พร้อมใช้งานในขณะนี้"
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "โลก",
@@ -723,7 +737,11 @@
         "base": "ฐานทัพ",
         "nuclear": "นิวเคลียร์ใกล้เคียง",
         "port": "ท่าเรือ"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -993,12 +1011,7 @@
       "positions": "ตำแหน่งอากาศยาน",
       "navalVesselsLoading": "เรือรบ",
       "theaterAnalysis": "การวิเคราะห์พื้นที่ปฏิบัติการ",
-      "connectingStreams": "กำลังเชื่อมต่อกับสตรีม ADS-B และ AIS สด...",
       "initialLoadNote": "การโหลดครั้งแรกใช้เวลา 30-60 วินาทีขณะรวบรวมข้อมูลการติดตาม",
-      "acquiringData": "กำลังรับข้อมูล",
-      "acquiringDesc": "กำลังเชื่อมต่อกับเครือข่าย ADS-B สำหรับข้อมูลเที่ยวบินทหาร อาจใช้เวลา 30-60 วินาทีในการโหลดครั้งแรก",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "สตรีมเรือ AIS",
       "retryNow": "ลองใหม่ตอนนี้",
       "feedRateLimited": "ฟีดถูกจำกัดอัตรา",
       "rateLimitedDesc": "OpenSky API มีขีดจำกัดคำขอ แผงจะลองใหม่อัตโนมัติในอีกไม่กี่นาที หรือคุณสามารถลองใหม่ได้ตอนนี้",
@@ -1030,7 +1043,17 @@
       },
       "emojiKeyLabel": "กุญแจอีโมจิ",
       "emojiKeyAir": "สินทรัพย์ทางอากาศ",
-      "emojiKeyNaval": "สินทรัพย์ทางเรือ"
+      "emojiKeyNaval": "สินทรัพย์ทางเรือ",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareLink": "แชร์ลิงก์",
@@ -1353,7 +1376,8 @@
       "provenanceTitle": "ความมาของการครอบคลุม: จำนวนเรื่องข่าวที่นำเข้าและแหล่งข่าวที่แตกต่างกันที่ใช้สำหรับสรุปนี้",
       "compiledFrom": "รวบรวมจาก {{stories}} เรื่องราวจาก {{sources}} แหล่งที่มา",
       "briefFreshness": "สร้างเมื่อ {{minutes}}m ที่แล้ว · แหล่งข้อมูลล่าสุด {{hours}}h เก่า",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "settings": {
       "exportSettings": "ส่งออกการตั้งค่า",
@@ -1670,7 +1694,8 @@
     },
     "countryTimeline": {
       "now": "ตอนนี้",
-      "noEventsIn7Days": "ไม่มีเหตุการณ์ใน 7 วัน"
+      "noEventsIn7Days": "ไม่มีเหตุการณ์ใน 7 วัน",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>ข่าวกรองข่าว</strong> การเฝ้าระวังข่าวทั่วโลกเรียลไทม์:<ul><li>หมวดหมู่หัวข้อที่คัดสรร (ความขัดแย้ง, ไซเบอร์ ฯลฯ)</li><li>บทความจาก 100+ ภาษาที่แปลแล้ว</li><li>อัปเดตทุก 15 นาที</li><li>14-day media tone &amp; volume trend per topic</li></ul>แหล่งที่มา: GDELT Project (gdeltproject.org)"

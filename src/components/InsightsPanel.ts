@@ -14,7 +14,7 @@ import { escapeHtml, sanitizeUrl, unsafeRawHtml } from '@/utils/sanitize';
 import { collectBriefSources, normalizeCachedBriefSources, renderBriefSourcesFooter, type BriefSource } from '@/utils/brief-sources';
 import { formatIntelBrief } from '@/utils/format-intel-brief';
 import { SITE_VARIANT } from '@/config';
-import { deletePersistentCache, getPersistentCache, setPersistentCache } from '@/services/persistent-cache';
+import { deletePersistentCache, describeFreshness, getPersistentCache, setPersistentCache } from '@/services/persistent-cache';
 import { t } from '@/services/i18n';
 import { isDesktopRuntime } from '@/services/runtime';
 import { getAiFlowSettings, isAnyAiProviderEnabled, subscribeAiFlowChange } from '@/services/ai-flow-settings';
@@ -141,7 +141,12 @@ export class InsightsPanel extends Panel {
     if (this.updateGeneration > 0) return;
     await this.loadBriefFromCache();
     if (this.updateGeneration > 0 || !this.cachedBrief) return;
-    this.setDataBadge('cached');
+    // Never a bare "CACHED": say how old the saved brief is and why it shows.
+    this.setDataBadge(
+      'cached',
+      this.lastBriefUpdate ? describeFreshness(this.lastBriefUpdate) : undefined,
+      t('components.insights.cachedBriefTitle'),
+    );
     this.setSafeContent(unsafeRawHtml(
       this.renderWorldBrief(this.cachedBrief, this.cachedBriefSources),
       'renderWorldBrief formats and links the cached summary (#4890 early brief paint)',

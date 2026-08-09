@@ -175,7 +175,8 @@
       "activeSirens": "सक्रिय सायरन",
       "sirens24h": "सायरन / 24 घंटे",
       "aviationDisruptions": "हवाई मार्ग विघ्न",
-      "gpsJammingZones": "जीपीएस जामिंग क्षेत्र"
+      "gpsJammingZones": "जीपीएस जामिंग क्षेत्र",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "fallback": {
       "instabilityIndex": "**अस्थिरता सूचकांक: {{score}}/100** ({{level}}, {{trend}})",
@@ -246,7 +247,20 @@
       "corridorConditions": "गलियारा स्थितियाँ",
       "activityNowcast": "गतिविधि नाउकास्ट",
       "decisionSignalsUnavailable": "चीन का निर्णय-संकेत स्नैपशॉट वर्तमान में अनुपलब्ध है।"
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "दुनिया",
@@ -792,7 +806,11 @@
         "base": "सेना के अड्डे",
         "nuclear": "नाभिकीय स्थल",
         "port": "बंदरगाह"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -1134,12 +1152,7 @@
       "positions": "विमान स्थिति",
       "navalVesselsLoading": "नौसैनिक जहाज लोड हो रहे हैं",
       "theaterAnalysis": "थिएटर विश्लेषण",
-      "connectingStreams": "ADS-B और AIS लाइव स्ट्रीम से जुड़ रहे हैं…",
       "initialLoadNote": "प्रारंभिक लोड में 30-60 सेकंड लग सकते हैं क्योंकि ट्रैकिंग डेटा जमा होता है",
-      "acquiringData": "डेटा ले रहे हैं",
-      "acquiringDesc": "सैन्य उड़ान डेटा के लिए ADS-B नेटवर्क से कनेक्ट हो रहा है। पहली बार लोड में 30-60 सेकंड लग सकते हैं।",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "AIS जहाज स्ट्रीम",
       "retryNow": "अब पुनः प्रयास करें",
       "feedRateLimited": "फीड रेट सीमित",
       "rateLimitedDesc": "OpenSky API के अनुरोध सीमा हैं। पैनल कुछ मिनट में स्वचालित पुनः प्रयास करेगा, या आप अभी कोशिश कर सकते हैं।",
@@ -1171,7 +1184,17 @@
         "east-med-theater": "पूर्वी भूमध्य सागर",
         "israel-gaza-theater": "इज़राइल/गाज़ा",
         "yemen-redsea-theater": "यमन / लाल सागर"
-      }
+      },
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareLink": "लिंक साझा करें",
@@ -1494,7 +1517,8 @@
       "provenanceTitle": "कवरेज प्रोवेनेंस: इस ब्रीफ को कितनी अंतर्ग्रहीत कहानियों और विशिष्ट स्रोतों से चुना गया था",
       "compiledFrom": "{{stories}} कहानियों और {{sources}} स्रोतों से संकलित",
       "briefFreshness": "{{minutes}}m पहले जनरेट किया गया · नवीनतम स्रोत {{hours}}h पुराना",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "settings": {
       "exportSettings": "सेटिंग्स निर्यात करें",
@@ -1811,7 +1835,8 @@
     },
     "countryTimeline": {
       "now": "अभी",
-      "noEventsIn7Days": "पिछले 7 दिनों में कोई घटना नहीं"
+      "noEventsIn7Days": "पिछले 7 दिनों में कोई घटना नहीं",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>समाचार इंटेलिजेंस</strong> रियल-टाइम वैश्विक समाचार निगरानी:<ul><li>विषय वर्ग (संघर्ष, साइबर आदि)</li><li>100+ भाषाओं से अनुवादित लेख</li><li>15 मिनट में अपडेट</li><li>14 दिन मीडिया टोन और वॉल्यूम ट्रेंड प्रत्येक विषय के लिए</li><li>14 दिन मीडिया टोन और वॉल्यूम ट्रेंड प्रत्येक विषय के लिए</li></ul>स्रोत: GDELT प्रोजेक्ट (gdeltproject.org)"

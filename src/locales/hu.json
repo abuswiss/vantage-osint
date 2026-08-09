@@ -175,7 +175,8 @@
       "activeSirens": "Aktív szirénák",
       "sirens24h": "Szirénák / 24h",
       "aviationDisruptions": "Repülési zavarok",
-      "gpsJammingZones": "GPS-zavar zónák"
+      "gpsJammingZones": "GPS-zavar zónák",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "fallback": {
       "instabilityIndex": "**Instabilitási index: {{score}}/100** ({{level}}, {{trend}})",
@@ -246,7 +247,20 @@
       "corridorConditions": "Folyosó feltételek",
       "activityNowcast": "Tevékenység nowcast",
       "decisionSignalsUnavailable": "Kína döntési jeleinek pillanatképe jelenleg nem érhető el."
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "VILÁG",
@@ -792,7 +806,11 @@
         "base": "Katonai bázisok",
         "nuclear": "Nukleáris létesítmények",
         "port": "Kikötők"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -1134,12 +1152,7 @@
       "positions": "Repülőgépek pozíciói",
       "navalVesselsLoading": "Haditengerészeti járművek",
       "theaterAnalysis": "Színpad elemzés",
-      "connectingStreams": "Csatlakozás az élő ADS-B és AIS adatfolyamokhoz...",
       "initialLoadNote": "A kezdeti betöltés 30-60 másodpercet vesz igénybe, amíg a követési adatok felhalmozódnak",
-      "acquiringData": "Adatok beszerzése",
-      "acquiringDesc": "Csatlakozás az ADS-B hálózathoz katonai repülési adatokért. Ez az első betöltéskor 30-60 másodpercet vehet igénybe.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "AIS Jármű adatfolyam",
       "retryNow": "Újra most",
       "feedRateLimited": "Adatfolyam sebessége korlátozott",
       "rateLimitedDesc": "Az OpenSky API kéréskorlátokkal rendelkezik. A panel néhány perc múlva automatikusan újra próbálkozik, vagy most megpróbálhat újra.",
@@ -1171,7 +1184,17 @@
         "east-med-theater": "Keleti Mediterráneum",
         "israel-gaza-theater": "Izrael/Gáza",
         "yemen-redsea-theater": "Jemen/Vörös-tenger"
-      }
+      },
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareLink": "Hivatkozás megosztása",
@@ -1494,7 +1517,8 @@
       "provenanceTitle": "Lefedettség eredete: hány feldolgozott történetből és különálló forrásból választotta ki ezt az összefoglalót",
       "compiledFrom": "{{stories}} történetből és {{sources}} forrásból összeállítva",
       "briefFreshness": "Generálva {{minutes}}m idővel ezelőtt · legfrissebb forrás {{hours}}ó régi",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "settings": {
       "exportSettings": "Beállítások exportálása",
@@ -1811,7 +1835,8 @@
     },
     "countryTimeline": {
       "now": "most",
-      "noEventsIn7Days": "Nincs esemény az utolsó 7 napban"
+      "noEventsIn7Days": "Nincs esemény az utolsó 7 napban",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>Hírhírszerzés</strong> Valós idejű globális hírellenőrzés:<ul><li>Kuratált témakategóriák (konfliktusok, kibervédelem stb.)</li><li>Cikkek 100+ nyelvről lefordítva</li><li>Frissítések 15 percenként</li><li>14 napos médiahang és térfogat-trend témánként</li><li>14 napos médiahang és térfogat-trend témánként</li></ul>Forrás: GDELT Project (gdeltproject.org)"

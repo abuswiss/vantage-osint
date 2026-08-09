@@ -4,6 +4,7 @@ import type { PredictionMarket } from '@/services/prediction';
 import type { NewsItem } from '@/types';
 import type { GetCountryChokepointIndexResponse, SectorExposureSummary, CountryProductsResponse, MultiSectorShockResponse } from '@/services/supply-chain';
 import type { BriefSource } from '@/utils/brief-sources';
+import type { CountryBriefCoverage } from '@/services/country-signal-coverage';
 import type { DecisionSignalProvenance } from '../../shared/decision-signal-provenance-contract';
 import type { ChinaDecisionSignalGroupId } from '../../shared/china-decision-signals';
 
@@ -47,6 +48,12 @@ export interface CountryDeepDiveSignalDetails {
   medium: number;
   low: number;
   recentHigh: CountryDeepDiveSignalItem[];
+  /**
+   * The bounded 24h aggregator evicted signals for this country within the
+   * window. Totals may under-count — and when the country has no cluster at
+   * all, renderers must show "omitted by capacity", never zeros/quiet.
+   */
+  incomplete?: boolean;
 }
 
 export interface CountryDeepDiveBaseSummary {
@@ -214,7 +221,12 @@ export interface CountryBriefPanel {
   updateInfrastructure(code: string): void;
   showGeoError?(onRetry: () => void): void;
   updateScore?(score: CountryScore | null, signals: CountryBriefSignals): void;
-  updateSignalDetails?(details: CountryDeepDiveSignalDetails): void;
+  // null = signal aggregation unavailable (chunk failed to load) — render an
+  // explicit unavailable state, never zeros.
+  updateSignalDetails?(details: CountryDeepDiveSignalDetails | null): void;
+  // Coverage gaps computed by country-signal-coverage: domains whose backing
+  // caches never loaded. Chips/severity/timeline share this one model.
+  updateSignalCoverage?(coverage: CountryBriefCoverage): void;
   updateMilitaryActivity?(summary: CountryDeepDiveMilitarySummary): void;
   updateEconomicIndicators?(indicators: CountryDeepDiveEconomicIndicator[]): void;
   updateChinaCountrySummary?(data: ChinaCountrySummaryData): void;

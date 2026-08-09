@@ -106,7 +106,8 @@
       "activeSirens": "Sirene active",
       "sirens24h": "Sirene / 24h",
       "aviationDisruptions": "Întreruperi ale aviației",
-      "gpsJammingZones": "Zone de bruiaj GPS"
+      "gpsJammingZones": "Zone de bruiaj GPS",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "fallback": {
       "instabilityIndex": "**Index de instabilitate: {{score}}/100** ({{level}}, {{trend}})",
@@ -179,7 +180,20 @@
       "corridorConditions": "Condiții de coridor",
       "activityNowcast": "Previziune activitate curentă",
       "decisionSignalsUnavailable": "Instantaneul semnalelor de decizie ale Chinei este momentan indisponibil."
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "LUME",
@@ -725,7 +739,11 @@
         "base": "Bazele militare",
         "nuclear": "Nuclear apropiat",
         "port": "Porturi"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -995,12 +1013,7 @@
       "positions": "Pozițiile aeronavei",
       "navalVesselsLoading": "Nave navale",
       "theaterAnalysis": "Analiza teatrului de operațiuni",
-      "connectingStreams": "Se conectează la fluxuri live ADS-B și AIS...",
       "initialLoadNote": "Încărcarea inițială durează 30-60 de secunde, deoarece datele de urmărire se acumulează",
-      "acquiringData": "Obținerea datelor",
-      "acquiringDesc": "Conectare la rețeaua ADS-B pentru date de zbor militar. Acest lucru poate dura 30-60 de secunde la prima încărcare.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "Fluxul navei AIS",
       "retryNow": "Reîncercați acum",
       "feedRateLimited": "Limită de rată atinsă",
       "rateLimitedDesc": "OpenSky API are limite de solicitare. Panoul va reîncerca automat în câteva minute sau puteți încerca din nou acum.",
@@ -1032,7 +1045,17 @@
       },
       "emojiKeyLabel": "Cheia Emoji",
       "emojiKeyAir": "Active Aeriene",
-      "emojiKeyNaval": "Active Navale"
+      "emojiKeyNaval": "Active Navale",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareLink": "Distribuie linkul",
@@ -1356,7 +1379,8 @@
       "provenanceTitle": "Proveniență acoperire: câte articole ingerate și surse distincte din care a fost selectat acest rezumat",
       "compiledFrom": "Compilat din {{stories}} povești din {{sources}} surse",
       "briefFreshness": "Generat {{minutes}}m în urmă · cea mai nouă sursă {{hours}}h vechime",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "settings": {
       "exportSettings": "Exportare setări",
@@ -1673,7 +1697,8 @@
     },
     "countryTimeline": {
       "now": "acum",
-      "noEventsIn7Days": "Niciun eveniment în 7 zile"
+      "noEventsIn7Days": "Niciun eveniment în 7 zile",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>News Intelligence</strong> Monitorizare în timp real a știrilor globale:<ul><li>Categorii de subiecte selectate (conflicte, cibernetice etc.)</li><li>Articole din peste 100 de limbi traduse</li><li>Actualizări la fiecare 15 minute</li><li>14-day media tone &amp; volume trend per topic</li></ul>Sursa: Proiectul GDELT (gdeltproject.org)"

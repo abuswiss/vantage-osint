@@ -181,7 +181,8 @@
       "activeSirens": "Aktivne sirene",
       "sirens24h": "Sirene / 24h",
       "aviationDisruptions": "Poremećaji u zrakoplovstvu",
-      "gpsJammingZones": "Zone ometanja GPS-a"
+      "gpsJammingZones": "Zone ometanja GPS-a",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "fallback": {
       "instabilityIndex": "**Indeks nestabilnosti: {{score}}/100** ({{level}}, {{trend}})",
@@ -255,7 +256,20 @@
       "corridorConditions": "Uvjeti koridora",
       "activityNowcast": "Nowcast aktivnosti",
       "decisionSignalsUnavailable": "Snimka signala odlučivanja Kine trenutno nije dostupna."
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "SVIJET",
@@ -848,7 +862,11 @@
         "recentEarthquakes": "{{count}} nedavnih potresa",
         "stockIndex": "Burovski indeks: {{value}}",
         "recentHeadlines": "**Nedavne vijesti:**"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -1251,12 +1269,7 @@
       "positions": "Pozicije zrakoplova",
       "navalVesselsLoading": "Brojevni brodovi",
       "theaterAnalysis": "Analiza teatra",
-      "connectingStreams": "Povezivanje na live ADS-B & AIS tokove...",
       "initialLoadNote": "Početno učitavanje traje 30-60 sekundi dok se podaci praćenja prikupljaju",
-      "acquiringData": "Prikupljanje podataka",
-      "acquiringDesc": "Povezivanje na ADS-B mrežu za podatke vojnih letova. Ovo može trajati 30-60 sekundi pri prvom učitavanju.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "AIS tok brodova",
       "retryNow": "Pokušaj ponovno",
       "feedRateLimited": "Brzina feed-a ograničena",
       "rateLimitedDesc": "OpenSky API ima ograničenja zahtjeva. Ploča će automatski pokušati ponovno za nekoliko minuta, ili možete pokušati sada.",
@@ -1288,7 +1301,17 @@
         "east-med-theater": "Istočno Sredozemlje",
         "israel-gaza-theater": "Izrael/Gaza",
         "yemen-redsea-theater": "Jemen/Crveno more"
-      }
+      },
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareLink": "Dijeli vezu",
@@ -1631,7 +1654,8 @@
       "provenanceTitle": "Pokrivanje izvora: koliko je unesenih članaka i različitih izvora odabrano za ovaj sažetak",
       "compiledFrom": "Sastavljeno od {{stories}} priča iz {{sources}} izvora",
       "briefFreshness": "Generirano prije {{minutes}}m · najnoviji izvor star {{hours}}h",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "settings": {
       "dataManagementLabel": "Upravljanje podacima",
@@ -1965,7 +1989,8 @@
     },
     "countryTimeline": {
       "now": "sada",
-      "noEventsIn7Days": "Nema događaja u 7 dana"
+      "noEventsIn7Days": "Nema događaja u 7 dana",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>Obavještajnost vijestima</strong> Praćenje vijestima u realnom vremenu:<ul><li>Kurirane kategorije tema (sukobi, kibernetika, itd.)</li><li>Članci iz 100+ jezika prevedeni</li><li>Ažuriranja svakih 15 minuta</li><li>14-dnevni tren medijskih tonova i volumena po temi</li><li>14-dnevni tren medijskih tonova i volumena po temi</li></ul>Izvor: GDELT Project (gdeltproject.org)"

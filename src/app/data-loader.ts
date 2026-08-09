@@ -213,11 +213,20 @@ const PROTO_TO_CLIENT_PHASE: Record<string, import('@/types').StoryPhase> = {
   STORY_PHASE_FADING:     'fading',
 };
 
+// Digest counterpart of the rss.ts parse-loop rule: proto3 strings default to
+// '' and older persisted digests predate the server-side title gate, so a
+// titleless item must be dropped here before it reaches feeds/clustering.
+function protoItemsToNewsItems(items: ProtoNewsItem[]): NewsItem[] {
+  return items
+    .map(protoItemToNewsItem)
+    .filter(item => item.title.length > 0);
+}
+
 function protoItemToNewsItem(p: ProtoNewsItem): NewsItem {
   const level: ClientThreatLevel = protoThreatLevelToLabel(p.threat?.level);
   return {
     source: p.source,
-    title: p.title,
+    title: p.title.trim(),
     link: p.link,
     pubDate: new Date(p.publishedAt),
     isAlert: p.isAlert,
@@ -1500,8 +1509,7 @@ export class DataLoaderManager implements AppModule {
         // load left behind.
         this.clearNewsSourceCoverage(category);
         this.setNewsRefreshDegraded(category, false);
-        const items = (digest.categories[category]?.items ?? [])
-          .map(protoItemToNewsItem)
+        const items = protoItemsToNewsItems(digest.categories[category]?.items ?? [])
           .filter(i => enabledNames.has(i.source));
 
         void ingestTrendingHeadlines(items.map(i => ({ title: i.title, pubDate: i.pubDate, source: i.source, link: i.link })))
@@ -1775,8 +1783,7 @@ export class DataLoaderManager implements AppModule {
 
     if (digest?.categories && 'intel' in digest.categories) {
       // Digest branch for intel
-      const intel = (digest.categories['intel']?.items ?? [])
-        .map(protoItemToNewsItem)
+      const intel = protoItemsToNewsItems(digest.categories['intel']?.items ?? [])
         .filter(i => enabledIntelNames.has(i.source));
       checkBatchForBreakingAlerts(intel);
       this.renderNewsForCategory('intel', intel);

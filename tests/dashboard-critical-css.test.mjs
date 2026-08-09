@@ -253,19 +253,22 @@ describe('dashboard critical CSS graph', () => {
     );
   });
 
-  it('keeps happy variant theme CSS off the default dashboard static graph', () => {
+  it('keeps the removed happy variant theme CSS out of the dashboard graph', () => {
+    // The single-variant strip deleted happy-theme.css entirely; nothing may
+    // reference it again, statically or dynamically (a dynamic specifier for
+    // a deleted file breaks the build at bundle time).
     const dashboardGraph = collectStaticGraph('src/main.ts');
 
     assert.equal(
       dashboardGraph.has('src/styles/happy-theme.css'),
       false,
-      'Non-happy dashboard variants must not eagerly import happy-theme.css through src/main.ts.',
+      'The dashboard must not import the deleted happy-theme.css through src/main.ts.',
     );
 
     assert.equal(
       dynamicModuleSpecifiers('src/main.ts').includes('./styles/happy-theme.css'),
-      true,
-      'The happy variant should still be able to load happy-theme.css through an explicit dynamic import.',
+      false,
+      'No dynamic import may reference the deleted happy-theme.css.',
     );
   });
 

@@ -533,7 +533,11 @@ export class CountryBriefPage implements CountryBriefPanel {
       <div class="cb-brief-text">${formatted}</div>
       ${sourcesFooter}
       <div class="cb-brief-footer">
-        ${data.cached ? `<span class="intel-cached">📋 ${t('modals.countryBrief.cached')}</span>` : `<span class="intel-fresh">✨ ${t('modals.countryBrief.fresh')}</span>`}
+        ${data.fallback
+          ? `<span class="intel-cached" title="${escapeHtml(t('modals.countryBrief.groundedFallbackTitle'))}">${t('modals.countryBrief.groundedFallback')}</span>`
+          : data.cached
+            ? `<span class="intel-cached" title="${escapeHtml(t('modals.countryBrief.cachedTitle'))}">📋 ${t('modals.countryBrief.cached')}</span>`
+            : `<span class="intel-fresh" title="${escapeHtml(t('modals.countryBrief.freshTitle'))}">✨ ${t('modals.countryBrief.fresh')}</span>`}
         <span class="intel-timestamp">${data.generatedAt ? new Date(data.generatedAt).toLocaleTimeString() : ''}</span>
       </div>`, "legacy direct innerHTML migration"));
   }

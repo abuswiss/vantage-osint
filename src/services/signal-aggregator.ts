@@ -112,10 +112,36 @@ class SignalAggregator {
   private temporalSourceMap = new WeakMap<GeoSignal, string>();
   // Tracks signals added by ingestTheaterPostures so they can be cleared on re-ingestion
   private theaterPostureSignals: GeoSignal[] = [];
+  // Country code -> (evicted signal's type -> expiry, i.e. the evicted
+  // signal's own timestamp + WINDOW_MS) of cap evictions still relevant for
+  // it. A country absent from getCountryClusters() could be truly quiet OR
+  // could have had all its signals dropped by the bounded cap; this map is
+  // what lets callers tell the two apart instead of inferring quiet from
+  // absence. An entry stays valid only as long as the evicted signal itself
+  // would have stayed in the window — an eviction cannot vouch for coverage
+  // gaps beyond the moment the signal would have aged out anyway. Evidence
+  // is keyed by the evicted signal's TYPE so that re-ingesting a source type
+  // (a complete replacement snapshot) retires exactly the evidence its
+  // replaced signals produced: a later under-cap snapshot makes the country
+  // honestly complete again, while eviction evidence from other signal types
+  // keeps vouching for their own coverage gaps.
+  private capEvictions = new Map<string, Map<SignalType, number>>();
 
   private clearSignalType(type: SignalType): void {
     this.signals = this.signals.filter(s => s.type !== type);
+    this.retireCapEvictionsForType(type);
     this.syncTheaterPostureReferences();
+  }
+
+  // A clearSignalType() caller is about to replace this type's signals with a
+  // complete snapshot, so eviction evidence attributable solely to the
+  // replaced signals no longer describes a coverage gap. If the new snapshot
+  // overflows the cap again, enforceSignalCap() re-records fresh evidence.
+  private retireCapEvictionsForType(type: SignalType): void {
+    for (const [country, byType] of this.capEvictions) {
+      if (!byType.delete(type)) continue;
+      if (byType.size === 0) this.capEvictions.delete(country);
+    }
   }
 
   private enforceSignalCap(): void {
@@ -128,8 +154,48 @@ class SignalAggregator {
         .slice(0, SIGNAL_AGGREGATOR_MAX_SIGNALS)
         .map((entry) => entry.signal)
     );
+    const now = Date.now();
+    for (const s of this.signals) {
+      if (keep.has(s)) continue;
+      const at = s.timestamp.getTime();
+      if (!Number.isFinite(at)) continue;
+      const expiry = at + this.WINDOW_MS;
+      if (expiry <= now) continue;
+      let byType = this.capEvictions.get(s.country);
+      if (!byType) {
+        byType = new Map<SignalType, number>();
+        this.capEvictions.set(s.country, byType);
+      }
+      const existing = byType.get(s.type);
+      if (existing === undefined || expiry > existing) {
+        byType.set(s.type, expiry);
+      }
+    }
     this.signals = this.signals.filter(s => keep.has(s));
     this.syncTheaterPostureReferences();
+  }
+
+  private pruneCapEvictions(): void {
+    const now = Date.now();
+    for (const [country, byType] of this.capEvictions) {
+      for (const [type, expiry] of byType) {
+        if (expiry <= now) byType.delete(type);
+      }
+      if (byType.size === 0) this.capEvictions.delete(country);
+    }
+  }
+
+  /**
+   * True while a signal the bounded cap dropped for this country would still
+   * be inside the 24h window (its own timestamp + WINDOW_MS is in the
+   * future). While true, "no cluster for this country" means "omitted by
+   * capacity", not "observed quiet", and an existing cluster's totals may
+   * under-count. Once the evicted signal would have aged out anyway, the flag
+   * clears — coverage after that point is no longer in question.
+   */
+  wasCountryCapEvicted(code: string): boolean {
+    this.pruneCapEvictions();
+    return this.capEvictions.has(code);
   }
 
   private syncTheaterPostureReferences(): void {
@@ -528,6 +594,7 @@ class SignalAggregator {
     this.signals = this.signals.filter(s => s.timestamp.getTime() > cutoff);
     this.syncTheaterPostureReferences();
     this.enforceSignalCap();
+    this.pruneCapEvictions();
   }
 
   getCountryClusters(): CountrySignalCluster[] {
@@ -670,6 +737,7 @@ class SignalAggregator {
     this.signals = [];
     this.temporalSourceMap = new WeakMap<GeoSignal, string>();
     this.theaterPostureSignals = [];
+    this.capEvictions.clear();
   }
 
   getSignalCount(): number {

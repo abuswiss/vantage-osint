@@ -124,6 +124,14 @@ let pollLoop: SmartPollLoopHandle | null = null;
 let inFlight = false;
 let isPolling = false;
 let lastPollAt = 0;
+// When the CURRENT polling lifecycle started; 0 while not polling. Lets
+// getAisStatus() distinguish "first poll still pending" from "polling has
+// never landed" so 'unknown' cannot be a terminal state (surfaced as an
+// endless "Maritime checking"). Stamped on every startPolling() and reset by
+// disconnectAisStream(): a disconnect followed by a later re-enable must open
+// a fresh "first poll can still land" window, not inherit a long-expired one
+// that instantly classifies the new lifecycle as unavailable.
+let pollingStartedAt = 0;
 let lastSequence = 0;
 
 let latestDisruptions: AisDisruptionEvent[] = [];
@@ -297,6 +305,7 @@ async function pollSnapshot(force = false, signal?: AbortSignal): Promise<void> 
 function startPolling(): void {
   if (isPolling || !isAisConfigured()) return;
   isPolling = true;
+  pollingStartedAt = Date.now();
   void pollSnapshot(true);
   pollLoop?.stop();
   pollLoop = startSmartPollLoop(({ signal }) => pollSnapshot(false, signal), {
@@ -333,6 +342,12 @@ export function disconnectAisStream(): void {
   inFlight = false;
   latestStatus.connected = false;
   latestAvailability = 'unknown';
+  // The attempt clock belongs to the lifecycle that just ended. Keeping it
+  // would make a later re-enable outside the initial stale window read as
+  // instantly 'unavailable' instead of opening a fresh 'unknown' window.
+  // Cached snapshot state (lastPollAt, disruptions, density) survives on
+  // purpose — only the attempt clock resets.
+  pollingStartedAt = 0;
 }
 
 export function getAisStatus(): {
@@ -343,11 +358,20 @@ export function getAisStatus(): {
   zones: number;
 } {
   const isFresh = Date.now() - lastPollAt <= SNAPSHOT_STALE_MS;
+  // 'unknown' is only honest while a first poll can still land: relay
+  // configured, polling actually started, and still within the first stale
+  // window. Anything else (relay not configured, polling never started —
+  // e.g. the ships layer is off — or the first poll never answered) must
+  // degrade to 'unavailable' rather than read as "checking" forever.
+  const unknownFloor: MaritimeAvailability =
+    isAisConfigured() && pollingStartedAt !== 0 && Date.now() - pollingStartedAt <= SNAPSHOT_STALE_MS
+      ? 'unknown'
+      : 'unavailable';
   return {
     connected: latestStatus.connected && isFresh,
     vessels: latestStatus.vessels,
     messages: latestStatus.messages,
-    availability: isFresh ? latestAvailability : latestAvailability === 'unknown' ? 'unknown' : 'unavailable',
+    availability: isFresh ? latestAvailability : latestAvailability === 'unknown' ? unknownFloor : 'unavailable',
     zones: latestDensity.length,
   };
 }

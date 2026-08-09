@@ -119,7 +119,9 @@ function installDebugBearHarness(
 describe('DebugBear RUM loader', () => {
   it('enables only first-party production dashboard hosts', () => {
     assert.equal(shouldEnableDebugBearRum('www.worldmonitor.app'), true);
-    assert.equal(shouldEnableDebugBearRum('happy.worldmonitor.app'), true);
+    // Retired variant subdomain: 308s to www at the edge and must never
+    // re-enable RUM under the dead hostname.
+    assert.equal(shouldEnableDebugBearRum('happy.worldmonitor.app'), false);
     assert.equal(shouldEnableDebugBearRum('localhost'), false);
     assert.equal(shouldEnableDebugBearRum('worldmonitor-git-codex-preview-eliewm.vercel.app'), false);
     assert.equal(shouldEnableDebugBearRum('evilworldmonitor.app'), false);

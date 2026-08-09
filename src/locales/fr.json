@@ -116,7 +116,8 @@
       "activeSirens": "Sirènes actives",
       "sirens24h": "Sirènes / 24h",
       "aviationDisruptions": "Perturbations aériennes",
-      "gpsJammingZones": "Zones de brouillage GPS"
+      "gpsJammingZones": "Zones de brouillage GPS",
+      "vesselsApproximate": "includes USNI-estimated positions (approximate)"
     },
     "countryFacts": "Fiche pays",
     "loadingFacts": "Chargement des données du pays...",
@@ -179,7 +180,20 @@
       "corridorConditions": "Conditions des corridors",
       "activityNowcast": "Prévision d'activité",
       "decisionSignalsUnavailable": "L'instantané des signaux de décision de la Chine est actuellement indisponible."
-    }
+    },
+    "severityUnavailable": "Severity totals unavailable — signal aggregation is offline.",
+    "severityWindow": "Aggregated signals · last 24 h",
+    "coverageGaps": "No current data feed for: {{domains}}. Missing sources are unknown, not zero.",
+    "coverageDomains": {
+      "news": "news",
+      "protests": "protests",
+      "military": "military tracking",
+      "outages": "internet outages",
+      "earthquakes": "earthquakes",
+      "conflict": "conflict events"
+    },
+    "severityOmitted": "Severity totals unavailable — signal volume exceeded the 24 h aggregation capacity. Absence here does not mean quiet.",
+    "severityIncomplete": "May under-count — the aggregator hit capacity and dropped older signals for this country."
   },
   "header": {
     "world": "MONDE",
@@ -725,7 +739,11 @@
         "base": "Bases militaires",
         "nuclear": "Nucléaire proche",
         "port": "Ports"
-      }
+      },
+      "cachedTitle": "Served from a recent shared brief. The timestamp shows when it was generated.",
+      "freshTitle": "Generated just now for this view.",
+      "groundedFallback": "Grounded summary",
+      "groundedFallbackTitle": "Built locally from observed signals and cited headlines because the AI brief service was unavailable."
     }
   },
   "components": {
@@ -952,12 +970,7 @@
       "positions": "Positions des aéronefs",
       "navalVesselsLoading": "Navires de guerre",
       "theaterAnalysis": "Analyse des théâtres",
-      "connectingStreams": "Connexion aux flux ADS-B & AIS en direct...",
       "initialLoadNote": "Le chargement initial prend 30 à 60 secondes le temps que les données de suivi s'accumulent",
-      "acquiringData": "Acquisition des données",
-      "acquiringDesc": "Connexion au réseau ADS-B pour les données de vols militaires. Cela peut prendre 30 à 60 secondes au premier chargement.",
-      "openSkyAdsb": "OpenSky ADS-B",
-      "aisVesselStream": "Flux AIS navires",
       "retryNow": "Réessayer maintenant",
       "feedRateLimited": "Flux limité",
       "rateLimitedDesc": "L'API OpenSky a des limites de requêtes. Le panneau réessaiera automatiquement dans quelques minutes, ou vous pouvez réessayer maintenant.",
@@ -989,7 +1002,17 @@
       },
       "emojiKeyLabel": "Légende des emoji",
       "emojiKeyAir": "Actifs aériens",
-      "emojiKeyNaval": "Actifs navals"
+      "emojiKeyNaval": "Actifs navals",
+      "contactingService": "Contacting tracking service…",
+      "noPostureTitle": "No posture data",
+      "noPostureDesc": "The tracking service returned no current aircraft or vessel tracks. Coverage may be offline or genuinely quiet — counts here are unavailable, not zero.",
+      "unavailableTitle": "Tracking unavailable",
+      "unavailableDesc": "The tracking service did not respond in time and no recent posture is cached. You can retry now or check back shortly.",
+      "sourceAirNoData": "ADS-B — no current data",
+      "sourceAisLive": "AIS — live",
+      "sourceAisTraffic": "AIS — traffic snapshot",
+      "sourceAisChecking": "AIS — checking",
+      "sourceAisUnavailable": "AIS — unavailable"
     },
     "countryBrief": {
       "shareStory": "Partager l'article",
@@ -1313,7 +1336,8 @@
       "provenanceTitle": "Provenance de la couverture : nombre d'articles ingérés et de sources distinctes à partir desquels ce résumé a été sélectionné",
       "compiledFrom": "Compilé à partir de {{stories}} articles provenant de {{sources}} sources",
       "briefFreshness": "Généré il y a {{minutes}}m · source la plus récente datant de {{hours}}h",
-      "briefStoryDetails": "Story details ({{count}})"
+      "briefStoryDetails": "Story details ({{count}})",
+      "cachedBriefTitle": "Saved brief from an earlier session, shown while the live brief loads. The age shows when it was generated."
     },
     "settings": {
       "exportSettings": "Exporter les paramètres",
@@ -1582,7 +1606,8 @@
     },
     "countryTimeline": {
       "now": "maintenant",
-      "noEventsIn7Days": "Aucun événement en 7 jours"
+      "noEventsIn7Days": "Aucun événement en 7 jours",
+      "coverageUnavailable": "Coverage unavailable"
     },
     "gdeltIntel": {
       "infoTooltip": "<strong>News Intelligence</strong> Surveillance de l'actualité mondiale en temps réel :<ul><li>Catégories de sujets sélectionnés (conflits, cyber, etc.)</li><li>Articles traduits dans plus de 100 langues</li><li>Mises à jour toutes les 15 minutes</li><li>14-day media tone &amp; volume trend per topic</li></ul>Source : Projet GDELT (gdeltproject.org)"

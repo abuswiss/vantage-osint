@@ -661,7 +661,15 @@ export function getUSNIRegionCoords(regionText: string): { lat: number; lon: num
   return undefined;
 }
 
-export function getUSNIRegionApproxCoords(regionText: string): { lat: number; lon: number } {
+/**
+ * Best defensible approximate coordinates for a USNI region string, or
+ * undefined when the region cannot be mapped to a named area. Callers must
+ * treat undefined as "no defensible map location" and keep the report as
+ * region-level evidence — never invent a point for it. (This used to fall
+ * back to a string-hash lat/lon, which drew unmatched reports at an arbitrary
+ * spot anywhere on the globe.)
+ */
+export function getUSNIRegionApproxCoords(regionText: string): { lat: number; lon: number } | undefined {
   const direct = getUSNIRegionCoords(regionText);
   if (direct) return direct;
 
@@ -675,15 +683,7 @@ export function getUSNIRegionApproxCoords(regionText: string): { lat: number; lo
   if (normalized.includes('antarctic') || normalized.includes('southern')) return { lat: -70.0, lon: 20.0 };
   if (normalized.includes('arctic')) return { lat: 75.0, lon: 0.0 };
 
-  // Deterministic fallback so previously unseen regions are still rendered.
-  let hash = 0;
-  for (let i = 0; i < normalized.length; i++) {
-    hash = ((hash << 5) - hash) + normalized.charCodeAt(i);
-    hash |= 0;
-  }
-  const lat = ((Math.abs(hash) % 120) - 60);
-  const lon = ((Math.abs(hash * 31) % 300) - 150);
-  return { lat, lon };
+  return undefined;
 }
 
 /**

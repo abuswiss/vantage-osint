@@ -699,13 +699,13 @@ describe('panel-config guardrails', () => {
     );
   });
 
-  it('warns in dev when the boot skeleton footprint drifts from the hydrated app shell', () => {
+  it('warns in dev when the classic boot skeleton footprint drifts from the hydrated app shell', () => {
     const renderLayout = panelLayoutSrc.match(/async\s+renderLayout\(\):\s+Promise<void>\s+\{[\s\S]*?\n {2}\}/);
     assert.ok(renderLayout, 'renderLayout method not found');
     assert.match(
       renderLayout[0],
-      /const\s+bootShellFootprint\s*=\s*import\.meta\.env\.DEV\s*\?\s*captureBootShellFootprint\(this\.ctx\.container\)\s*:\s*null;/,
-      'renderLayout must snapshot the pre-hydration skeleton footprint in dev builds',
+      /const\s+bootShellFootprint\s*=\s*import\.meta\.env\.DEV\s*&&\s*!this\.ctx\.opsMode\s*\?\s*captureBootShellFootprint\(this\.ctx\.container\)\s*:\s*null;/,
+      'renderLayout must snapshot the pre-hydration skeleton footprint for the classic shell in dev builds',
     );
     assert.match(
       renderLayout[0],

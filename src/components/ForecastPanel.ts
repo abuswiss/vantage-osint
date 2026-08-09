@@ -1,6 +1,6 @@
 import { Panel } from './Panel';
-import { escapeHtml } from '@/services/forecast';
-import type { Forecast } from '@/services/forecast';
+import { escapeHtml, fetchForecastScorecard } from '@/services/forecast';
+import type { Forecast, ForecastScorecard } from '@/services/forecast';
 import { t } from '@/services/i18n';
 import { getForecastMacroRegion } from '../../shared/forecast-macro-regions.js';
 import { unsafeRawHtml } from '@/utils/sanitize';
@@ -106,6 +106,14 @@ function parseTheaters(json: string): SimulationTheater[] {
 }
 
 // ---------------------------------------------------------------------------
+
+function formatRecordAge(epochMs: number): string {
+  const mins = Math.max(0, Math.round((Date.now() - epochMs) / 60_000));
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
 
 let _styleInjected = false;
 function injectStyles(): void {
@@ -231,6 +239,16 @@ function injectStyles(): void {
     .fc-empty { padding: 20px; text-align: center; color: var(--text-secondary, #888); }
     .fc-source-notice { margin: 6px 8px 0; padding: 6px 8px; border: 1px solid rgba(210,153,34,0.35); border-radius: 4px; color: #d29922; background: rgba(210,153,34,0.08); font-size: 10px; line-height: 1.35; }
 
+    /* ── Forecast record (scorecard trust view) ─────────────────────────── */
+    .fc-record { margin: 0 8px 8px; border: 1px solid var(--border-color, #30363d); border-radius: 4px; padding: 6px 10px; font-size: 10px; color: var(--text-secondary, #7d8590); line-height: 1.5; }
+    .fc-record-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+    .fc-record-title { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .fc-record-stat { color: var(--text-primary, #d3d3d3); font-weight: 600; }
+    .fc-record-detail { margin-top: 6px; border-top: 1px solid var(--border-color, #2a2a2a); padding-top: 6px; display: grid; gap: 3px; }
+    .fc-record-muted { opacity: 0.75; }
+    .fc-record-toggle { border: 0; padding: 0; background: none; font: inherit; }
+    .fc-record-toggle:focus-visible { outline: 2px solid var(--accent-color, #58a6ff); outline-offset: 2px; border-radius: 2px; }
+
     /* ── Simulation confidence sub-bar (Option D) ────────────────────────── */
     /* Thin colored underbar below the forecast title. Width encodes sim       */
     /* path confidence. At rest: barely visible. On row hover: full opacity   */
@@ -283,6 +301,17 @@ export class ForecastPanel extends Panel {
   private selectedRegion: string = '';
   private theaters: SimulationTheater[] = [];
   private expandedTheaterId: string | null = null;
+  /**
+   * Scorecard for the "Forecast record" trust view. undefined = not loaded
+   * yet (row hidden), null = request failed (row says unavailable). Fetched
+   * lazily once forecasts exist, refreshed at most every 30 minutes — the
+   * scorecard is recomputed by resolution runs, not realtime.
+   */
+  private scorecard: ForecastScorecard | null | undefined;
+  private scorecardFetchedAt = 0;
+  private scorecardPromise: Promise<void> | null = null;
+  private recordExpanded = false;
+  private static readonly SCORECARD_TTL_MS = 30 * 60 * 1000;
 
   constructor() {
     super({ id: 'forecast', title: 'AI Forecasts', showCount: true, infoTooltip: t('components.forecast.infoTooltip') });
@@ -315,6 +344,16 @@ export class ForecastPanel extends Panel {
         const tid = theaterBtn.dataset.fcTheater || null;
         this.expandedTheaterId = this.expandedTheaterId === tid ? null : tid;
         this.render();
+        return;
+      }
+
+      const recordToggle = target.closest('[data-fc-record-toggle]') as HTMLElement | null;
+      if (recordToggle) {
+        this.recordExpanded = !this.recordExpanded;
+        // Toggle in place: a full render() would slam shut any open case-file pane.
+        const pane = this.element.querySelector('[data-fc-record-detail]') as HTMLElement | null;
+        if (pane) pane.classList.toggle('fc-hidden', !this.recordExpanded);
+        recordToggle.setAttribute('aria-expanded', String(this.recordExpanded));
         return;
       }
 
@@ -423,7 +462,43 @@ export class ForecastPanel extends Panel {
     // the filter miss. Tying the badge to the filter caused the panel to
     // flip to "unavailable" on any empty region pill.
     this.setDataBadge(this.forecasts.length > 0 && !this.sourceState.degraded ? 'live' : 'unavailable');
+    // Trust context only makes sense next to actual forecasts.
+    if (this.forecasts.length > 0) this.maybeLoadScorecard();
     this.render();
+  }
+
+  /**
+   * Fetch the forecast scorecard for the "Forecast record" row. Non-blocking
+   * by construction: fetchForecastScorecard() resolves null on transport
+   * failure, and the result is patched into the record host in place — a
+   * full render() here would slam shut any case-file pane the user opened
+   * while the request was in flight.
+   */
+  private maybeLoadScorecard(): void {
+    if (this.scorecardPromise) return;
+    if (this.scorecard !== undefined
+      && Date.now() - this.scorecardFetchedAt < ForecastPanel.SCORECARD_TTL_MS) return;
+    this.scorecardPromise = (async () => {
+      try {
+        this.scorecard = await fetchForecastScorecard();
+      } catch {
+        this.scorecard = null;
+      } finally {
+        this.scorecardFetchedAt = Date.now();
+        this.scorecardPromise = null;
+        const host = this.element.querySelector('[data-fc-record]') as HTMLElement | null;
+        if (host) {
+          const body = this.renderRecordBody();
+          setTrustedHtml(host, trustedHtml(body, 'ForecastPanel forecast-record; every interpolated value escaped'));
+          host.classList.toggle('fc-hidden', body === '');
+        } else if (this.forecasts.length > 0) {
+          // The response beat Panel's 150ms content debounce, so the record
+          // host is not in the DOM yet. Re-render (which now includes the
+          // scorecard); nothing can be open this early, so no pane is lost.
+          this.render();
+        }
+      }
+    })();
   }
 
   updateSimulation(theaterSummariesJson: string): void {
@@ -494,6 +569,7 @@ export class ForecastPanel extends Panel {
       : '';
     const tableHtml = this.renderProbTable(filtered);
     const sourceHtml = this.renderSourceNotice();
+    const recordBody = this.renderRecordBody();
 
     this.setSafeContent(unsafeRawHtml(`
       <div class="fc-panel">
@@ -502,6 +578,7 @@ export class ForecastPanel extends Panel {
         ${sourceHtml}
         ${nexusHtml}
         ${tableHtml}
+        <div class="fc-record${recordBody ? '' : ' fc-hidden'}" data-fc-record>${recordBody}</div>
       </div>
     `, 'legacy Panel.setContent() migration'));
   }
@@ -515,6 +592,137 @@ export class ForecastPanel extends Panel {
       errorDetail,
     ].filter(Boolean);
     return `<div class="fc-source-notice">${escapeHtml(parts.join(' · '))}</div>`;
+  }
+
+  // ── Forecast record (scorecard trust view) ──────────────────────────────
+  //
+  // One restrained summary row + an expandable detail block, rendered below
+  // the probability table. Honesty rules: Brier is shown as-is with "lower is
+  // better" (never converted to an accuracy %), tiny samples are labelled,
+  // calibration appears only when enough graded forecasts support it, and the
+  // headline's exclusion of synthetic/shadow entries is disclosed. A missing
+  // or failed scorecard never blocks the forecasts themselves.
+
+  private renderRecordBody(): string {
+    const sc = this.scorecard;
+    if (sc === undefined) return '';
+    const title = '<span class="fc-record-title">Forecast record</span>';
+    if (sc === null) {
+      return `<div class="fc-record-row">${title}<span class="fc-record-muted">record unavailable for this session</span></div>`;
+    }
+    if (sc.degraded || sc.error) {
+      return `<div class="fc-record-row">${title}<span class="fc-record-muted">record temporarily unavailable</span></div>`;
+    }
+    const totals = sc.totals;
+    const windowDays = sc.rollingWindowDays > 0 ? sc.rollingWindowDays : 180;
+    if (!totals || totals.entries === 0) {
+      // generatedAt distinguishes a real generated scorecard that observed
+      // zero published entries from the handler's healthy-empty fallback
+      // (no Redis scorecard exists yet: generatedAt 0, empty methodology).
+      // Only a real scorecard may claim its current record is empty —
+      // forecasts can be visibly on screen while the record itself is simply
+      // not published yet.
+      const emptyCopy = sc.generatedAt > 0
+        ? 'no entries in the current forecast record'
+        : 'record not published yet';
+      return `<div class="fc-record-row">${title}<span class="fc-record-muted">${emptyCopy}</span></div>`;
+    }
+
+    const skill = sc.skill;
+    let headline: string;
+    if (skill && skill.count > 0 && typeof skill.brier === 'number') {
+      const small = skill.count < 20 ? ' · small sample' : '';
+      headline = `<span class="fc-record-stat">Brier ${skill.brier.toFixed(2)}</span><span class="fc-record-muted">lower is better</span><span>${skill.count} scored${small}</span>`;
+    } else if (skill && skill.count === 0 && skill.excludedScored > 0) {
+      headline = '<span class="fc-record-muted">skill not yet measurable — every graded entry so far is synthetic or shadow-stream</span>';
+    } else if (totals.scored > 0) {
+      headline = `<span class="fc-record-muted">${totals.scored} graded · headline skill unavailable</span>`;
+    } else {
+      headline = `<span class="fc-record-muted">no graded outcomes yet · ${totals.pending} pending</span>`;
+    }
+    const staleTag = sc.stale ? '<span class="fc-record-muted">stale cache</span>' : '';
+    const toggle = `<button type="button" class="fc-toggle fc-record-toggle" data-fc-record-toggle aria-expanded="${this.recordExpanded}" aria-controls="fcForecastRecordDetail">Details</button>`;
+
+    return `
+      <div class="fc-record-row">${title}${headline}${staleTag}${toggle}</div>
+      <div id="fcForecastRecordDetail" class="fc-record-detail${this.recordExpanded ? '' : ' fc-hidden'}" data-fc-record-detail>${this.renderRecordDetail(sc, windowDays)}</div>
+    `;
+  }
+
+  private renderRecordDetail(sc: ForecastScorecard, windowDays: number): string {
+    const totals = sc.totals;
+    if (!totals) return '';
+    const pct = (ratio: number): string => `${Math.round(ratio * 100)}%`;
+    const lines: string[] = [];
+
+    // The scorecard's rolling window applies to resolved outcomes. Pending
+    // and pending-judge ledger rows are retained until resolution, so never
+    // imply every tracked entry was published inside the window.
+    lines.push(`<div>${totals.entries} tracked entries · ${totals.resolved} resolved in the last ${windowDays} days · ${totals.scored} graded YES/NO · ${totals.pending} pending${totals.pendingJudge > 0 ? ` · ${totals.pendingJudge} awaiting adjudication` : ''}</div>`);
+    if (totals.resolved > 0 && totals.void > 0) {
+      lines.push(`<div>${totals.void} void (${pct(totals.voidRate)} of resolved) — windows that could not be graded YES or NO</div>`);
+    }
+    lines.push(`<div>${pct(totals.publicationCoverage)} of currently tracked ledger entries have a graded outcome</div>`);
+
+    const skill = sc.skill;
+    if (skill && skill.count > 0 && typeof skill.brier === 'number') {
+      lines.push('<div class="fc-record-muted">Brier score is the mean squared error of stated probabilities: 0.00 is perfect and 0.25 is what always answering 50% scores. It is not an accuracy percentage.</div>');
+    }
+    if (skill) {
+      if (skill.excludedScored > 0) {
+        const origins = skill.excludedOrigins.map((o) => o.replace(/_/g, ' ')).join(', ');
+        const overall = sc.overall;
+        const withThem = overall && typeof overall.brier === 'number' && overall.count > skill.count
+          ? ` Including them: Brier ${overall.brier.toFixed(2)} over ${overall.count}.`
+          : '';
+        lines.push(`<div class="fc-record-muted">Headline excludes ${skill.excludedScored} synthetic or unpromoted shadow-stream ${skill.excludedScored === 1 ? 'entry' : 'entries'}${origins ? ` (${escapeHtml(origins)})` : ''}.${withThem}</div>`);
+      } else {
+        lines.push('<div class="fc-record-muted">Synthetic and unpromoted shadow-stream entries are excluded from the headline; none were graded in this window.</div>');
+      }
+    }
+
+    // Calibration is pooled over all scored origins in the current contract.
+    // Do not place pooled buckets under an exclusion-filtered headline.
+    if (skill && skill.excludedScored > 0) {
+      lines.push('<div class="fc-record-muted">Calibration not shown — available buckets mix headline-eligible forecasts with excluded synthetic or shadow entries.</div>');
+    } else if (skill && skill.count >= 30) {
+      const bands = sc.calibration.filter(
+        (b) => (b.count ?? 0) >= 5 && typeof b.predictedMean === 'number' && typeof b.realizedRate === 'number',
+      );
+      if (bands.length >= 2) {
+        const rows = bands.map((b) =>
+          `<div>said ~${Math.round((b.predictedMean as number) * 100)}% → happened ${Math.round((b.realizedRate as number) * 100)}% of the time (n=${b.count})</div>`
+        ).join('');
+        lines.push(`<div class="fc-record-muted">Calibration (graded forecasts by stated probability):</div>${rows}`);
+      } else {
+        lines.push('<div class="fc-record-muted">Calibration: graded forecasts are spread too thin across probability bands to be meaningful yet.</div>');
+      }
+    } else {
+      lines.push('<div class="fc-record-muted">Calibration withheld — fewer than 30 headline-eligible graded forecasts.</div>');
+    }
+
+    // vsMarketSkill is pooled over ALL scored entries, including the
+    // synthetic/state_derived and unpromoted bet_engine shadow entries the
+    // headline excludes. Comparing a differently pooled population would let
+    // shadow entries buy an "ahead of the market" claim the headline pool
+    // never earned, so the comparison only renders when the scorecard proves
+    // zero scored entries were excluded (the pools coincide) — and even then
+    // as a descriptive Brier comparison, not a skill verdict.
+    const vm = sc.vsMarketSkill;
+    if (vm && vm.count >= 10 && skill && skill.excludedScored === 0 && vm.count <= totals.scored) {
+      const rel = vm.brierDelta > 0.005
+        ? 'lower (better) Brier than the market on those'
+        : vm.brierDelta < -0.005
+          ? 'higher (worse) Brier than the market on those'
+          : 'level with the market on those';
+      lines.push(`<div>vs prediction markets (${vm.count} market-anchored): Brier ${vm.forecastBrier.toFixed(2)} vs market ${vm.marketBrier.toFixed(2)} — ${rel}</div>`);
+    }
+
+    if (sc.generatedAt > 0) {
+      lines.push(`<div class="fc-record-muted">Computed ${formatRecordAge(sc.generatedAt)}${sc.stale ? ' · served from a stale cache' : ''} · updated by resolution runs, not realtime</div>`);
+    }
+
+    return lines.join('');
   }
 
   // ── NEXUS theater grid + expandable detail ──────────────────────────────

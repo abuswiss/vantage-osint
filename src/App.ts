@@ -485,6 +485,15 @@ export class App {
         : statusMode === 'cached'
           ? t('header.cached')
           : t('header.unavailable');
+      // The pill label alone ("CACHED") doesn't explain itself; carry the
+      // banner's full sentence on the pill for hover and assistive tech.
+      if (statusMode !== 'live' && bannerMessage) {
+        statusIndicator.setAttribute('title', bannerMessage);
+        statusIndicator.setAttribute('aria-label', bannerMessage);
+      } else {
+        statusIndicator.removeAttribute('title');
+        statusIndicator.removeAttribute('aria-label');
+      }
     }
 
     if (bannerMessage) {
@@ -1978,6 +1987,8 @@ export class App {
             this.state.map?.setLayers({ ...this.state.mapLayers });
           },
           onOpenSearch: () => { void this.openSearch(); },
+          onApplyMission: (presetId) => this.eventHandlers.applyMissionPresetById(presetId),
+          onResetMission: () => this.eventHandlers.resetMissionPresetToDefaults(),
         });
         shell.mount();
         this.state.opsShell = shell;
@@ -2721,6 +2732,44 @@ export class App {
   private handleDeepLinks(): void {
     const url = new URL(window.location.href);
     const DEEP_LINK_INITIAL_DELAY_MS = 1500;
+
+    // Compatibility deep link: /country/:slug (external links, SEO surfaces).
+    // The Vercel catch-all serves the dashboard for this path, so resolve the
+    // slug client-side and canonicalize to the ?country=XX&expanded=1 state.
+    // Resolver is lazy-imported to keep the country-name registry out of the
+    // entry chunk.
+    const countrySlugMatch = url.pathname.match(/^\/country\/([^/]+)\/?$/);
+    if (countrySlugMatch) {
+      const slug = countrySlugMatch[1] ?? '';
+      void import('@/utils/country-slug').then(({ resolveCountrySlug }) => {
+        if (this.state.isDestroyed) return;
+        const code = resolveCountrySlug(slug);
+        if (!code) return;
+        trackDeeplinkOpened('country', code);
+        // replaceState (not pushState): the slug URL and the canonical query
+        // URL are the same document, so back/forward still leaves the app in
+        // one step and reload/share keep working from the canonical form.
+        const canonical = new URL(window.location.href);
+        canonical.pathname = '/dashboard';
+        canonical.searchParams.set('country', code);
+        canonical.searchParams.set('expanded', '1');
+        window.history.replaceState(window.history.state, '', canonical.toString());
+        const countryName = CountryIntelManager.resolveCountryName(code);
+        setTimeout(() => {
+          void this.countryIntel.openCountryBriefByCode(code, countryName, {
+            maximize: true,
+          }).catch((err) => {
+            console.error('[CountryBrief] Failed to open country brief:', err);
+            this.state.map?.setRenderPaused(false);
+            showToast('Country brief failed to open. Please try again.');
+          });
+          this.eventHandlers.syncUrlState();
+        }, DEEP_LINK_INITIAL_DELAY_MS);
+      }).catch((err) => {
+        console.warn('[DeepLink] country slug resolver failed to load:', err);
+      });
+      return;
+    }
 
     // Check for country brief deep link: ?c=IR (captured early before URL sync)
     const storyCode = this.pendingDeepLinkStoryCode ?? url.searchParams.get('c');
