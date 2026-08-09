@@ -1,4 +1,4 @@
-import { ApiError, type GetResilienceRankingResponse, type GetResilienceScoreResponse, type ResilienceDomain, type ResilienceDimension, type ResilienceRankingItem, type ScoreInterval } from '@/generated/client/worldmonitor/resilience/v1/service_client';
+import type { GetResilienceRankingResponse, GetResilienceScoreResponse, ResilienceDomain, ResilienceDimension, ResilienceRankingItem, ScoreInterval } from '@/generated/client/worldmonitor/resilience/v1/service_client';
 import { VANTAGE_PUBLIC_MODE } from '@/config/product-policy';
 import { getRpcBaseUrl } from '@/services/rpc-client';
 import { ResilienceServiceClient } from '@/services/generated-rpc-clients';
@@ -40,9 +40,11 @@ export async function getResilienceRanking(): Promise<ResilienceRankingResponse>
 }
 
 function isUnavailableSourcePlaneError(error: unknown): boolean {
-  if (!(error instanceof ApiError) || error.statusCode !== 503) return false;
+  if (!(error instanceof Error)) return false;
+  const candidate = error as Error & { statusCode?: unknown; body?: unknown };
+  if (candidate.statusCode !== 503 || typeof candidate.body !== 'string') return false;
   try {
-    const body = JSON.parse(error.body) as { code?: unknown };
+    const body = JSON.parse(candidate.body) as { code?: unknown };
     return body.code === 'RESILIENCE_DATA_UNAVAILABLE';
   } catch {
     return false;
