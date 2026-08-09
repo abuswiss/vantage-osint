@@ -81,9 +81,10 @@
     "test.yml",
     "typecheck.yml",
     "umami-storage-monitor.yml",
-    "vantage-intelligence-refresh.yml"
+    "vantage-intelligence-refresh.yml",
+    "vantage-portwatch-refresh.yml"
   ],
-  "workflowCount": 27,
+  "workflowCount": 28,
   "freshnessSources": 35,
   "freshnessRequiredForRisk": 2,
   "feedDefinitions": 297,
