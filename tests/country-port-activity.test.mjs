@@ -146,9 +146,9 @@ describe('CountryDeepDivePanel: updateMaritimeActivity', () => {
     assert.match(panelSrc, /this\.maritimeBody\s*=\s*null/);
   });
 
-  it('maritimeCard is appended to bodyGrid', () => {
+  it('maritimeCard is appended to the Exposure section', () => {
     assert.match(panelSrc, /maritimeCard/);
-    assert.match(panelSrc, /bodyGrid\.append\(.*maritimeCard/);
+    assert.match(panelSrc, /exposureGrid\.append\(.*maritimeCard/);
   });
 });
 

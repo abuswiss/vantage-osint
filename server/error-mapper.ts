@@ -10,6 +10,14 @@
 
 import { isBillingVerificationCode } from './_shared/entitlement-check';
 
+// Stable, non-sensitive machine codes that a browser may use to distinguish a
+// known fail-closed state from an arbitrary internal 5xx. Keep this allowlist
+// deliberately small: ApiError.body and unknown `publicCode` values remain
+// server-only diagnostics.
+const PUBLIC_API_ERROR_CODES = new Set([
+  'RESILIENCE_DATA_UNAVAILABLE',
+]);
+
 /**
  * Detects network/fetch errors across runtimes. Per Fetch spec, network
  * errors throw TypeError. We also check common error message patterns
@@ -46,6 +54,13 @@ export function mapErrorToResponse(error: unknown, _req: Request): Response {
     const billingVerificationCode = isBillingVerificationCode(billingCodeCandidate)
       ? billingCodeCandidate
       : null;
+    const publicCodeCandidate = 'publicCode' in error
+      ? (error as Error & { publicCode: unknown }).publicCode
+      : null;
+    const publicCode = typeof publicCodeCandidate === 'string'
+      && PUBLIC_API_ERROR_CODES.has(publicCodeCandidate)
+      ? publicCodeCandidate
+      : null;
     const exposesRetryableUnavailable = statusCode === 503
       && retryAfter != null
       && Number.isFinite(retryAfter)
@@ -63,6 +78,7 @@ export function mapErrorToResponse(error: unknown, _req: Request): Response {
       extras.code = billingVerificationCode;
       headers['X-Billing-Verification'] = billingVerificationCode;
     }
+    if (publicCode) extras.code = publicCode;
 
     if (statusCode >= 500) {
       // Log upstream response body (truncated) for debugging (M-4 fix)

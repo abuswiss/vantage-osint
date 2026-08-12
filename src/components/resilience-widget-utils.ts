@@ -240,6 +240,97 @@ export interface ResilienceOverallDisplay {
   serverLevelLabel: string;
 }
 
+export interface ResiliencePresentationState {
+  /** A numeric model output exists, but the inputs are not strong enough for a headline band. */
+  provisional: boolean;
+  /** The country must not be presented as part of a stable cross-country ranking. */
+  notRanked: boolean;
+  /** The response has no observed input weight across any active dimension. */
+  allImputed: boolean;
+  /** Plain-language headline used above the score when confidence is insufficient. */
+  headline: string | null;
+}
+
+function activeResilienceDimensions(data: Pick<ResilienceScoreResponse, 'domains'>): ResilienceScoreResponse['domains'][number]['dimensions'] {
+  return data.domains.flatMap((domain) => domain.dimensions).filter((dimension) => {
+    if (RESILIENCE_RETIRED_DIMENSION_IDS.has(dimension.id)) return false;
+    if (
+      RESILIENCE_NOT_APPLICABLE_WHEN_ZERO_COVERAGE_IDS.has(dimension.id)
+      && dimension.coverage === 0
+      && (dimension.observedWeight ?? 0) === 0
+      && (dimension.imputedWeight ?? 0) === 0
+    ) return false;
+    return dimension.imputationClass !== 'not-applicable';
+  });
+}
+
+/**
+ * Separates a computable model output from a score that is safe to headline.
+ * Sparse/all-imputed responses remain inspectable, but lose the semantic risk
+ * colour and ranking treatment that would otherwise imply false precision.
+ */
+export function getResiliencePresentationState(
+  data: Pick<ResilienceScoreResponse, 'domains' | 'headlineEligible' | 'level' | 'lowConfidence' | 'overallScore'>,
+): ResiliencePresentationState {
+  const dimensions = activeResilienceDimensions(data as Pick<ResilienceScoreResponse, 'domains'>);
+  const hasCoveredInput = dimensions.some((dimension) =>
+    Number(dimension.coverage) > 0
+    || Number(dimension.observedWeight) > 0
+    || Number(dimension.imputedWeight) > 0,
+  );
+  const hasObservedInput = dimensions.some((dimension) => Number(dimension.observedWeight) > 0);
+  const allImputed = hasCoveredInput && !hasObservedInput;
+  const hasScore = hasScoredResilienceOverall(data);
+  const provisional = hasScore && (data.lowConfidence || allImputed || !hasCoveredInput);
+  const notRanked = !hasScore || provisional || data.headlineEligible === false;
+
+  return {
+    provisional,
+    notRanked,
+    allImputed,
+    headline: provisional || !hasScore ? 'Insufficient coverage' : null,
+  };
+}
+
+export interface ResilienceDomainDisplay {
+  hasScore: boolean;
+  scoreForBar: number;
+  scoreLabel: string;
+  coveragePct: number;
+}
+
+/**
+ * Domain scores can be serialized as 0 even when every constituent dimension
+ * is absent. Never turn that wire placeholder into a visible failure score.
+ */
+export function getResilienceDomainDisplay(
+  domain: ResilienceScoreResponse['domains'][number],
+): ResilienceDomainDisplay {
+  const activeDimensions = activeResilienceDimensions({ domains: [domain] });
+  const coveredDimensions = activeDimensions.filter((dimension) =>
+    Number(dimension.coverage) > 0
+    || Number(dimension.observedWeight) > 0
+    || Number(dimension.imputedWeight) > 0
+    || dimension.imputationClass === 'stable-absence',
+  );
+  const hasScore = coveredDimensions.length > 0 && Number.isFinite(Number(domain.score));
+  const rawScore = Number(domain.score);
+  const scoreForBar = hasScore ? Math.min(100, Math.max(0, rawScore)) : 0;
+  const coveragePct = coveredDimensions.length === 0
+    ? 0
+    : Math.round(
+        (coveredDimensions.reduce((sum, dimension) => sum + Math.min(1, Math.max(0, Number(dimension.coverage) || 0)), 0)
+          / coveredDimensions.length) * 100,
+      );
+
+  return {
+    hasScore,
+    scoreForBar,
+    scoreLabel: hasScore ? formatScoredResilienceOverallLabel(scoreForBar) : 'n/a',
+    coveragePct,
+  };
+}
+
 export function getResilienceOverallDisplay(data: Pick<ResilienceScoreResponse, 'overallScore' | 'level'>): ResilienceOverallDisplay {
   const rawScore = Number(data.overallScore);
   const visualLevel = getResilienceVisualLevel(rawScore);

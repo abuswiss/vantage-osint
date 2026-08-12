@@ -90,14 +90,14 @@
 
 /* ---------- Ops shell tokens ---------- */
 body.ops-mode {
-  --ops-bg: #101318;
-  --ops-bg-raised: #181d25;
-  --ops-bg-overlay: rgba(21, 25, 32, 0.86);
-  --ops-border: rgba(255, 255, 255, 0.06);
-  --ops-border-strong: rgba(255, 255, 255, 0.13);
-  --ops-text: #e8eaee;
-  --ops-text-dim: #99a0ac;
-  --ops-text-faint: #858d99;
+  --ops-bg: #15171b;
+  --ops-bg-raised: #1c1f24;
+  --ops-bg-overlay: rgba(24, 27, 32, 0.9);
+  --ops-border: rgba(255, 255, 255, 0.085);
+  --ops-border-strong: rgba(255, 255, 255, 0.16);
+  --ops-text: #f0f1f3;
+  --ops-text-dim: #a8adb6;
+  --ops-text-faint: #7d8591;
   --ops-accent: #8ab4f8;
   --ops-accent-soft: rgba(138, 180, 248, 0.1);
 

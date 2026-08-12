@@ -510,6 +510,13 @@
       "removal_issue": null
     },
     {
+      "path": "api/vantage-bootstrap.js",
+      "category": "internal-helper",
+      "reason": "Vantage-only fixed-origin Node transport facade for the existing exact public bootstrap tier, weather, and single-key shapes. It validates and reconstructs the canonical public payload without defining a new data contract or exposing credentials.",
+      "owner": "@abuswiss",
+      "removal_issue": null
+    },
+    {
       "path": "api/brief-history.js",
       "category": "ops-admin",
       "reason": "Read-only bounded archive view over the analysis snapshots written by the protected Vantage refresh orchestrator. It exposes snapshot provenance and diffs for the operations brief without provider access, generation, identity, or mutable product data.",

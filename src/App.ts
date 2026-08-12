@@ -801,6 +801,20 @@ export class App {
           localStorage.removeItem(STORAGE_KEYS.mapLayers);
           localStorage.setItem('wm-layer-curation-v1', '1');
         }
+        // The former web defaults enabled bases and every observed military
+        // flight at global zoom. Retain all other saved choices while turning
+        // off only those two dense layers once; users can still opt back in.
+        if (!localStorage.getItem('wm-map-declutter-v2')) {
+          const storedLayers = loadFromStorage<Partial<MapLayers> | null>(STORAGE_KEYS.mapLayers, null);
+          if (storedLayers && (storedLayers.bases === true || storedLayers.military === true)) {
+            saveToStorage(STORAGE_KEYS.mapLayers, {
+              ...storedLayers,
+              bases: false,
+              military: false,
+            });
+          }
+          localStorage.setItem('wm-map-declutter-v2', '1');
+        }
       } catch { /* no-persistence mode */ }
     }
 

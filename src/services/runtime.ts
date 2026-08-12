@@ -1,5 +1,7 @@
 import { SITE_VARIANT } from '@/config/variant';
+import { VANTAGE_PUBLIC_MODE } from '@/config/product-policy';
 import { getClerkToken } from '@/services/clerk';
+import { rewriteVantagePublicBootstrapPath } from '../../shared/vantage-public-bootstrap.js';
 
 const ENV = (() => {
   try {
@@ -197,12 +199,14 @@ export function toApiUrl(path: string): string {
     return toRuntimeUrl(path);
   }
 
+  const resolvedPath = rewriteVantagePublicBootstrapPath(path, VANTAGE_PUBLIC_MODE);
+
   const webApiBase = getConfiguredWebApiBaseUrl();
   if (!webApiBase) {
-    return path;
+    return resolvedPath;
   }
 
-  return `${webApiBase}${path}`;
+  return `${webApiBase}${resolvedPath}`;
 }
 
 function extractHostnames(...urls: (string | undefined)[]): string[] {

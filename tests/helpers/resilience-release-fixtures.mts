@@ -1,5 +1,7 @@
 import countryNames from '../../shared/country-names.json';
 import iso2ToIso3 from '../../shared/iso2-to-iso3.json';
+import { resolveSeedMetaKey } from '../../server/worldmonitor/resilience/v1/_dimension-freshness.ts';
+import { INDICATOR_REGISTRY, getIndicatorSourceKeys } from '../../server/worldmonitor/resilience/v1/_indicator-registry.ts';
 
 export const G20_COUNTRIES = [
   'AR', 'AU', 'BR', 'CA', 'CN', 'DE', 'FR', 'GB', 'ID', 'IN',
@@ -235,7 +237,23 @@ function buildReleaseGateCountries(): CountryDescriptor[] {
 
 export function buildReleaseGateFixtures(): ReleaseGateFixtureMap {
   const descriptors = buildReleaseGateCountries();
+  const freshSourceMeta = Object.fromEntries(
+    [...new Set(
+      INDICATOR_REGISTRY.flatMap((indicator) =>
+        getIndicatorSourceKeys(indicator).map(resolveSeedMetaKey)),
+    )].map((key) => [key, { fetchedAt: Date.now(), recordCount: 1, status: 'ok' }]),
+  );
   const fixtures: ReleaseGateFixtureMap = {
+    // The release fixture represents a healthy observed source plane. Keep
+    // every registered input's freshness metadata in step with its synthetic
+    // data so adding the mandatory static-plane marker does not make otherwise
+    // complete dimensions look stale.
+    ...freshSourceMeta,
+    'seed-meta:resilience:static': {
+      fetchedAt: Date.now(),
+      recordCount: descriptors.length,
+      status: 'ok',
+    },
     'resilience:static:index:v1': {
       countries: descriptors.map(({ code }) => code).sort(),
       recordCount: descriptors.length,

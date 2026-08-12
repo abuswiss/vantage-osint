@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ResilienceScoreResponse } from '@/services/resilience';
 
-const getResilienceScore = vi.hoisted(() => vi.fn(async () => ({
+const getResilienceScore = vi.hoisted(() => vi.fn(async (): Promise<ResilienceScoreResponse> => ({
   countryCode: 'UA',
   overallScore: 61,
   level: 'moderate',
@@ -76,6 +77,76 @@ describe('public Vantage resilience access', () => {
     expect(text).not.toMatch(/checking access|sign in|upgrade|premium/i);
     expect(widget.getElement().querySelector('.resilience-widget__preview')).toBeNull();
     expect(widget.getElement().querySelector('.resilience-widget__cta')).toBeNull();
+
+    widget.destroy();
+  });
+
+  it('keeps sparse scores provisional, missing domains unavailable, and dense dimensions collapsed', async () => {
+    getResilienceScore.mockResolvedValueOnce({
+      countryCode: 'UA',
+      overallScore: 50,
+      level: 'medium',
+      domains: [
+        {
+          id: 'economic',
+          score: 0,
+          weight: 1,
+          dimensions: [{
+            id: 'macroFiscal',
+            score: 0,
+            coverage: 0,
+            observedWeight: 0,
+            imputedWeight: 0,
+            imputationClass: '',
+          }],
+        },
+        {
+          id: 'recovery',
+          score: 0,
+          weight: 1,
+          dimensions: [{
+            id: 'sovereignFiscalBuffer',
+            score: 0,
+            coverage: 1,
+            observedWeight: 1,
+            imputedWeight: 0,
+            imputationClass: '',
+          }],
+        },
+      ],
+      trend: 'stable',
+      change30d: 0,
+      lowConfidence: true,
+      imputationShare: 0.5,
+      baselineScore: 50,
+      stressScore: 50,
+      stressFactor: 0.5,
+      dataVersion: '2026-08-09',
+      pillars: [],
+      schemaVersion: '2.0',
+      headlineEligible: false,
+    });
+
+    const widget = new ResilienceWidget('UA');
+    document.body.append(widget.getElement());
+
+    await vi.waitFor(() => {
+      expect(widget.getElement().querySelector('.resilience-widget__coverage-notice')).not.toBeNull();
+    });
+
+    const notice = widget.getElement().querySelector('.resilience-widget__coverage-notice')?.textContent ?? '';
+    expect(notice).toContain('Insufficient coverage');
+    expect(notice).toContain('Provisional');
+    expect(notice).toContain('Not ranked');
+    expect(
+      [...widget.getElement().querySelectorAll('.resilience-widget__domain-score')]
+        .map((element) => element.textContent),
+    ).toEqual(['n/a', '0']);
+    expect(widget.getElement().querySelector('.resilience-widget__baseline-stress')).toBeNull();
+
+    const disclosure = widget.getElement().querySelector('details.resilience-widget__dimension-disclosure');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.hasAttribute('open')).toBe(false);
 
     widget.destroy();
   });

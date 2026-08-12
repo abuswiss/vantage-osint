@@ -13,7 +13,13 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
-import { buildRankingItem, ensureResilienceScoreCached, RESILIENCE_SCORE_CACHE_PREFIX } from '../server/worldmonitor/resilience/v1/_shared.ts';
+import {
+  buildRankingItem,
+  ensureResilienceScoreCached,
+  RESILIENCE_SCORE_CACHE_PREFIX,
+  RESILIENCE_STATIC_INDEX_KEY,
+  RESILIENCE_STATIC_META_KEY,
+} from '../server/worldmonitor/resilience/v1/_shared.ts';
 import { installRedis } from './helpers/fake-upstash-redis.mts';
 import { RESILIENCE_FIXTURES } from './helpers/resilience-fixtures.mts';
 
@@ -102,7 +108,13 @@ describe('headlineEligible field — Plan 2026-04-26-002 §U3 (PR 2)', () => {
       // the cache-read backfill it claims to test. Use installRedis +
       // direct redis.set to seed the fake-upstash store, matching the
       // ranking-test pattern in resilience-ranking.test.mts:48.
-      const { redis } = installRedis({});
+      const { redis } = installRedis({
+        [RESILIENCE_STATIC_META_KEY]: {
+          fetchedAt: Date.parse('2026-08-09T09:00:00.000Z'),
+          recordCount: 1,
+        },
+        [RESILIENCE_STATIC_INDEX_KEY]: { countries: ['TT'], recordCount: 1 },
+      });
       const legacyKey = `${RESILIENCE_SCORE_CACHE_PREFIX}TT`;
       const legacyPayload = {
         countryCode: 'TT',

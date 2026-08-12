@@ -76,6 +76,15 @@ import { overlayHistory, type OverlayCloseOrigin } from '@/utils/overlay-history
 
 type ThreatLevel = 'critical' | 'high' | 'medium' | 'low' | 'info';
 type TrendDirection = 'up' | 'down' | 'flat';
+type CountryDeepDiveSectionId = 'overview' | 'risk' | 'economy' | 'exposure' | 'data';
+
+const COUNTRY_DEEP_DIVE_SECTIONS: ReadonlyArray<{ id: CountryDeepDiveSectionId; label: string }> = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'risk', label: 'Risk' },
+  { id: 'economy', label: 'Economy' },
+  { id: 'exposure', label: 'Exposure' },
+  { id: 'data', label: 'Data' },
+];
 
 const INFRA_TYPES: AssetType[] = ['pipeline', 'cable', 'datacenter', 'base', 'nuclear'];
 
@@ -133,6 +142,10 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
   private infrastructureByType = new Map<AssetType, RelatedAsset[]>();
   private maximizeButton: HTMLButtonElement | null = null;
   private currentHeadlineCount = 0;
+  private activeSection: CountryDeepDiveSectionId = 'overview';
+  private sectionButtons = new Map<CountryDeepDiveSectionId, HTMLButtonElement>();
+  private sectionPanels = new Map<CountryDeepDiveSectionId, HTMLElement>();
+  private dataCoverageBody: HTMLElement | null = null;
   private signalsBody: HTMLElement | null = null;
   private signalChipsEl: HTMLElement | null = null;
   private signalCoverageEl: HTMLElement | null = null;
@@ -2489,6 +2502,8 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
 
   private renderSkeleton(country: string, code: string, score: CountryScore | null, signals: CountryBriefSignals): void {
     this.resetPanelContent();
+    this.activeSection = 'overview';
+    const hasUnlockedCountryAccess = hasPremiumAccess(getAuthState());
 
     const shell = this.el('div', 'cdp-shell');
     const header = this.el('header', 'cdp-header');
@@ -2571,7 +2586,10 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     });
     const evidenceButton = this.el('button', 'cdp-action-btn cdp-evidence-export-btn', 'Evidence') as HTMLButtonElement;
     evidenceButton.setAttribute('type', 'button');
-    evidenceButton.setAttribute('title', 'Export evidence bundle as Markdown (PRO)');
+    evidenceButton.setAttribute(
+      'title',
+      hasUnlockedCountryAccess ? 'Export evidence bundle as Markdown' : 'Export evidence bundle as Markdown (PRO)',
+    );
     evidenceButton.addEventListener('click', () => {
       if (!hasPremiumAccess(getAuthState())) {
         trackGateHit('evidence-export');
@@ -2606,7 +2624,6 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     const summaryGrid = this.el('div', 'cdp-summary-grid');
     summaryGrid.append(scoreCard, this.renderResilienceWidgetSlot(code));
 
-    const bodyGrid = this.el('div', 'cdp-grid');
     const [signalsCard, signalBody] = this.sectionCard(t('countryBrief.activeSignals'));
     const [timelineCard, timelineBody] = this.sectionCard(t('countryBrief.timeline'));
     const [newsCard, newsBody] = this.sectionCard(t('countryBrief.topNews'));
@@ -2623,8 +2640,6 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     const [factsCard, factsBody] = this.sectionCard(t('countryBrief.countryFacts'));
     this.factsBody = factsBody;
     factsBody.append(this.makeLoading(t('countryBrief.loadingFacts')));
-    const factsExpanded = this.el('div', 'cdp-expanded-only');
-    factsExpanded.append(factsCard);
 
     const [energyCard, energyBody] = this.sectionCard('Energy Profile', 'Oil import dependency, chokepoint exposure, and energy shock data from JODI, IEA, and PortWatch.');
     this.energyBody = energyBody;
@@ -2638,7 +2653,7 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     this.tradeExposureBody = tradeBody;
     tradeBody.append(this.makeLoading('Loading trade exposure\u2026'));
 
-    const isPro = hasPremiumAccess(getAuthState());
+    const isPro = hasUnlockedCountryAccess;
 
     const [costShockCalcCard, costShockCalcBody] = this.sectionCard(
       'Cost Shock Calculator',
@@ -2708,9 +2723,134 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
     marketsBody.append(this.makeLoading(t('countryBrief.loadingMarkets')));
     briefBody.append(this.makeLoading(t('countryBrief.generatingBrief')));
 
-    bodyGrid.append(briefCard, ...(chinaSummaryCard ? [chinaSummaryCard] : []), factsExpanded, energyCard, maritimeCard, tradeCard, costShockCalcCard, productImportsCard, debtCard, sanctionsCard, comtradeCard, tariffCard, signalsCard, timelineCard, newsCard, militaryCard, infraCard, economicCard, housingCard, marketsCard);
-    shell.append(header, summaryGrid, bodyGrid);
+    const sectionNav = this.renderSectionNav();
+    const sectionHost = this.el('div', 'cdp-section-host');
+    const overviewPanel = this.createSectionPanel('overview');
+    const riskPanel = this.createSectionPanel('risk');
+    const economyPanel = this.createSectionPanel('economy');
+    const exposurePanel = this.createSectionPanel('exposure');
+    const dataPanel = this.createSectionPanel('data');
+
+    const overviewGrid = this.el('div', 'cdp-grid');
+    overviewGrid.append(summaryGrid, briefCard, ...(chinaSummaryCard ? [chinaSummaryCard] : []), factsCard);
+    overviewPanel.append(overviewGrid);
+
+    const riskGrid = this.el('div', 'cdp-grid');
+    riskGrid.append(signalsCard, timelineCard, newsCard, militaryCard, sanctionsCard);
+    riskPanel.append(riskGrid);
+
+    const economyGrid = this.el('div', 'cdp-grid');
+    economyGrid.append(economicCard, housingCard, debtCard, tariffCard, marketsCard);
+    economyPanel.append(economyGrid);
+
+    const exposureGrid = this.el('div', 'cdp-grid');
+    exposureGrid.append(energyCard, maritimeCard, tradeCard, costShockCalcCard, productImportsCard, comtradeCard, infraCard);
+    exposurePanel.append(exposureGrid);
+
+    const [dataCard, dataBody] = this.sectionCard('Coverage & sources');
+    this.dataCoverageBody = dataBody;
+    dataPanel.append(dataCard);
+    this.renderDataCoverageOverview();
+
+    sectionHost.append(overviewPanel, riskPanel, economyPanel, exposurePanel, dataPanel);
+    shell.append(header, sectionNav, sectionHost);
     this.content.append(shell);
+  }
+
+  private renderSectionNav(): HTMLElement {
+    this.sectionButtons.clear();
+    const nav = this.el('nav', 'cdp-section-nav');
+    nav.setAttribute('role', 'tablist');
+    nav.setAttribute('aria-label', 'Country intelligence sections');
+
+    COUNTRY_DEEP_DIVE_SECTIONS.forEach((section, index) => {
+      const button = this.el('button', 'cdp-section-tab', section.label) as HTMLButtonElement;
+      button.type = 'button';
+      button.id = `cdp-tab-${section.id}`;
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-controls', `cdp-section-${section.id}`);
+      button.setAttribute('aria-selected', String(section.id === this.activeSection));
+      button.tabIndex = section.id === this.activeSection ? 0 : -1;
+      button.addEventListener('click', () => this.setActiveSection(section.id));
+      button.addEventListener('keydown', (event) => {
+        let nextIndex = index;
+        if (event.key === 'ArrowRight') nextIndex = (index + 1) % COUNTRY_DEEP_DIVE_SECTIONS.length;
+        else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + COUNTRY_DEEP_DIVE_SECTIONS.length) % COUNTRY_DEEP_DIVE_SECTIONS.length;
+        else if (event.key === 'Home') nextIndex = 0;
+        else if (event.key === 'End') nextIndex = COUNTRY_DEEP_DIVE_SECTIONS.length - 1;
+        else return;
+        event.preventDefault();
+        const next = COUNTRY_DEEP_DIVE_SECTIONS[nextIndex];
+        if (next) this.setActiveSection(next.id, true);
+      });
+      this.sectionButtons.set(section.id, button);
+      nav.append(button);
+    });
+
+    return nav;
+  }
+
+  private createSectionPanel(sectionId: CountryDeepDiveSectionId): HTMLElement {
+    const panel = this.el('section', 'cdp-section-panel');
+    panel.id = `cdp-section-${sectionId}`;
+    panel.dataset.section = sectionId;
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', `cdp-tab-${sectionId}`);
+    if (sectionId !== this.activeSection) panel.setAttribute('hidden', '');
+    else panel.classList.add('cdp-section-panel--active');
+    this.sectionPanels.set(sectionId, panel);
+    return panel;
+  }
+
+  private setActiveSection(sectionId: CountryDeepDiveSectionId, focusTab = false): void {
+    this.activeSection = sectionId;
+    for (const section of COUNTRY_DEEP_DIVE_SECTIONS) {
+      const active = section.id === sectionId;
+      const button = this.sectionButtons.get(section.id);
+      const panel = this.sectionPanels.get(section.id);
+      button?.setAttribute('aria-selected', String(active));
+      if (button) button.tabIndex = active ? 0 : -1;
+      if (panel) {
+        if (active) panel.removeAttribute('hidden');
+        else panel.setAttribute('hidden', '');
+        panel.classList.toggle('cdp-section-panel--active', active);
+      }
+    }
+    if (sectionId === 'data') this.renderDataCoverageOverview();
+    if (focusTab) this.sectionButtons.get(sectionId)?.focus();
+  }
+
+  private renderDataCoverageOverview(): void {
+    if (!this.dataCoverageBody) return;
+    const contentCards = Array.from(this.sectionPanels.entries())
+      .filter(([sectionId]) => sectionId !== 'data')
+      .flatMap(([, panel]) => Array.from(panel.querySelectorAll<HTMLElement>('.cdp-card')));
+    const loading = contentCards.filter((card) => card.querySelector('.cdp-loading, .cdp-loading-inline')).length;
+    const locked = contentCards.filter((card) => card.querySelector('.cdp-pro-locked')).length;
+    const unavailable = contentCards.filter((card) =>
+      !card.querySelector('.cdp-loading, .cdp-loading-inline, .cdp-pro-locked')
+      && card.querySelector('.cdp-empty')).length;
+    const available = Math.max(0, contentCards.length - loading - locked - unavailable);
+
+    const stats = this.el('div', 'cdp-data-coverage-stats');
+    stats.append(
+      this.metric('Available', String(available), 'cdp-chip-success'),
+      this.metric('Loading', String(loading), 'cdp-chip-neutral'),
+      this.metric('Unavailable', String(unavailable), 'cdp-chip-neutral'),
+    );
+    if (locked > 0) stats.append(this.metric('Restricted', String(locked), 'cdp-chip-neutral'));
+
+    const note = this.el(
+      'p',
+      'cdp-data-coverage-note',
+      'Unavailable means the source did not report a usable country value. It is never treated as zero.',
+    );
+    const sources = this.el(
+      'p',
+      'cdp-data-source-summary',
+      'Source families: IMF, BIS, UN Comtrade, PortWatch, JODI, Ember, market data, and monitored event feeds. Freshness appears beside each reported dataset.',
+    );
+    this.dataCoverageBody.replaceChildren(stats, note, sources);
   }
 
   private destroyResilienceWidget(): void {
@@ -2807,6 +2947,9 @@ export class CountryDeepDivePanel implements CountryBriefPanel {
   private resetPanelContent(): void {
     this.destroyResilienceWidget();
     this.tearDownFollowButton();
+    this.sectionButtons.clear();
+    this.sectionPanels.clear();
+    this.dataCoverageBody = null;
     this.selectedSectorHs2 = null;
     this.sectorBypassAbort?.abort();
     this.sectorBypassAbort = null;

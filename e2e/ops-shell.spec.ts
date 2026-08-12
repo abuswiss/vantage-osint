@@ -6,8 +6,11 @@ const TEST_SECOND_LINK = 'https://example.com/vantage-e2e-second-report';
 
 async function installDeterministicNews(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    localStorage.clear();
     sessionStorage.clear();
+    if (window.name !== 'vantage-e2e-initialized') {
+      localStorage.clear();
+      window.name = 'vantage-e2e-initialized';
+    }
     localStorage.setItem('wm-layer-warning-dismissed', 'true');
     localStorage.setItem('wm-pro-banner-launched-dismissed', String(Date.now()));
     localStorage.setItem('worldmonitor-mission-preset-dismissed-v1', '1');
@@ -35,7 +38,25 @@ async function installDeterministicNews(page: Page): Promise<void> {
     });
   });
 
-  await page.route('**/api/bootstrap?tier=fast&public=1*', async (route) => {
+  await page.route('**/api/vantage-health', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'degraded',
+        checkedAt: new Date().toISOString(),
+        services: {
+          redis: 'ready',
+          news: { status: 'ready', ageSeconds: 30 },
+          insights: { status: 'ready', ageSeconds: 90 },
+          risk: { status: 'ready', ageSeconds: 120 },
+          relay: { status: 'degraded', air: 'waiting', ships: 'unavailable' },
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/vantage-bootstrap?tier=fast&public=1*', async (route) => {
     const now = new Date().toISOString();
     await route.fulfill({
       status: 200,
@@ -113,9 +134,9 @@ test.describe('Vantage operations shell', () => {
     await expect(page.locator('#mobileAuthFallback')).toHaveCount(0);
     await expect(page.locator('.mobile-menu-account')).toHaveCount(0);
     await expect(page.locator('.mobile-menu-variant')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Air layer pending relay provisioning' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Ships layer pending relay provisioning' })).toHaveCount(0);
-    await expect(page.locator('.ops-status-item')).toContainText('Coverage limited');
+    await expect(page.getByRole('button', { name: 'Air layer unavailable in this view' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Ships layer unavailable in this view' })).toHaveCount(0);
+    await expect(page.locator('.ops-status-item')).toContainText('Air/ships unavailable');
     await expect(page.getByRole('main')).toHaveCount(1);
     await expect(page.locator('.skip-link')).toHaveAttribute('href', '#opsMain');
     await expect(page.getByRole('group', { name: 'Feed order' }).getByRole('button', { name: 'Priority' })).toHaveAttribute('aria-pressed', 'true');
@@ -139,16 +160,34 @@ test.describe('Vantage operations shell', () => {
     await page.keyboard.press('Enter');
     await expect(page.locator('#opsMain')).toBeFocused();
 
-    await page.getByRole('button', { name: 'Open cited situation brief' }).click();
+    await expect(page.getByRole('button', { name: 'Open coverage and freshness status' })).toHaveText('Coverage 3/5');
+    await page.getByRole('button', { name: 'Open coverage and freshness status' }).click();
+    await expect(page.locator('.ops-inspector-title')).toHaveText('Data readiness');
+    await expect(page.locator('.ops-coverage-row')).toHaveCount(5);
+    await expect(page.locator('.ops-coverage-row', { hasText: 'Air' })).toContainText('Delayed');
+    await expect(page.locator('.ops-coverage-row', { hasText: 'Ships' })).toContainText('Unavailable');
+    await page.getByRole('button', { name: 'Close inspector' }).click();
+
+    await page.getByRole('button', { name: 'Open analysis and research views' }).click();
+    await expect(page.locator('.ops-inspector-title')).toHaveText('Research views');
+    await expect(page.locator('.ops-analysis-card')).toHaveCount(4);
+    await expect(page.getByRole('navigation', { name: 'Research routes' }).getByRole('link')).toHaveCount(5);
+    await page.getByRole('button', { name: /Situation brief/ }).click();
     await expect(page.locator('#opsInspector')).toBeVisible();
     await expect(page.locator('.ops-inspector-title')).toHaveText('Global situation brief');
     await expect(page.locator('#opsInspector')).toContainText('Current assessment');
     await expect(page.locator('#opsInspector')).toContainText('Evidence status');
-    await expect(page.locator('#opsInspector')).toContainText('Compiled from 282 stories across 74 sources.');
+    await expect(page.locator('#opsInspector')).toContainText('Compiled from 282 stories across 74 named feeds.');
+    await expect(page.locator('.ops-brief-assessment')).toContainText('A verified security report');
     await expect(page.locator('.ops-source-link')).toHaveCount(2);
     await expect(page.locator('.ops-source-link').first()).toHaveAttribute('href', TEST_LINK);
+    await expect(page.locator('.ops-source-link').first().locator('.ops-source-index')).toHaveText('01');
+    await expect(page.locator('.ops-source-link').first().locator('.ops-source-meta')).toContainText('BBC World');
+    const download = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Export cited briefing' }).click();
+    expect((await download).suggestedFilename()).toMatch(/^vantage-brief-\d{4}-\d{2}-\d{2}\.md$/);
     await page.getByRole('button', { name: 'Close inspector' }).click();
-    await expect(page.getByRole('button', { name: 'Open cited situation brief' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Open analysis and research views' })).toBeFocused();
 
     const oneHour = page.getByRole('button', { name: 'Show the last 1h activity' });
     await oneHour.click();
@@ -159,7 +198,7 @@ test.describe('Vantage operations shell', () => {
     await expect(page.getByRole('dialog', { name: 'Map layers' })).toBeVisible();
     await expect(page.locator('.ops-layer-option')).toHaveCount(32);
     await expect(page.locator('.ops-layer-option', { hasText: 'Resilience' })).toHaveCount(0);
-    await expect(page.locator('.ops-layer-state', { hasText: 'pending' })).toHaveCount(2);
+    await expect(page.locator('.ops-layer-state', { hasText: 'unavailable' })).toHaveCount(2);
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog', { name: 'Map layers' })).toBeHidden();
     await expect(page.locator('.ops-more-layers')).toBeFocused();
@@ -285,11 +324,11 @@ test.describe('Vantage operations shell', () => {
   });
 
   test('keeps async brief loading stable and accessible without changing the button label', async ({ page }) => {
-    await page.unroute('**/api/bootstrap?tier=fast&public=1*');
+    await page.unroute('**/api/vantage-bootstrap?tier=fast&public=1*');
     let holdBrief = false;
     let releaseBrief!: () => void;
     const briefGate = new Promise<void>((resolve) => { releaseBrief = resolve; });
-    await page.route('**/api/bootstrap?tier=fast&public=1*', async (route) => {
+    await page.route('**/api/vantage-bootstrap?tier=fast&public=1*', async (route) => {
       if (holdBrief) await briefGate;
       await route.fulfill({
         status: 200,
@@ -300,32 +339,36 @@ test.describe('Vantage operations shell', () => {
 
     await openOpsShell(page);
     holdBrief = true;
-    const button = page.getByRole('button', { name: 'Open cited situation brief' });
+    const button = page.getByRole('button', { name: 'Open analysis and research views' });
     const widthBefore = (await button.boundingBox())?.width;
     await button.click();
+    await page.getByRole('button', { name: /Situation brief/ }).click();
 
     try {
-      await expect(button).toHaveText('Brief');
+      await expect(button).toHaveText('Analysis');
       await expect(button).toHaveAttribute('aria-busy', 'true');
       await expect(page.locator('.ops-loading-state')).toBeVisible();
       await expect(page.locator('.ops-loading-line')).toHaveCount(4);
+      await expect(page.locator('.ops-loading-mark i')).toHaveCount(9);
       expect((await button.boundingBox())?.width).toBe(widthBefore);
 
       releaseBrief();
       await expect(page.locator('.ops-inspector-title')).toHaveText('Brief temporarily unavailable');
+      await expect(page.getByRole('button', { name: 'Try brief again' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'View current reporting' })).toBeVisible();
       await expect(button).not.toHaveAttribute('aria-busy');
-      await expect(button).toHaveText('Brief');
+      await expect(button).toHaveText('Analysis');
     } finally {
       releaseBrief();
     }
   });
 
   test('restores focus when a loading brief is dismissed before settlement', async ({ page }) => {
-    await page.unroute('**/api/bootstrap?tier=fast&public=1*');
+    await page.unroute('**/api/vantage-bootstrap?tier=fast&public=1*');
     let holdBrief = false;
     let releaseBrief!: () => void;
     const briefGate = new Promise<void>((resolve) => { releaseBrief = resolve; });
-    await page.route('**/api/bootstrap?tier=fast&public=1*', async (route) => {
+    await page.route('**/api/vantage-bootstrap?tier=fast&public=1*', async (route) => {
       if (holdBrief) await briefGate;
       await route.fulfill({
         status: 200,
@@ -336,8 +379,9 @@ test.describe('Vantage operations shell', () => {
 
     await openOpsShell(page);
     holdBrief = true;
-    const button = page.getByRole('button', { name: 'Open cited situation brief' });
+    const button = page.getByRole('button', { name: 'Open analysis and research views' });
     await button.click();
+    await page.getByRole('button', { name: /Situation brief/ }).click();
 
     try {
       await expect(button).toHaveAttribute('aria-busy', 'true');
@@ -374,6 +418,45 @@ test.describe('Vantage operations shell', () => {
     await page.keyboard.press('Escape');
     await expect(preview).toBeFocused();
   });
+
+  test('persists a named monitor and restores change detection after reload', async ({ page }) => {
+    await openOpsShell(page);
+    await page.getByRole('button', { name: 'Monitor workspace and alert settings' }).click();
+    await page.getByRole('button', { name: 'New', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Monitor name' }).fill('Energy desk');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Active monitor' })).toHaveValue(/monitor-/);
+    await expect(page.getByRole('combobox', { name: 'Active monitor' })).toContainText('Energy desk');
+    await page.locator('.ops-watch-add-input').fill('vantage');
+    await page.locator('.ops-watch-add').getByRole('button', { name: 'Watch' }).click();
+    await page.getByRole('button', { name: 'Mark reviewed' }).click();
+    await expect(page.locator('.ops-monitor-pulse')).toContainText('0 new');
+
+    // Simulate a saved review baseline from just before the current matching
+    // report. This runs after pagehide checkpoints the outgoing view and before
+    // the reloaded app reads local state, making the reload proof deterministic.
+    await page.addInitScript(() => {
+      if (localStorage.getItem('wm-e2e-prior-baseline') !== '1') return;
+      const raw = localStorage.getItem('wm-monitors-v1');
+      if (!raw) return;
+      const state = JSON.parse(raw) as {
+        activeId: string;
+        monitors: Array<{ id: string; baseline: { capturedAt: number; signals: unknown[] } | null }>;
+      };
+      const active = state.monitors.find((monitor) => monitor.id === state.activeId);
+      if (active) active.baseline = { capturedAt: Date.now() - 60_000, signals: [] };
+      localStorage.setItem('wm-monitors-v1', JSON.stringify(state));
+      localStorage.removeItem('wm-e2e-prior-baseline');
+    });
+    await page.evaluate(() => localStorage.setItem('wm-e2e-prior-baseline', '1'));
+    await page.reload();
+    await expect(page.locator('.ops-shell')).toBeVisible();
+    await expect(page.locator('.ops-feed-item').filter({ hasText: TEST_HEADLINE })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Monitor workspace and alert settings' })).toHaveText('Monitor 1');
+    await page.getByRole('button', { name: 'Monitor workspace and alert settings' }).click();
+    await expect(page.getByRole('combobox', { name: 'Active monitor' })).toContainText('Energy desk');
+    await expect(page.locator('.ops-monitor-pulse')).toContainText('1 new');
+  });
 });
 
 test.describe('Vantage public mobile shell', () => {
@@ -404,7 +487,7 @@ test.describe('Vantage public mobile shell', () => {
     await page.locator('.ops-more-layers').click();
     const layers = page.getByRole('dialog', { name: 'Map layers' });
     await expect(layers).toBeVisible();
-    await expect(layers.locator('.ops-layer-state', { hasText: 'pending' })).toHaveCount(2);
+    await expect(layers.locator('.ops-layer-state', { hasText: 'unavailable' })).toHaveCount(2);
     const oneHour = layers.getByRole('button', { name: 'Show the last 1h activity' });
     await oneHour.click();
     await expect(oneHour).toHaveAttribute('aria-pressed', 'true');

@@ -72,9 +72,7 @@ const EXPECTED_FULL_DECK_LAYERS = [
   'repair-ships-layer',
   'flight-delays-layer',
   'military-vessels-layer',
-  'military-vessel-clusters-layer',
   'military-flights-layer',
-  'military-flight-clusters-layer',
   'waterways-layer',
   'economic-centers-layer',
   'minerals-layer',
@@ -105,9 +103,7 @@ const EXPECTED_TECH_DECK_LAYERS = [
   'repair-ships-layer',
   'flight-delays-layer',
   'military-vessels-layer',
-  'military-vessel-clusters-layer',
   'military-flights-layer',
-  'military-flight-clusters-layer',
   'waterways-layer',
   'economic-centers-layer',
   'minerals-layer',
@@ -320,6 +316,22 @@ test.describe('DeckGL map harness', () => {
         });
       }, { timeout: 20000 })
       .toBeGreaterThan(0);
+
+    if (variant === 'full' || variant === 'tech' || variant === 'finance') {
+      await page.evaluate(() => {
+        const w = window as HarnessWindow;
+        w.__mapHarness?.setZoom(2);
+      });
+      await expect.poll(async () => page.evaluate(() => {
+        const w = window as HarnessWindow;
+        const layers = w.__mapHarness?.getDeckLayerSnapshot() ?? [];
+        const count = (id: string) => layers.find((layer) => layer.id === id)?.dataCount ?? 0;
+        return count('military-flight-clusters-layer') > 0
+          && count('military-vessel-clusters-layer') > 0
+          && count('military-flights-layer') === 0
+          && count('military-vessels-layer') === 0;
+      })).toBe(true);
+    }
 
     await page.evaluate(() => {
       const w = window as HarnessWindow;
