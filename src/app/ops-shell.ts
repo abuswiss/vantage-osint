@@ -54,16 +54,33 @@ import {
 import { activityTracker } from '@/services/activity-tracker';
 import { pickSinceBaseline } from '@/utils/brief-baseline';
 import {
+  checkpointMonitor,
+  compareMonitorSignals,
+  createMonitor,
+  deleteActiveMonitor,
+  getActiveMonitor,
   getAlertPrefs,
+  getMonitors,
   getWatchlist,
   isWatched,
+  renameActiveMonitor,
+  setActiveMonitor,
   setAlertPrefs,
   subscribe as subscribeWatchlist,
   toggleCountry,
   toggleTopic,
   type AlertPrefs,
+  type MonitorPulse,
+  type MonitorSignalSnapshot,
+  type MonitorWorkspace,
   type Watchlist,
 } from '@/services/watchlist';
+import {
+  fetchVantageHealth,
+  getCoverageSurfaces,
+  type VantageHealthSnapshot,
+} from '@/services/vantage-health';
+import { buildVantageReportMarkdown, downloadVantageReport } from '@/services/vantage-report';
 import { toFlagEmoji } from '@/utils/country-flag';
 import { getStrategicRiskDisplayLevel } from '@/utils/strategic-risk-band';
 
@@ -126,6 +143,8 @@ type InspectorSelection =
   | { kind: 'search'; result: OpsSearchSummary }
   | { kind: 'brief'; brief: VantageSynthesis | null }
   | { kind: 'country'; code: string; name: string }
+  | { kind: 'analysis' }
+  | { kind: 'coverage' }
   | { kind: 'signal' };
 
 type WatchFilter = { kind: 'country' | 'topic'; value: string };
@@ -151,6 +170,7 @@ const TIME_RANGE_MS: Partial<Record<TimeRange, number>> = {
 const FEED_LIMIT = 80;
 const TIMELINE_BUCKETS = 16;
 const HUD_REFRESH_MS = 30_000;
+const COVERAGE_REFRESH_MS = 2 * 60_000;
 const FOCUS_PARAM = 'focus';
 const FLASH_MS = 1_300;
 const CITATION_PATTERN = /\[(\d{1,2})\]/g;
@@ -183,8 +203,8 @@ export class OpsShell {
   private missionPopover: HTMLElement | null = null;
   private missionButton: HTMLButtonElement | null = null;
   private missionReturnFocus: HTMLElement | null = null;
-  private briefButton: HTMLButtonElement | null = null;
-  private systemStatus: HTMLElement | null = null;
+  private analysisButton: HTMLButtonElement | null = null;
+  private systemStatus: HTMLButtonElement | null = null;
   private briefPreviewHost: HTMLElement | null = null;
   private briefPreviewButton: HTMLButtonElement | null = null;
   private shortcutsOverlay: HTMLElement | null = null;
@@ -200,6 +220,9 @@ export class OpsShell {
   private countEvents: HTMLElement | null = null;
   private statusLine: HTMLElement | null = null;
   private hudTimer: ReturnType<typeof setInterval> | null = null;
+  private coverageTimer: ReturnType<typeof setInterval> | null = null;
+  private coverageAbort: AbortController | null = null;
+  private coverageHealth: VantageHealthSnapshot | null = null;
   private bootHandoffTimer: number | null = null;
   private feedHasSettled = false;
   private briefLoading = false;
@@ -209,6 +232,8 @@ export class OpsShell {
   private watchBell: HTMLButtonElement | null = null;
   private watchFilter: WatchFilter | null = null;
   private watchSettingsOpen = false;
+  private monitorEditorMode: 'create' | 'rename' | null = null;
+  private monitorDeleteArmed = false;
   private watchAddFocusPending = false;
   private unsubscribeWatchlist: (() => void) | null = null;
   private lastAlertScore: number | null = null;
@@ -220,6 +245,7 @@ export class OpsShell {
   private boundKeydown: ((event: KeyboardEvent) => void) | null = null;
   private boundOutsidePointer: ((event: PointerEvent) => void) | null = null;
   private boundOpsAlert: ((event: Event) => void) | null = null;
+  private boundPageHide: (() => void) | null = null;
   private legacyMain: HTMLElement | null = null;
   private legacyMainRole: string | null = null;
   private legacyMainAriaHidden: string | null = null;
@@ -274,21 +300,29 @@ export class OpsShell {
       this.renderFeed();
     });
 
+    this.boundPageHide = () => this.checkpointActiveMonitor();
+    window.addEventListener('pagehide', this.boundPageHide);
+
     this.syncLayerChips();
     this.syncTimeChips(this.ctx.currentTimeRange);
     this.renderWatchlistStrip();
     this.feedHasSettled = this.ctx.initialLoadComplete || this.collectFeedItems(false).length > 0;
     this.renderFeed();
     this.updateHud();
+    void this.refreshCoverage();
     this.restoreDeepLinkedFocus();
     this.hudTimer = setInterval(() => this.updateHud(), HUD_REFRESH_MS);
+    this.coverageTimer = setInterval(() => { void this.refreshCoverage(); }, COVERAGE_REFRESH_MS);
     requestAnimationFrame(() => this.ctx.map?.resize?.());
     this.completeBootHandoff();
   }
 
   destroy(): void {
+    this.checkpointActiveMonitor();
     this.destroyed = true;
     if (this.hudTimer) clearInterval(this.hudTimer);
+    if (this.coverageTimer) clearInterval(this.coverageTimer);
+    this.coverageAbort?.abort();
     if (this.bootHandoffTimer !== null) window.clearTimeout(this.bootHandoffTimer);
     for (const timer of this.focusRestoreTimers) window.clearTimeout(timer);
     this.focusRestoreTimers = [];
@@ -299,6 +333,8 @@ export class OpsShell {
     if (this.boundKeydown) document.removeEventListener('keydown', this.boundKeydown);
     if (this.boundOutsidePointer) document.removeEventListener('pointerdown', this.boundOutsidePointer);
     if (this.boundOpsAlert) document.removeEventListener('wm:ops-inspect-alert', this.boundOpsAlert);
+    if (this.boundPageHide) window.removeEventListener('pagehide', this.boundPageHide);
+    this.boundPageHide = null;
     this.panelDock?.remove();
     this.panelDock = null;
     this.restoreLandmarks();
@@ -389,7 +425,7 @@ export class OpsShell {
         }
         const state = button.querySelector<HTMLElement>('.ops-layer-state');
         if (state) state.textContent = relayPending
-          ? 'pending'
+          ? 'unavailable'
           : runtimeUnavailable
             ? 'unavailable'
           : enabled
@@ -449,9 +485,12 @@ export class OpsShell {
 
     const brand = el('div', 'ops-brand');
     brand.textContent = BRAND.name;
-    this.systemStatus = el('span', 'ops-live');
-    this.systemStatus.textContent = navigator.onLine ? 'Updating' : 'Offline';
+    this.systemStatus = el('button', 'ops-live') as HTMLButtonElement;
+    this.systemStatus.type = 'button';
+    this.systemStatus.textContent = navigator.onLine ? 'Coverage checking' : 'Offline';
     this.systemStatus.dataset.state = navigator.onLine ? 'updating' : 'offline';
+    this.systemStatus.setAttribute('aria-label', 'Open coverage and freshness status');
+    this.systemStatus.addEventListener('click', () => this.inspectCoverage());
     brand.appendChild(this.systemStatus);
 
     const chips = el('div', 'ops-chips');
@@ -504,17 +543,17 @@ export class OpsShell {
     }
 
     const right = el('div', 'ops-top-right');
-    this.briefButton = el('button', 'ops-brief-button') as HTMLButtonElement;
-    this.briefButton.type = 'button';
-    this.briefButton.textContent = 'Brief';
-    this.briefButton.setAttribute('aria-label', 'Open cited situation brief');
-    this.briefButton.addEventListener('click', () => { void this.inspectBrief(); });
+    this.analysisButton = el('button', 'ops-brief-button') as HTMLButtonElement;
+    this.analysisButton.type = 'button';
+    this.analysisButton.textContent = 'Analysis';
+    this.analysisButton.setAttribute('aria-label', 'Open analysis and research views');
+    this.analysisButton.addEventListener('click', () => this.inspectAnalysisHub());
     const counts = el('div', 'ops-counts');
     this.countAir = el('span');
     this.countShips = el('span');
     this.countEvents = el('span');
     counts.append(this.countAir, this.countShips, this.countEvents);
-    if (VANTAGE_PUBLIC_MODE) right.appendChild(this.briefButton);
+    if (VANTAGE_PUBLIC_MODE) right.appendChild(this.analysisButton);
     right.appendChild(counts);
     right.id = 'opsTopRight';
 
@@ -619,9 +658,9 @@ export class OpsShell {
       && !VANTAGE_RELAY_ENABLED
       && (definition.key === 'military' || definition.key === 'ais');
     button.setAttribute('aria-label', relayPending
-      ? `${definition.label} layer pending relay provisioning`
+      ? `${definition.label} layer unavailable in this view`
       : `Toggle ${definition.label} layer`);
-    if (relayPending) button.title = 'Available after the always-on relay is provisioned';
+    if (relayPending) button.title = 'Live relay coverage is not enabled in this view';
     const dot = el('span', 'dot');
     button.append(dot, document.createTextNode(definition.label));
     button.addEventListener('click', () => this.toggleLayer(definition.key));
@@ -661,8 +700,8 @@ export class OpsShell {
     }
     this.watchBell = el('button', 'ops-watch-bell') as HTMLButtonElement;
     this.watchBell.type = 'button';
-    this.watchBell.textContent = 'Alerts';
-    this.watchBell.setAttribute('aria-label', 'Watchlist alert settings');
+    this.watchBell.textContent = 'Monitor';
+    this.watchBell.setAttribute('aria-label', 'Monitor workspace and alert settings');
     this.watchBell.setAttribute('aria-pressed', 'false');
     this.watchBell.addEventListener('click', () => {
       this.watchSettingsOpen = !this.watchSettingsOpen;
@@ -1118,6 +1157,7 @@ export class OpsShell {
 
   private renderFeed(): void {
     if (!this.feedList) return;
+    this.syncMonitorButton();
     const focusedId = document.activeElement instanceof HTMLButtonElement
       && this.feedList.contains(document.activeElement)
       ? document.activeElement.dataset.focusId ?? null
@@ -1196,18 +1236,7 @@ export class OpsShell {
 
   private renderBriefPreview(brief: VantageSynthesis | null): void {
     if (!this.briefPreviewHost) return;
-    if (this.systemStatus) {
-      const newestReport = brief ? null : this.collectFeedItems(false)[0] ?? null;
-      const state = !navigator.onLine ? 'offline' : brief || newestReport ? 'current' : 'updating';
-      this.systemStatus.dataset.state = state;
-      this.systemStatus.textContent = state === 'offline'
-        ? 'Offline'
-        : brief
-          ? `Brief ${brief.freshness.replace(/^Updated\s+/i, '')}`
-          : newestReport
-            ? `Reports ${formatTimeAgo(newestReport.when)}`
-            : 'Updating';
-    }
+    this.renderCoverageStatus();
     if (!VANTAGE_PUBLIC_MODE || !brief) {
       this.briefPreviewButton?.remove();
       this.briefPreviewButton = null;
@@ -1329,12 +1358,12 @@ export class OpsShell {
       evidenceTitle.textContent = 'Evidence sources';
       const list = el('div', 'ops-source-list');
       for (const source of sources.slice(0, 6)) {
-        const link = el('a', 'ops-source-link') as HTMLAnchorElement;
-        link.href = source.url;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.textContent = source.name;
-        list.appendChild(link);
+        list.appendChild(evidenceLink({
+          source: source.name,
+          title: source.name,
+          url: source.url,
+          meta: 'Original reporting',
+        }));
       }
       content.append(evidenceTitle, list);
     }
@@ -1667,6 +1696,33 @@ export class OpsShell {
 
   // ---- watchlist strip + alerts ----
 
+  private currentMonitorSignals(monitor = getActiveMonitor()): MonitorSignalSnapshot[] {
+    const hasScope = monitor.countries.length > 0 || monitor.topics.length > 0;
+    return this.collectFeedItems(false)
+      .filter((item) => !hasScope || matchesWatchlist(item, monitor))
+      .map((item) => ({ id: item.id, sourceCount: item.sourceCount, title: item.title }));
+  }
+
+  private monitorPulse(monitor = getActiveMonitor()): MonitorPulse {
+    return compareMonitorSignals(this.currentMonitorSignals(monitor), monitor.baseline);
+  }
+
+  private checkpointActiveMonitor(): void {
+    const monitor = getActiveMonitor();
+    checkpointMonitor(monitor.id, this.currentMonitorSignals(monitor));
+  }
+
+  private syncMonitorButton(): void {
+    if (!this.watchBell) return;
+    const monitor = getActiveMonitor();
+    const pulse = this.monitorPulse(monitor);
+    const changes = pulse.newCount + pulse.strengthenedCount;
+    this.watchBell.textContent = changes > 0 ? `Monitor ${changes}` : 'Monitor';
+    this.watchBell.title = changes > 0
+      ? `${changes} new or strengthened signals in ${monitor.name}`
+      : monitor.name;
+  }
+
   private renderWatchlistStrip(): void {
     const row = this.watchlistRow;
     if (!row) return;
@@ -1675,7 +1731,10 @@ export class OpsShell {
     }
     const list = getWatchlist();
     const prefs = getAlertPrefs();
+    const monitor = getActiveMonitor();
+    const pulse = this.monitorPulse(monitor);
     this.watchBell?.setAttribute('aria-pressed', this.watchSettingsOpen ? 'true' : 'false');
+    this.syncMonitorButton();
     row.replaceChildren();
 
     const entries: Array<{ kind: 'country' | 'topic'; value: string; label: string }> = [
@@ -1729,12 +1788,126 @@ export class OpsShell {
     }
 
     if (this.watchSettingsOpen) {
+      row.appendChild(this.buildMonitorControls(monitor, pulse));
       row.appendChild(this.buildAlertSettings(prefs));
       if (this.watchAddFocusPending) {
         this.watchAddFocusPending = false;
         row.querySelector<HTMLInputElement>('.ops-watch-add-input')?.focus();
       }
     }
+  }
+
+  private buildMonitorControls(monitor: MonitorWorkspace, pulse: MonitorPulse): HTMLElement {
+    const wrap = el('div', 'ops-monitor-controls');
+    const toolbar = el('div', 'ops-monitor-toolbar');
+    const select = el('select', 'ops-monitor-select') as HTMLSelectElement;
+    select.setAttribute('aria-label', 'Active monitor');
+    const monitors = getMonitors();
+    for (const candidate of monitors) {
+      const option = el('option') as HTMLOptionElement;
+      option.value = candidate.id;
+      option.textContent = candidate.name;
+      option.selected = candidate.id === monitor.id;
+      select.appendChild(option);
+    }
+    select.addEventListener('change', () => {
+      this.checkpointActiveMonitor();
+      this.watchFilter = null;
+      this.monitorEditorMode = null;
+      this.monitorDeleteArmed = false;
+      setActiveMonitor(select.value);
+    });
+    toolbar.appendChild(select);
+
+    const editActions = el('span', 'ops-monitor-actions');
+    const newButton = el('button') as HTMLButtonElement;
+    newButton.type = 'button';
+    newButton.textContent = 'New';
+    newButton.addEventListener('click', () => {
+      this.monitorEditorMode = 'create';
+      this.monitorDeleteArmed = false;
+      this.renderWatchlistStrip();
+      requestAnimationFrame(() => this.watchlistRow?.querySelector<HTMLInputElement>('.ops-monitor-name')?.focus());
+    });
+    const renameButton = el('button') as HTMLButtonElement;
+    renameButton.type = 'button';
+    renameButton.textContent = 'Rename';
+    renameButton.addEventListener('click', () => {
+      this.monitorEditorMode = 'rename';
+      this.monitorDeleteArmed = false;
+      this.renderWatchlistStrip();
+      requestAnimationFrame(() => this.watchlistRow?.querySelector<HTMLInputElement>('.ops-monitor-name')?.select());
+    });
+    editActions.append(newButton, renameButton);
+    if (monitors.length > 1) {
+      const removeButton = el('button') as HTMLButtonElement;
+      removeButton.type = 'button';
+      removeButton.textContent = this.monitorDeleteArmed ? 'Confirm delete' : 'Delete';
+      removeButton.dataset.danger = this.monitorDeleteArmed ? 'true' : 'false';
+      removeButton.addEventListener('click', () => {
+        if (!this.monitorDeleteArmed) {
+          this.monitorDeleteArmed = true;
+          this.monitorEditorMode = null;
+          this.renderWatchlistStrip();
+          return;
+        }
+        this.monitorDeleteArmed = false;
+        this.watchFilter = null;
+        deleteActiveMonitor();
+      });
+      editActions.appendChild(removeButton);
+    }
+    toolbar.appendChild(editActions);
+    wrap.appendChild(toolbar);
+
+    if (this.monitorEditorMode) {
+      const form = el('form', 'ops-monitor-editor') as HTMLFormElement;
+      const input = el('input', 'ops-monitor-name') as HTMLInputElement;
+      input.type = 'text';
+      input.maxLength = 40;
+      input.placeholder = this.monitorEditorMode === 'create' ? 'Monitor name' : 'Rename monitor';
+      input.setAttribute('aria-label', input.placeholder);
+      if (this.monitorEditorMode === 'rename') input.value = monitor.name;
+      const save = el('button') as HTMLButtonElement;
+      save.type = 'submit';
+      save.textContent = this.monitorEditorMode === 'create' ? 'Create' : 'Save';
+      form.append(input, save);
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const name = input.value.trim();
+        if (!name) return;
+        if (this.monitorEditorMode === 'create') {
+          this.checkpointActiveMonitor();
+          if (!createMonitor(name)) {
+            input.setAttribute('aria-invalid', 'true');
+            return;
+          }
+          this.watchFilter = null;
+        } else if (!renameActiveMonitor(name)) {
+          input.setAttribute('aria-invalid', 'true');
+          return;
+        }
+        this.monitorEditorMode = null;
+        this.renderWatchlistStrip();
+      });
+      wrap.appendChild(form);
+    }
+
+    const pulseRow = el('div', 'ops-monitor-pulse');
+    const pulseText = el('span');
+    pulseText.textContent = pulse.baselineAt === null
+      ? 'No review baseline yet.'
+      : `${pulse.newCount} new · ${pulse.strengthenedCount} strengthened · ${pulse.noLongerCurrentCount} no longer current`;
+    const checkpoint = el('button') as HTMLButtonElement;
+    checkpoint.type = 'button';
+    checkpoint.textContent = 'Mark reviewed';
+    checkpoint.addEventListener('click', () => {
+      checkpointMonitor(monitor.id, this.currentMonitorSignals(monitor));
+      this.renderWatchlistStrip();
+    });
+    pulseRow.append(pulseText, checkpoint);
+    wrap.appendChild(pulseRow);
+    return wrap;
   }
 
   private buildAlertSettings(prefs: AlertPrefs): HTMLElement {
@@ -1926,10 +2099,8 @@ export class OpsShell {
     this.selection = loadingSelection;
     this.openInspector();
 
-    if (this.briefButton) {
-      this.briefButton.setAttribute('aria-busy', 'true');
-    }
     this.briefPreviewButton?.setAttribute('aria-busy', 'true');
+    this.analysisButton?.setAttribute('aria-busy', 'true');
     let brief: VantageSynthesis | null = null;
     try {
       const insights = await fetchServerInsights(5_000, true) ?? getServerInsights();
@@ -1939,10 +2110,8 @@ export class OpsShell {
     } finally {
       this.briefLoading = false;
       if (this.selection === loadingSelection) this.inspector?.removeAttribute('aria-busy');
-      if (this.briefButton) {
-        this.briefButton.removeAttribute('aria-busy');
-      }
       this.briefPreviewButton?.removeAttribute('aria-busy');
+      this.analysisButton?.removeAttribute('aria-busy');
     }
     if (this.selection !== loadingSelection) return;
     if (!brief) {
@@ -1976,11 +2145,13 @@ export class OpsShell {
       : 'Current assessment';
     const changed = el('p', 'ops-inspector-copy ops-brief-copy');
     this.appendTextWithCitations(changed, brief.whatChanged, brief);
+    const assessment = el('section', 'ops-brief-assessment');
+    assessment.append(changedHeading, changed);
     const whyHeading = el('h3', 'ops-inspector-section-title');
     whyHeading.textContent = 'Evidence status';
     const why = el('p', 'ops-inspector-copy');
     this.appendTextWithCitations(why, brief.whyItMatters, brief);
-    content.append(changedHeading, changed, whyHeading, why);
+    content.append(assessment, whyHeading, why);
 
     if (brief.threads.length > 0) {
       const threadHeading = el('h3', 'ops-inspector-section-title');
@@ -2004,27 +2175,45 @@ export class OpsShell {
       evidenceTitle.textContent = 'Numbered evidence';
       const list = el('div', 'ops-source-list');
       for (const source of brief.sources) {
-        const link = el('a', 'ops-source-link') as HTMLAnchorElement;
-        link.href = source.url;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.dataset.sourceIndex = String(source.index);
-        link.textContent = source.title
-          ? `[${source.index}] ${source.source} — ${source.title}`
-          : `[${source.index}] ${source.source}`;
-        list.appendChild(link);
+        list.appendChild(evidenceLink({
+          index: source.index,
+          source: source.source,
+          title: source.title,
+          url: source.url,
+          publishedAt: source.publishedAt,
+        }));
       }
       content.append(evidenceTitle, list);
     }
+
+    const actions = el('div', 'ops-inspector-actions');
+    actions.appendChild(actionButton(
+      'Export cited briefing',
+      (button) => this.exportCurrentBrief(button, brief),
+      true,
+    ));
+    content.appendChild(actions);
 
     this.renderBriefHistory(content);
   }
 
   private renderBriefUnavailable(): void {
     const unavailable = this.beginInspector('Cited brief', 'Brief temporarily unavailable', 'Freshness unavailable');
+    const state = el('section', 'ops-brief-empty');
+    const mark = buildLoadingMark();
+    mark.setAttribute('aria-hidden', 'true');
     const copy = el('p', 'ops-inspector-copy');
     copy.textContent = 'The latest validated snapshot is not ready. Current reporting remains available in the feed while the next analysis snapshot is published.';
-    unavailable.appendChild(copy);
+    const actions = el('div', 'ops-inspector-actions');
+    actions.append(
+      actionButton('Try brief again', () => { void this.inspectBrief(); }, true),
+      actionButton('View current reporting', () => {
+        this.closeInspector();
+        requestAnimationFrame(() => this.feedList?.querySelector<HTMLButtonElement>('.ops-feed-item')?.focus());
+      }),
+    );
+    state.append(mark, copy, actions);
+    unavailable.appendChild(state);
     this.renderBriefHistory(unavailable);
   }
 
@@ -2308,14 +2497,12 @@ export class OpsShell {
       evidenceTitle.textContent = 'Numbered evidence';
       const list = el('div', 'ops-source-list');
       for (const source of snapshot.worldBriefSources) {
-        const link = el('a', 'ops-source-link') as HTMLAnchorElement;
-        link.href = source.url;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.textContent = source.title
-          ? `[${source.index}] ${source.source} — ${source.title}`
-          : `[${source.index}] ${source.source}`;
-        list.appendChild(link);
+        list.appendChild(evidenceLink({
+          index: source.index,
+          source: source.source,
+          title: source.title,
+          url: source.url,
+        }));
       }
       content.append(evidenceTitle, list);
     }
@@ -2625,6 +2812,140 @@ export class OpsShell {
     }
   }
 
+  // ---- analysis + coverage ----
+
+  private inspectAnalysisHub(): void {
+    this.selection = { kind: 'analysis' };
+    this.setFocus(null);
+    const brief = this.currentBrief();
+    const content = this.beginInspector(
+      'Analysis',
+      'Research views',
+      brief?.freshness ?? 'Current reporting remains available',
+    );
+    const intro = el('p', 'ops-inspector-copy');
+    intro.textContent = 'Start with the cited situation brief, or move the same map and reporting into a focused research view.';
+
+    const grid = el('div', 'ops-analysis-grid');
+    grid.append(
+      analysisCard('Situation brief', 'Assessment, change history, and numbered evidence.', () => { void this.inspectBrief(); }),
+      analysisCard('Country research', 'Find a country and open its live signal summary.', () => {
+        this.closeInspector();
+        this.hooks.onOpenSearch();
+      }),
+      analysisCard('Supply chains', 'Routes, chokepoints, maritime context, and disruption.', () => this.openAnalysisMission('supply-chain-risk')),
+      analysisCard('Energy', 'Pipelines, hubs, outages, and energy-security reporting.', () => this.openAnalysisMission('energy-security')),
+    );
+    content.append(intro, grid);
+
+    const exploreTitle = el('h3', 'ops-inspector-section-title');
+    exploreTitle.textContent = 'Explore';
+    const explore = el('nav', 'ops-analysis-links');
+    explore.setAttribute('aria-label', 'Research routes');
+    const routes: ReadonlyArray<readonly [string, string]> = [
+      ['Countries', '/countries/'],
+      ['Chokepoints', '/chokepoints/'],
+      ['Crises', '/crises/'],
+      ['Tools', '/tools/'],
+      ['API & docs', '/docs'],
+    ];
+    for (const [label, href] of routes) {
+      const link = el('a') as HTMLAnchorElement;
+      link.href = href;
+      link.textContent = label;
+      explore.appendChild(link);
+    }
+    content.append(exploreTitle, explore);
+    this.openInspector();
+  }
+
+  private openAnalysisMission(presetId: MissionPresetId): void {
+    this.closeInspector();
+    this.hooks.onApplyMission(presetId);
+    this.syncMissionButton();
+    this.syncLayerChips();
+    this.syncTimeChips(this.ctx.map?.getTimeRange() ?? this.ctx.currentTimeRange);
+    this.renderFeed();
+  }
+
+  private async refreshCoverage(): Promise<void> {
+    this.coverageAbort?.abort();
+    const controller = new AbortController();
+    this.coverageAbort = controller;
+    const snapshot = await fetchVantageHealth(controller.signal);
+    if (this.destroyed || controller.signal.aborted) return;
+    this.coverageHealth = snapshot;
+    this.renderCoverageStatus();
+    if (this.selection?.kind === 'coverage') this.inspectCoverage(false);
+  }
+
+  private renderCoverageStatus(): void {
+    if (!this.systemStatus) return;
+    if (!navigator.onLine) {
+      this.systemStatus.dataset.state = 'offline';
+      this.systemStatus.textContent = 'Offline';
+      return;
+    }
+    const surfaces = getCoverageSurfaces(this.coverageHealth);
+    const current = surfaces.filter((surface) => surface.state === 'current').length;
+    const unavailable = surfaces.filter((surface) => surface.state === 'unavailable').length;
+    this.systemStatus.dataset.state = this.coverageHealth === null || unavailable > 0 ? 'updating' : 'current';
+    this.systemStatus.textContent = this.coverageHealth === null ? 'Coverage checking' : `Coverage ${current}/${surfaces.length}`;
+    this.systemStatus.title = this.coverageHealth === null
+      ? 'Checking report, analysis, risk, air, and ship readiness'
+      : `${current} current · ${surfaces.length - current - unavailable} delayed · ${unavailable} unavailable`;
+  }
+
+  private inspectCoverage(open = true): void {
+    this.selection = { kind: 'coverage' };
+    const surfaces = getCoverageSurfaces(this.coverageHealth);
+    const checkedAt = this.coverageHealth
+      ? `Checked ${formatTimeAgo(coerceDate(this.coverageHealth.checkedAt))}`
+      : 'Checking readiness now';
+    const content = this.beginInspector('Coverage', 'Data readiness', checkedAt);
+    const intro = el('p', 'ops-inspector-copy');
+    intro.textContent = 'Current means the source is inside its published freshness window. Delayed and unavailable coverage is kept visible here instead of being presented as live.';
+    const list = el('div', 'ops-coverage-list');
+    for (const surface of surfaces) {
+      const row = el('div', 'ops-coverage-row');
+      row.dataset.state = surface.state;
+      const head = el('div', 'ops-coverage-head');
+      const label = el('b');
+      label.textContent = surface.label;
+      const state = el('span');
+      state.textContent = sentence(surface.state);
+      head.append(label, state);
+      const detail = el('p');
+      detail.textContent = surface.detail;
+      row.append(head, detail);
+      list.appendChild(row);
+    }
+    content.append(intro, list);
+    const note = el('p', 'ops-brief-provenance');
+    note.textContent = 'Readiness is verified independently from whether a map layer is switched on.';
+    content.appendChild(note);
+    if (open) this.openInspector();
+  }
+
+  private exportCurrentBrief(button: HTMLButtonElement, brief: VantageSynthesis): void {
+    const monitor = getActiveMonitor();
+    const pulse = compareMonitorSignals(this.currentMonitorSignals(monitor), monitor.baseline);
+    const generatedAt = new Date();
+    const markdown = buildVantageReportMarkdown({
+      brief,
+      coverage: getCoverageSurfaces(this.coverageHealth),
+      monitor,
+      pulse,
+      url: window.location.href,
+      generatedAt,
+    });
+    downloadVantageReport(markdown, generatedAt);
+    button.textContent = 'Downloaded';
+    window.setTimeout(() => {
+      if (button.isConnected) button.textContent = 'Export cited briefing';
+    }, 1_500);
+  }
+
   // ---- status + HUD ----
 
   private syncTimeChips(active: TimeRange): void {
@@ -2644,7 +2965,7 @@ export class OpsShell {
     if (!this.statusLine) return;
     const range = (this.ctx.map?.getTimeRange() ?? this.ctx.currentTimeRange).toUpperCase();
     if (VANTAGE_PUBLIC_MODE && !VANTAGE_RELAY_ENABLED) {
-      this.statusLine.textContent = `Window ${range} · Coverage limited`;
+      this.statusLine.textContent = `Window ${range} · Air/ships unavailable`;
       return;
     }
     const ais = safeAisStatus();
@@ -2720,8 +3041,12 @@ function loadingState(label: string, lineCount = 3, modifier = ''): HTMLElement 
   node.setAttribute('role', 'status');
   node.setAttribute('aria-live', 'polite');
   node.setAttribute('aria-atomic', 'true');
+  const head = el('span', 'ops-loading-head');
+  const mark = buildLoadingMark();
+  mark.setAttribute('aria-hidden', 'true');
   const text = el('span', 'ops-loading-label');
   text.textContent = `${label}…`;
+  head.append(mark, text);
   const lines = el('span', 'ops-loading-lines');
   lines.setAttribute('aria-hidden', 'true');
   const widths = ['92%', '74%', '84%', '61%', '78%'];
@@ -2730,8 +3055,47 @@ function loadingState(label: string, lineCount = 3, modifier = ''): HTMLElement 
     line.style.setProperty('--loading-width', widths[index % widths.length] ?? '80%');
     lines.appendChild(line);
   }
-  node.append(text, lines);
+  node.append(head, lines);
   return node;
+}
+
+function buildLoadingMark(): HTMLElement {
+  const mark = el('span', 'ops-loading-mark');
+  for (let index = 0; index < 9; index++) mark.appendChild(el('i'));
+  return mark;
+}
+
+interface EvidenceLinkOptions {
+  index?: number;
+  source: string;
+  title?: string;
+  url: string;
+  publishedAt?: string;
+  meta?: string;
+}
+
+function evidenceLink(options: EvidenceLinkOptions): HTMLAnchorElement {
+  const link = el('a', 'ops-source-link') as HTMLAnchorElement;
+  link.href = options.url;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  if (options.index !== undefined) link.dataset.sourceIndex = String(options.index);
+
+  const index = el('span', 'ops-source-index');
+  index.textContent = options.index !== undefined ? String(options.index).padStart(2, '0') : '↗';
+  const copy = el('span', 'ops-source-copy');
+  const title = el('span', 'ops-source-title');
+  title.textContent = options.title || options.source;
+  const meta = el('span', 'ops-source-meta');
+  const published = options.publishedAt ? formatTimeAgo(coerceDate(options.publishedAt)) : '';
+  meta.textContent = options.meta || [options.source, published].filter(Boolean).join(' · ');
+  const arrow = el('span', 'ops-source-arrow');
+  arrow.textContent = '↗';
+  arrow.setAttribute('aria-hidden', 'true');
+  copy.append(title, meta);
+  link.append(index, copy, arrow);
+  link.setAttribute('aria-label', `${options.index !== undefined ? `Evidence ${options.index}: ` : ''}${options.title || options.source} — open source`);
+  return link;
 }
 
 function feedLoadingState(): HTMLElement {
@@ -2874,6 +3238,21 @@ function actionButton(
   button.type = 'button';
   button.textContent = text;
   button.addEventListener('click', () => { void handler(button); });
+  return button;
+}
+
+function analysisCard(titleText: string, descriptionText: string, handler: () => void): HTMLButtonElement {
+  const button = el('button', 'ops-analysis-card') as HTMLButtonElement;
+  button.type = 'button';
+  const title = el('b');
+  title.textContent = titleText;
+  const description = el('span');
+  description.textContent = descriptionText;
+  const arrow = el('i');
+  arrow.textContent = '→';
+  arrow.setAttribute('aria-hidden', 'true');
+  button.append(title, description, arrow);
+  button.addEventListener('click', handler);
   return button;
 }
 

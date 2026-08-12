@@ -78,6 +78,7 @@ import { debounce, rafSchedule, getCurrentTheme } from '@/utils/index';
 import { getCSSColor } from '@/utils/theme-colors';
 import { isInputPending, scheduleYield } from '@/utils/after-paint';
 import { showLayerWarning } from '@/utils/layer-warning';
+import { shouldShowMilitaryClusters, shouldShowMilitaryDetail } from '@/utils/map-detail-visibility';
 import { localizeMapLabels } from '@/utils/map-locale';
 import {
   createCountryHoverQueryController,
@@ -1883,6 +1884,9 @@ export class DeckGLMap {
     const filteredMilitaryVessels = mapLayers.military ? this.filterByTimeCached(this.militaryVessels, (vessel) => vessel.lastAisUpdate) : [];
     const filteredMilitaryFlightClusters = mapLayers.military ? this.filterMilitaryFlightClustersByTimeCached(this.militaryFlightClusters) : [];
     const filteredMilitaryVesselClusters = mapLayers.military ? this.filterMilitaryVesselClustersByTimeCached(this.militaryVesselClusters) : [];
+    const currentZoom = this.maplibreMap?.getZoom() ?? 2;
+    const showMilitaryDetail = shouldShowMilitaryDetail(currentZoom);
+    const showMilitaryClusters = shouldShowMilitaryClusters(currentZoom);
     // UCDP is a historical dataset (events aged months); time-range filter always zeroes it out
     const filteredUcdpEvents = mapLayers.ucdpEvents ? this.ucdpEvents : [];
 
@@ -2003,7 +2007,6 @@ export class DeckGLMap {
     }
 
     // Datacenters layer - SQUARE icons at zoom >= 5, cluster dots at zoom < 5
-    const currentZoom = this.maplibreMap?.getZoom() || 2;
     if (mapLayers.datacenters) {
       if (currentZoom >= 5) {
         layers.push(this.createDatacentersLayer());
@@ -2122,27 +2125,27 @@ export class DeckGLMap {
     }
 
     // Military vessels layer
-    if (mapLayers.military && filteredMilitaryVessels.length > 0) {
+    if (mapLayers.military && showMilitaryDetail && filteredMilitaryVessels.length > 0) {
       layers.push(this.createMilitaryVesselsLayer(filteredMilitaryVessels));
     }
 
     // Military vessel clusters layer
-    if (mapLayers.military && filteredMilitaryVesselClusters.length > 0) {
+    if (mapLayers.military && showMilitaryClusters && filteredMilitaryVesselClusters.length > 0) {
       layers.push(this.createMilitaryVesselClustersLayer(filteredMilitaryVesselClusters));
     }
 
     // Military flight trails (rendered beneath dots)
-    if (mapLayers.military && this.activeFlightTrails.size > 0 && filteredMilitaryFlights.length > 0) {
+    if (mapLayers.military && showMilitaryDetail && this.activeFlightTrails.size > 0 && filteredMilitaryFlights.length > 0) {
       layers.push(this.createMilitaryFlightTrailsLayer(filteredMilitaryFlights));
     }
 
     // Military flights layer
-    if (mapLayers.military && filteredMilitaryFlights.length > 0) {
+    if (mapLayers.military && showMilitaryDetail && filteredMilitaryFlights.length > 0) {
       layers.push(this.createMilitaryFlightsLayer(filteredMilitaryFlights));
     }
 
     // Military flight clusters layer
-    if (mapLayers.military && filteredMilitaryFlightClusters.length > 0) {
+    if (mapLayers.military && showMilitaryClusters && filteredMilitaryFlightClusters.length > 0) {
       layers.push(this.createMilitaryFlightClustersLayer(filteredMilitaryFlightClusters));
     }
 

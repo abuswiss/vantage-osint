@@ -135,10 +135,10 @@ const FULL_MAP_LAYERS: MapLayers = {
   satellites: false,
 
 
-  // Curated high-signal defaults: events, strikes, bases, air, sanctions.
-  // Everything else is opt-in via the Layers popover.
+  // Quiet first view: reporting and conflict context only. Dense asset layers
+  // remain one click away or are enabled by a focused mission.
   conflicts: true,
-  bases: !_desktop,
+  bases: false,
   cables: false,
   pipelines: false,
   storageFacilities: false,
@@ -157,7 +157,7 @@ const FULL_MAP_LAYERS: MapLayers = {
   datacenters: false,
   protests: false,
   flights: false,
-  military: true,
+  military: false,
   natural: false,
   spaceports: false,
   minerals: false,

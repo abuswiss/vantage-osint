@@ -94,8 +94,8 @@ body.ops-mode .ops-panel-dock {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 650;
+  letter-spacing: -0.02em;
   font-size: 15px;
   white-space: nowrap;
 }
@@ -104,6 +104,7 @@ body.ops-mode .ops-panel-dock {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  border: 0;
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0;
@@ -111,6 +112,12 @@ body.ops-mode .ops-panel-dock {
   background: var(--overlay-subtle, rgba(255, 255, 255, 0.025));
   border-radius: var(--r-pill);
   padding: 3px 10px;
+  cursor: pointer;
+  transition: color var(--motion-fast), background var(--motion-fast);
+}
+.ops-live:hover {
+  color: var(--ops-text);
+  background: var(--overlay-medium, rgba(255, 255, 255, 0.08));
 }
 .ops-live::before {
   content: '';
@@ -192,6 +199,11 @@ body.ops-mode .ops-panel-dock {
   display: flex;
   align-items: center;
   gap: 2px;
+}
+.ops-top > .ops-seg {
+  padding: 2px;
+  border-radius: calc(var(--r-sm) + 1px);
+  background: var(--overlay-subtle, rgba(255, 255, 255, 0.025));
 }
 .ops-seg-btn {
   padding: 4px 10px;
@@ -506,6 +518,7 @@ body.ops-mode .ops-top-right .ops-brief-button:focus-visible {
   align-items: center;
   justify-content: space-between;
   padding: 15px 20px 10px;
+  border-bottom: 1px solid var(--ops-border);
   font-size: 11.5px;
   font-weight: 550;
   letter-spacing: 0;
@@ -580,16 +593,17 @@ body.ops-mode .ops-top-right .ops-brief-button:focus-visible {
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0 10px 18px;
+  padding: 4px 10px 18px;
 }
 .ops-feed-item {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 11px 12px 12px;
+  padding: 12px 12px 13px;
   border: none;
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
   background: transparent;
+  box-shadow: inset 0 -1px 0 var(--ops-border);
   color: inherit;
   font: inherit;
   cursor: pointer;
@@ -600,7 +614,7 @@ body.ops-mode .ops-top-right .ops-brief-button:focus-visible {
 .ops-feed-item[aria-current='true'] {
   background: var(--ops-accent-soft);
 }
-.ops-feed-item + .ops-feed-item { margin-top: 2px; }
+.ops-feed-item:last-child { box-shadow: none; }
 .ops-feed-item .meta {
   display: flex;
   align-items: center;
@@ -901,25 +915,66 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   font: 600 11.5px/1.2 var(--font-body);
   letter-spacing: 0;
 }
+.ops-brief-assessment {
+  margin-top: 18px;
+  padding: 15px 16px 16px;
+  border-radius: calc(var(--r-md) + 2px);
+  background: var(--ops-bg-raised);
+  box-shadow: inset 0 0 0 1px var(--ops-border);
+}
+.ops-brief-assessment .ops-inspector-section-title {
+  margin: 0 0 9px;
+  color: var(--ops-accent);
+}
+.ops-brief-assessment .ops-inspector-copy { margin-top: 0; }
 .ops-source-list { display: grid; gap: 5px; }
 .ops-source-link {
-  display: flex;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
-  border: none;
+  min-height: 54px;
+  padding: 9px 11px;
   border-radius: var(--r-md);
   color: var(--ops-text-dim);
-  background: var(--overlay-subtle, rgba(255, 255, 255, 0.025));
+  background: var(--ops-bg-raised);
+  box-shadow: inset 0 0 0 1px var(--ops-border);
   font-size: 12px;
   text-decoration: none;
-  transition: color var(--motion-fast), background var(--motion-fast);
+  transition: color var(--motion-fast), background var(--motion-fast), box-shadow var(--motion-fast);
 }
-.ops-source-link::after { content: '↗'; color: var(--ops-text-faint); }
 .ops-source-link:hover {
   color: var(--ops-text);
-  background: var(--overlay-medium, rgba(255, 255, 255, 0.08));
+  background: color-mix(in srgb, var(--ops-bg-raised) 94%, var(--ops-accent));
+  box-shadow: inset 0 0 0 1px var(--ops-border-strong);
+}
+.ops-source-index {
+  color: var(--ops-text-faint);
+  font: 550 10px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.ops-source-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.ops-source-title {
+  overflow: hidden;
+  color: var(--ops-text);
+  font: 500 12px/1.35 var(--font-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ops-source-meta {
+  overflow: hidden;
+  color: var(--ops-text-faint);
+  font: 450 10.5px/1.3 var(--font-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ops-source-arrow {
+  color: var(--ops-text-faint);
+  font-size: 11px;
 }
 .ops-indicator-list {
   display: grid;
@@ -945,6 +1000,27 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   color: var(--ops-text-faint);
   font: 450 11px/1.4 var(--font-body);
   letter-spacing: 0;
+}
+.ops-brief-empty {
+  display: grid;
+  justify-items: start;
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: calc(var(--r-md) + 2px);
+  background: var(--ops-bg-raised);
+  box-shadow: inset 0 0 0 1px var(--ops-border);
+}
+.ops-brief-empty .ops-inspector-copy { margin-top: 14px; }
+.ops-brief-empty .ops-inspector-actions { margin-top: 18px; }
+.ops-brief-empty .ops-loading-mark i {
+  animation: none;
+  opacity: 0.22;
+}
+.ops-brief-empty .ops-loading-mark i:nth-child(1),
+.ops-brief-empty .ops-loading-mark i:nth-child(5),
+.ops-brief-empty .ops-loading-mark i:nth-child(9) {
+  background: var(--ops-accent);
+  opacity: 0.75;
 }
 .ops-inspector-actions {
   display: flex;
@@ -972,6 +1048,82 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   color: var(--ops-text);
   background: var(--overlay-medium, rgba(255, 255, 255, 0.08));
 }
+
+.ops-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 20px;
+}
+.ops-analysis-card {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-height: 104px;
+  padding: 14px 34px 14px 14px;
+  border: 1px solid var(--ops-border);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ops-text);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--motion-fast), border-color var(--motion-fast);
+}
+.ops-analysis-card:hover {
+  border-color: color-mix(in srgb, var(--ops-accent) 35%, var(--ops-border));
+  background: var(--overlay-subtle, rgba(255, 255, 255, 0.025));
+}
+.ops-analysis-card b { font: 600 13px/1.3 var(--font-body); }
+.ops-analysis-card span { color: var(--ops-text-dim); font: 450 11.5px/1.45 var(--font-body); }
+.ops-analysis-card i {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  color: var(--ops-text-faint);
+  font-style: normal;
+}
+.ops-analysis-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ops-analysis-links a {
+  padding: 6px 9px;
+  border-radius: var(--r-sm);
+  color: var(--ops-text-dim);
+  background: var(--overlay-subtle, rgba(255, 255, 255, 0.025));
+  font: 500 11.5px/1.3 var(--font-body);
+  text-decoration: none;
+}
+.ops-analysis-links a:hover { color: var(--ops-text); }
+
+.ops-coverage-list {
+  display: grid;
+  gap: 1px;
+  margin-top: 18px;
+  overflow: hidden;
+  border: 1px solid var(--ops-border);
+  border-radius: var(--r-md);
+  background: var(--ops-border);
+}
+.ops-coverage-row {
+  display: grid;
+  gap: 5px;
+  padding: 11px 12px;
+  background: var(--ops-bg-raised);
+}
+.ops-coverage-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ops-coverage-head b { color: var(--ops-text); font: 600 12.5px/1.3 var(--font-body); }
+.ops-coverage-head span {
+  color: var(--ops-text-faint);
+  font: 550 10px/1.3 var(--font-body);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ops-coverage-row[data-state='current'] .ops-coverage-head span { color: var(--status-live, #5cb886); }
+.ops-coverage-row[data-state='delayed'] .ops-coverage-head span { color: var(--status-cached, #d9ae4f); }
+.ops-coverage-row[data-state='unavailable'] .ops-coverage-head span { color: var(--status-unavailable, #e5655e); }
+.ops-coverage-row p { margin: 0; color: var(--ops-text-dim); font: 450 11.5px/1.45 var(--font-body); }
 .ops-inspector-action.primary {
   color: var(--ops-text);
   background: var(--ops-accent-soft);
@@ -1196,6 +1348,8 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
 }
 
 @media (max-width: 600px) {
+  .ops-live { display: none; }
+  .ops-analysis-grid { grid-template-columns: 1fr; }
   .ops-inspector {
     left: 0;
     width: 100vw;
@@ -1232,7 +1386,6 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
 }
 
 @media (max-width: 360px) {
-  .ops-live { display: none; }
   body.ops-mode .ops-top-right .ops-brief-button { padding-inline: 8px; }
 }
 
@@ -1468,6 +1621,50 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   color: var(--ops-text-dim);
   font-size: 11px;
 }
+.ops-monitor-controls {
+  flex-basis: 100%;
+  display: grid;
+  gap: 7px;
+  padding: 8px 0 2px;
+  border-bottom: 1px solid var(--ops-border);
+}
+.ops-monitor-toolbar,
+.ops-monitor-pulse,
+.ops-monitor-editor {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.ops-monitor-toolbar { justify-content: space-between; }
+.ops-monitor-select,
+.ops-monitor-name {
+  min-width: 0;
+  border: 1px solid var(--ops-border);
+  border-radius: var(--r-sm);
+  background: var(--ops-bg-raised);
+  color: var(--ops-text);
+  font: 500 11px/1.4 var(--font-body);
+}
+.ops-monitor-select { flex: 1 1 auto; padding: 4px 7px; }
+.ops-monitor-name { flex: 1 1 auto; padding: 4px 7px; }
+.ops-monitor-actions { display: inline-flex; gap: 2px; }
+.ops-monitor-actions button,
+.ops-monitor-editor button,
+.ops-monitor-pulse button {
+  padding: 4px 7px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ops-text-faint);
+  font: 500 10.5px/1.3 var(--font-body);
+  cursor: pointer;
+}
+.ops-monitor-actions button:hover,
+.ops-monitor-editor button:hover,
+.ops-monitor-pulse button:hover { color: var(--ops-text); background: var(--overlay-subtle, rgba(255, 255, 255, 0.025)); }
+.ops-monitor-actions button[data-danger='true'] { color: var(--sev-critical-text); }
+.ops-monitor-pulse { justify-content: space-between; color: var(--ops-text-dim); font: 450 10.5px/1.4 var(--font-body); }
+.ops-monitor-pulse button { color: var(--ops-accent); white-space: nowrap; }
 .ops-watch-setting {
   display: inline-flex;
   align-items: center;
@@ -1542,6 +1739,34 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
   opacity: 0;
   animation: ops-loading-reveal 140ms cubic-bezier(0.2, 0, 0, 1) 120ms forwards;
 }
+.ops-loading-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ops-loading-mark {
+  display: inline-grid;
+  grid-template-columns: repeat(3, 3px);
+  grid-template-rows: repeat(3, 3px);
+  flex: 0 0 auto;
+  gap: 2px;
+}
+.ops-loading-mark i {
+  width: 3px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--ops-text-dim);
+  opacity: 0.25;
+  animation: ops-loading-pixel 1.35s ease-in-out infinite;
+}
+.ops-loading-mark i:nth-child(2),
+.ops-loading-mark i:nth-child(6) { animation-delay: 120ms; }
+.ops-loading-mark i:nth-child(3),
+.ops-loading-mark i:nth-child(7) { animation-delay: 240ms; }
+.ops-loading-mark i:nth-child(4),
+.ops-loading-mark i:nth-child(8) { animation-delay: 360ms; }
+.ops-loading-mark i:nth-child(5),
+.ops-loading-mark i:nth-child(9) { animation-delay: 480ms; }
 .ops-loading-label {
   color: var(--ops-text-faint);
   font: 500 11.5px/1.4 var(--font-body);
@@ -1613,6 +1838,10 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
 @keyframes ops-loading-sweep {
   from { background-position: 160% 0; }
   to { background-position: -60% 0; }
+}
+@keyframes ops-loading-pixel {
+  0%, 100% { opacity: 0.2; transform: scale(0.82); }
+  45% { opacity: 0.9; transform: scale(1); }
 }
 @keyframes ops-content-enter {
   from { opacity: 0; transform: translateY(4px); }
@@ -1733,6 +1962,7 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
 /* Every interactive ops element shares one :focus-visible ring. Kept
    after the component rules so it wins same-specificity ties. */
 .ops-chip:focus-visible,
+.ops-live:focus-visible,
 .ops-seg-btn:focus-visible,
 .ops-feed-order-button:focus-visible,
 .ops-brief-preview:focus-visible,
@@ -1759,6 +1989,13 @@ body.ops-mode .ops-map-controls .map-dim-btn.active {
 .ops-watch-chip-label:focus-visible,
 .ops-watch-remove:focus-visible,
 .ops-watch-clear:focus-visible,
+.ops-analysis-card:focus-visible,
+.ops-analysis-links a:focus-visible,
+.ops-monitor-select:focus-visible,
+.ops-monitor-name:focus-visible,
+.ops-monitor-actions button:focus-visible,
+.ops-monitor-editor button:focus-visible,
+.ops-monitor-pulse button:focus-visible,
 body.ops-mode .ops-map-controls .map-dim-btn:focus-visible,
 body.ops-mode .ops-top-right button:focus-visible {
   outline: 2px solid var(--ops-accent);
@@ -1801,11 +2038,13 @@ body.ops-mode .ops-top-right button:focus-visible {
   .ops-feed-flash,
   .ops-source-flash,
   .ops-loading-state,
+  .ops-loading-mark i,
   .ops-loading-line,
   .ops-content-enter {
     animation: none;
   }
   .ops-loading-state { opacity: 1; }
+  .ops-loading-mark i { opacity: 0.55; }
   .ops-loading-line { background: rgba(255, 255, 255, 0.05); }
 
   /* Hover/press/state transitions snap instead of easing */
@@ -1831,6 +2070,11 @@ body.ops-mode .ops-top-right button:focus-visible {
   .ops-mission-option,
   .ops-mission-reset,
   .ops-watch-add-btn,
+  .ops-live,
+  .ops-analysis-card,
+  .ops-monitor-actions button,
+  .ops-monitor-editor button,
+  .ops-monitor-pulse button,
   .ops-history-entry {
     transition: none;
   }

@@ -17,6 +17,7 @@ import { getSeverityColor } from '@/services/weather';
 import { startSmartPollLoop, type SmartPollLoopHandle } from '@/services/smart-poll-loop';
 import { scheduleAfterFirstPaint, yieldToMain } from '@/utils/after-paint';
 import { measure, mutate } from '@/utils/layout-batch';
+import { shouldShowMilitaryClusters, shouldShowMilitaryDetail } from '@/utils/map-detail-visibility';
 import { getCachedMilitaryBases, preloadMilitaryBases } from '@/services/military-base-config';
 import {
   INTEL_HOTSPOTS,
@@ -2848,8 +2849,10 @@ export class MapComponent {
 
     // Military Tracking (flights and vessels)
     if (this.state.layers.military) {
+      const showMilitaryDetail = shouldShowMilitaryDetail(this.state.zoom);
+      const showMilitaryClusters = shouldShowMilitaryClusters(this.state.zoom);
       // Render individual flights
-      this.militaryFlights.forEach((flight) => {
+      if (showMilitaryDetail) this.militaryFlights.forEach((flight) => {
         const pos = projection([flight.lon, flight.lat]);
         if (!pos) return;
 
@@ -2917,7 +2920,7 @@ export class MapComponent {
       });
 
       // Render flight clusters
-      this.militaryFlightClusters.forEach((cluster) => {
+      if (showMilitaryClusters) this.militaryFlightClusters.forEach((cluster) => {
         const pos = projection([cluster.lon, cluster.lat]);
         if (!pos) return;
 
@@ -2952,7 +2955,7 @@ export class MapComponent {
 
       // Military Vessels (warships, carriers, submarines)
       // Render individual vessels
-      this.militaryVessels.forEach((vessel) => {
+      if (showMilitaryDetail) this.militaryVessels.forEach((vessel) => {
         const pos = projection([vessel.lon, vessel.lat]);
         if (!pos) return;
 
@@ -3024,7 +3027,7 @@ export class MapComponent {
       });
 
       // Render vessel clusters
-      this.militaryVesselClusters.forEach((cluster) => {
+      if (showMilitaryClusters) this.militaryVesselClusters.forEach((cluster) => {
         const pos = projection([cluster.lon, cluster.lat]);
         if (!pos) return;
 
