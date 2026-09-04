@@ -373,7 +373,9 @@ if changed '^(api/|server/|src/generated/)'; then
   EDGE_OUT=$(mktemp -d) || exit 1
   ESBUILD_ENTRIES=()
   while IFS= read -r f; do ESBUILD_ENTRIES+=("$f"); done \
-    < <(find api/ -name "*.js" -not -name "_*"; find api/ -maxdepth 1 -name "*.ts" -not -name "_*")
+    < <(find api/ -name "*.js" -not -name "_*" -not -name "*.test.*" \
+      -not -path "api/vantage-refresh.js" -not -path "api/vantage-bootstrap.js"; \
+      find api/ -maxdepth 1 -name "*.ts" -not -name "_*")
   if [ "${#ESBUILD_ENTRIES[@]}" -gt 0 ]; then
     if ! npx esbuild "${ESBUILD_ENTRIES[@]}" --bundle --format=esm --platform=browser \
         --log-level=error --outdir="$EDGE_OUT"; then
@@ -381,6 +383,13 @@ if changed '^(api/|server/|src/generated/)'; then
       echo "ERROR: esbuild failed to bundle edge functions (paths above) — this will break Vercel deployment"
       exit 1
     fi
+  fi
+  # Match CI: these Vantage endpoints run on Node and require Node built-ins.
+  if ! npx esbuild api/vantage-refresh.js api/vantage-bootstrap.js \
+      --bundle --format=esm --platform=node --log-level=error --outdir="$EDGE_OUT/node"; then
+    rm -rf "$EDGE_OUT"
+    echo "ERROR: esbuild failed to bundle Vantage Node functions"
+    exit 1
   fi
   rm -rf "$EDGE_OUT"
 else
