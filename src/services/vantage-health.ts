@@ -63,7 +63,7 @@ function cacheHealth(value: unknown): CacheHealth | null {
 
 export function parseVantageHealth(value: unknown): VantageHealthSnapshot | null {
   if (!isObject(value) || !['ready', 'degraded', 'unavailable'].includes(String(value.status))) return null;
-  if (typeof value.checkedAt !== 'string' || !isObject(value.services)) return null;
+  if (typeof value.checkedAt !== 'string' || !Number.isFinite(Date.parse(value.checkedAt)) || !isObject(value.services)) return null;
   const news = cacheHealth(value.services.news);
   const insights = cacheHealth(value.services.insights);
   const risk = cacheHealth(value.services.risk);
@@ -84,12 +84,22 @@ export function parseVantageHealth(value: unknown): VantageHealthSnapshot | null
 }
 
 export async function fetchVantageHealth(signal?: AbortSignal): Promise<VantageHealthSnapshot | null> {
+  const controller = new AbortController();
+  const abort = (): void => controller.abort();
+  if (signal?.aborted) return null;
+  signal?.addEventListener('abort', abort, { once: true });
+  const timeout = setTimeout(abort, 8_000);
   try {
-    const response = await fetch('/api/vantage-health', { cache: 'no-store', signal });
+    const response = await fetch('/api/vantage-health', {
+      cache: 'no-store', headers: { Accept: 'application/json' }, signal: controller.signal,
+    });
     if (!response.ok && response.status !== 503) return null;
     return parseVantageHealth(await response.json());
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abort);
   }
 }
 
@@ -109,7 +119,7 @@ function cacheDetail(label: string, health: CacheHealth): string {
   return `${label} is temporarily unavailable.`;
 }
 
-export function getCoverageSurfaces(snapshot: VantageHealthSnapshot | null): CoverageSurface[] {
+export function getCoverageSurfaces(snapshot: VantageHealthSnapshot | null, checkFailed = false): CoverageSurface[] {
   if (!snapshot) {
     const surfaces: ReadonlyArray<readonly [CoverageSurface['id'], string]> = [
       ['reports', 'Reports'],
@@ -121,8 +131,10 @@ export function getCoverageSurfaces(snapshot: VantageHealthSnapshot | null): Cov
     return surfaces.map(([id, label]) => ({
       id,
       label,
-      state: 'checking' as const,
-      detail: 'Readiness has not been verified yet.',
+      state: checkFailed ? 'unavailable' as const : 'checking' as const,
+      detail: checkFailed
+        ? 'The readiness check could not be completed. Try checking again.'
+        : 'Readiness has not been verified yet.',
       ageSeconds: null,
     }));
   }

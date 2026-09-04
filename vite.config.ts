@@ -13,6 +13,7 @@ import { VANTAGE_PUBLIC_META, VARIANT_META, type VariantMeta } from './src/confi
 // hand-maintained Set here had drifted ~138 domains from prod.
 import { isAllowedDomain } from './api/_rss-allowed-domain-match.js';
 import { validateGeneratedRequest } from './server/request-validator';
+import { publicApiPlugin } from './scripts/vite-public-api.mts';
 
 // Env-dependent constants moved inside defineConfig function
 
@@ -917,6 +918,7 @@ export default defineConfig(({ mode }) => {
       youtubeLivePlugin(),
       gpsjamDevPlugin(),
       sebufApiPlugin(),
+      publicApiPlugin(),
       brotliPrecompressPlugin(),
       VitePWA({
         registerType: 'autoUpdate',

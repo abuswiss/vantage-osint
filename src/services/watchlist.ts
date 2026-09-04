@@ -350,6 +350,7 @@ export function toggleCountry(code: string): boolean {
   if (index >= 0) monitor.countries.splice(index, 1);
   else if (monitor.countries.length < MAX_ENTRIES) monitor.countries.push(iso);
   else return false;
+  monitor.baseline = null;
   monitor.updatedAt = Date.now();
   if (writeMonitorState(state)) notify();
   return getWatchlist().countries.includes(iso);
@@ -368,6 +369,7 @@ export function toggleTopic(rawTopic: string): boolean {
   if (index >= 0) monitor.topics.splice(index, 1);
   else if (monitor.topics.length < MAX_ENTRIES) monitor.topics.push(topic);
   else return false;
+  monitor.baseline = null;
   monitor.updatedAt = Date.now();
   if (writeMonitorState(state)) notify();
   return getWatchlist().topics.includes(topic);

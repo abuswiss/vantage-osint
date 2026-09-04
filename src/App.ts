@@ -2005,6 +2005,7 @@ export class App {
             this.state.map?.setLayers({ ...this.state.mapLayers });
           },
           onOpenSearch: () => { void this.openSearch(); },
+          onRefreshFeed: () => this.dataLoader.retryNews(),
           onApplyMission: (presetId) => this.eventHandlers.applyMissionPresetById(presetId),
           onResetMission: () => this.eventHandlers.resetMissionPresetToDefaults(),
         });
