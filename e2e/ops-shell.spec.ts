@@ -484,6 +484,13 @@ test.describe('Vantage public mobile shell', () => {
     await expect(page.getByRole('main')).toHaveCount(1);
     await expect(page.locator('.skip-link')).toHaveAttribute('href', '#opsMain');
 
+    await page.getByRole('button', { name: 'Open analysis and research views' }).click();
+    await page.getByRole('button', { name: 'Check data coverage' }).click();
+    await expect(page.locator('.ops-inspector-title')).toHaveText('Data readiness');
+    await page.getByRole('button', { name: 'Check again', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Check again', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Close inspector' }).click();
+
     await page.locator('.ops-more-layers').click();
     const layers = page.getByRole('dialog', { name: 'Map layers' });
     await expect(layers).toBeVisible();

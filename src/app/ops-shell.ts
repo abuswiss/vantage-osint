@@ -87,6 +87,8 @@ import { getStrategicRiskDisplayLevel } from '@/utils/strategic-risk-band';
 export interface OpsShellHooks {
   onToggleLayer: (layer: keyof MapLayers, enabled: boolean) => void;
   onOpenSearch: () => void;
+  /** Reuse the existing digest loader for an explicit empty-feed retry. */
+  onRefreshFeed?: () => Promise<void>;
   /** Apply a mission preset via the shared event-handler machinery. */
   onApplyMission: (presetId: MissionPresetId) => void;
   /** Clear the active mission and restore default layers/view/time. */
@@ -225,6 +227,8 @@ export class OpsShell {
   private coverageHealth: VantageHealthSnapshot | null = null;
   private bootHandoffTimer: number | null = null;
   private feedHasSettled = false;
+  private feedRefreshing = false;
+  private coverageCheckFailed = false;
   private briefLoading = false;
   private focusRestoreTimers: number[] = [];
   private escalationHistory: EscalationSample[] | null = null;
@@ -1122,7 +1126,7 @@ export class OpsShell {
           link: cluster.primaryLink,
           when: coerceDate(cluster.lastUpdated),
           alert: cluster.isAlert,
-          sourceCount: Math.max(cluster.sourceCount, cluster.allItems.length, 1),
+          sourceCount: Math.max(cluster.sourceCount, new Set(cluster.allItems.map((item) => item.source.trim().toLowerCase()).filter(Boolean)).size, 1),
           topSources: cluster.topSources.map((source) => ({ name: source.name, url: source.url })),
           allItems: cluster.allItems,
           ...(cluster.lat !== undefined && { lat: cluster.lat }),
@@ -1169,7 +1173,7 @@ export class OpsShell {
     this.feedList.removeAttribute('aria-busy');
     if (this.feedCount) this.feedCount.textContent = `${items.length} shown`;
 
-    if (items.length === 0 && !this.feedHasSettled) {
+    if (items.length === 0 && (!this.feedHasSettled || this.feedRefreshing)) {
       if (this.feedCount) this.feedCount.textContent = 'Updating';
       this.feedList.setAttribute('aria-busy', 'true');
       this.feedList.appendChild(feedLoadingState());
@@ -1179,7 +1183,34 @@ export class OpsShell {
 
     if (items.length === 0) {
       const empty = el('div', 'ops-feed-empty');
-      empty.textContent = 'No reporting in this time window.';
+      const hasReports = this.collectFeedItems(false).length > 0;
+      const title = el('h3');
+      const detail = el('p');
+      title.textContent = this.watchFilter
+        ? 'No matching reports'
+        : hasReports ? 'No reporting in this time window.' : 'Reports are unavailable';
+      detail.textContent = this.watchFilter
+        ? 'Try clearing the watch filter or widening the activity window.'
+        : hasReports
+          ? 'Choose a wider activity window to see available reporting.'
+          : 'The feed has not returned any reports. Check coverage or try again.';
+      empty.append(title, detail);
+      const actions = el('div', 'ops-feed-empty-actions');
+      if (this.watchFilter) {
+        actions.appendChild(actionButton('Clear watch filter', () => {
+          this.watchFilter = null;
+          this.renderWatchlistStrip();
+          this.renderFeed();
+        }));
+      }
+      if ((hasReports || this.watchFilter) && (this.ctx.map?.getTimeRange() ?? this.ctx.currentTimeRange) !== 'all') {
+        actions.appendChild(actionButton('Show all activity', () => this.ctx.map?.setTimeRange('all')));
+      }
+      if (!hasReports) {
+        if (this.hooks.onRefreshFeed) actions.appendChild(actionButton('Try again', () => { void this.refreshFeed(); }, true));
+        actions.appendChild(actionButton('Check coverage', () => this.inspectCoverage()));
+      }
+      empty.appendChild(actions);
       this.feedList.appendChild(empty);
       this.renderTimeline(items);
       return;
@@ -1221,6 +1252,21 @@ export class OpsShell {
     if (!this.selection && focus) {
       const selected = items.find((item) => item.id === focus || item.legacyFocusId === focus);
       if (selected) this.inspectFeedItem(selected, false);
+    }
+  }
+
+  private async refreshFeed(): Promise<void> {
+    if (this.feedRefreshing || !this.hooks.onRefreshFeed) return;
+    this.feedRefreshing = true;
+    this.renderFeed();
+    try {
+      await this.hooks.onRefreshFeed();
+    } catch {
+      // The retry ends in the same actionable empty state if no reports arrive.
+    } finally {
+      this.feedRefreshing = false;
+      this.feedHasSettled = true;
+      if (!this.destroyed) this.renderFeed();
     }
   }
 
@@ -1708,6 +1754,8 @@ export class OpsShell {
   }
 
   private checkpointActiveMonitor(): void {
+    // A fast exit or unavailable digest must not erase the last real review.
+    if (!this.feedHasSettled || this.collectFeedItems(false).length === 0) return;
     const monitor = getActiveMonitor();
     checkpointMonitor(monitor.id, this.currentMonitorSignals(monitor));
   }
@@ -1721,6 +1769,18 @@ export class OpsShell {
     this.watchBell.title = changes > 0
       ? `${changes} new or strengthened signals in ${monitor.name}`
       : monitor.name;
+    const pulseRow = this.watchlistRow?.querySelector<HTMLElement>('.ops-monitor-pulse');
+    if (pulseRow) this.updateMonitorPulse(pulseRow, pulse);
+  }
+
+  private updateMonitorPulse(row: HTMLElement, pulse: MonitorPulse): void {
+    const canReview = this.feedHasSettled && this.collectFeedItems(false).length > 0;
+    const label = row.querySelector('span');
+    if (label) label.textContent = !canReview ? 'Waiting for reporting before comparing changes.'
+      : pulse.baselineAt === null ? 'No review baseline yet.'
+        : `${pulse.newCount} new · ${pulse.strengthenedCount} strengthened · ${pulse.noLongerCurrentCount} no longer current`;
+    const button = row.querySelector('button');
+    if (button) button.disabled = !canReview;
   }
 
   private renderWatchlistStrip(): void {
@@ -1799,6 +1859,14 @@ export class OpsShell {
 
   private buildMonitorControls(monitor: MonitorWorkspace, pulse: MonitorPulse): HTMLElement {
     const wrap = el('div', 'ops-monitor-controls');
+    const feedback = el('p', 'ops-watch-feedback');
+    feedback.id = 'opsMonitorFeedback';
+    feedback.hidden = true;
+    feedback.setAttribute('role', 'status');
+    const showFailure = (message: string): void => {
+      feedback.textContent = message;
+      feedback.hidden = false;
+    };
     const toolbar = el('div', 'ops-monitor-toolbar');
     const select = el('select', 'ops-monitor-select') as HTMLSelectElement;
     select.setAttribute('aria-label', 'Active monitor');
@@ -1812,10 +1880,16 @@ export class OpsShell {
     }
     select.addEventListener('change', () => {
       this.checkpointActiveMonitor();
+      if (!setActiveMonitor(select.value)) {
+        select.value = getActiveMonitor().id;
+        showFailure('Could not switch monitors. Browser storage is unavailable.');
+        return;
+      }
       this.watchFilter = null;
       this.monitorEditorMode = null;
       this.monitorDeleteArmed = false;
-      setActiveMonitor(select.value);
+      this.renderWatchlistStrip();
+      this.renderFeed();
     });
     toolbar.appendChild(select);
 
@@ -1851,11 +1925,28 @@ export class OpsShell {
           this.renderWatchlistStrip();
           return;
         }
+        if (!deleteActiveMonitor()) {
+          showFailure('Could not delete this monitor. Browser storage is unavailable.');
+          return;
+        }
         this.monitorDeleteArmed = false;
         this.watchFilter = null;
-        deleteActiveMonitor();
+        this.renderWatchlistStrip();
+        this.renderFeed();
       });
       editActions.appendChild(removeButton);
+      if (this.monitorDeleteArmed) {
+        const cancel = el('button') as HTMLButtonElement;
+        cancel.type = 'button';
+        cancel.textContent = 'Cancel';
+        cancel.setAttribute('aria-label', 'Cancel monitor deletion');
+        cancel.addEventListener('click', () => {
+          this.monitorDeleteArmed = false;
+          this.renderWatchlistStrip();
+          this.watchBell?.focus();
+        });
+        editActions.appendChild(cancel);
+      }
     }
     toolbar.appendChild(editActions);
     wrap.appendChild(toolbar);
@@ -1867,46 +1958,78 @@ export class OpsShell {
       input.maxLength = 40;
       input.placeholder = this.monitorEditorMode === 'create' ? 'Monitor name' : 'Rename monitor';
       input.setAttribute('aria-label', input.placeholder);
+      input.setAttribute('aria-describedby', feedback.id);
+      input.addEventListener('input', () => {
+        input.removeAttribute('aria-invalid');
+        feedback.hidden = true;
+      });
       if (this.monitorEditorMode === 'rename') input.value = monitor.name;
       const save = el('button') as HTMLButtonElement;
       save.type = 'submit';
       save.textContent = this.monitorEditorMode === 'create' ? 'Create' : 'Save';
-      form.append(input, save);
+      const cancel = el('button') as HTMLButtonElement;
+      cancel.type = 'button';
+      cancel.textContent = 'Cancel';
+      const cancelEdit = (): void => {
+        this.monitorEditorMode = null;
+        this.renderWatchlistStrip();
+        this.watchBell?.focus();
+      };
+      cancel.addEventListener('click', cancelEdit);
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          cancelEdit();
+        }
+      });
+      form.append(input, save, cancel);
       form.addEventListener('submit', (event) => {
         event.preventDefault();
         const name = input.value.trim();
-        if (!name) return;
+        if (!name) {
+          input.setAttribute('aria-invalid', 'true');
+          showFailure('Enter a monitor name.');
+          input.focus();
+          return;
+        }
         if (this.monitorEditorMode === 'create') {
           this.checkpointActiveMonitor();
           if (!createMonitor(name)) {
             input.setAttribute('aria-invalid', 'true');
+            showFailure('Could not create a monitor. You can save up to 8 monitors; browser storage must be available.');
             return;
           }
           this.watchFilter = null;
         } else if (!renameActiveMonitor(name)) {
           input.setAttribute('aria-invalid', 'true');
+          showFailure('Could not rename this monitor. Browser storage is unavailable.');
           return;
         }
         this.monitorEditorMode = null;
         this.renderWatchlistStrip();
+        this.watchlistRow?.querySelector<HTMLSelectElement>('.ops-monitor-select')?.focus();
       });
       wrap.appendChild(form);
     }
 
     const pulseRow = el('div', 'ops-monitor-pulse');
     const pulseText = el('span');
-    pulseText.textContent = pulse.baselineAt === null
-      ? 'No review baseline yet.'
-      : `${pulse.newCount} new · ${pulse.strengthenedCount} strengthened · ${pulse.noLongerCurrentCount} no longer current`;
     const checkpoint = el('button') as HTMLButtonElement;
     checkpoint.type = 'button';
     checkpoint.textContent = 'Mark reviewed';
     checkpoint.addEventListener('click', () => {
-      checkpointMonitor(monitor.id, this.currentMonitorSignals(monitor));
+      if (!checkpointMonitor(monitor.id, this.currentMonitorSignals(monitor))) {
+        showFailure('Could not save the review baseline. Browser storage is unavailable.');
+        return;
+      }
       this.renderWatchlistStrip();
+      this.syncMonitorButton();
     });
     pulseRow.append(pulseText, checkpoint);
+    this.updateMonitorPulse(pulseRow, pulse);
     wrap.appendChild(pulseRow);
+    wrap.appendChild(feedback);
     return wrap;
   }
 
@@ -2836,7 +2959,7 @@ export class OpsShell {
       analysisCard('Supply chains', 'Routes, chokepoints, maritime context, and disruption.', () => this.openAnalysisMission('supply-chain-risk')),
       analysisCard('Energy', 'Pipelines, hubs, outages, and energy-security reporting.', () => this.openAnalysisMission('energy-security')),
     );
-    content.append(intro, grid);
+    content.append(intro, grid, actionButton('Check data coverage', () => this.inspectCoverage()));
 
     const exploreTitle = el('h3', 'ops-inspector-section-title');
     exploreTitle.textContent = 'Explore';
@@ -2875,6 +2998,7 @@ export class OpsShell {
     const snapshot = await fetchVantageHealth(controller.signal);
     if (this.destroyed || controller.signal.aborted) return;
     this.coverageHealth = snapshot;
+    this.coverageCheckFailed = snapshot === null;
     this.renderCoverageStatus();
     if (this.selection?.kind === 'coverage') this.inspectCoverage(false);
   }
@@ -2886,22 +3010,27 @@ export class OpsShell {
       this.systemStatus.textContent = 'Offline';
       return;
     }
-    const surfaces = getCoverageSurfaces(this.coverageHealth);
+    const surfaces = getCoverageSurfaces(this.coverageHealth, this.coverageCheckFailed);
     const current = surfaces.filter((surface) => surface.state === 'current').length;
     const unavailable = surfaces.filter((surface) => surface.state === 'unavailable').length;
-    this.systemStatus.dataset.state = this.coverageHealth === null || unavailable > 0 ? 'updating' : 'current';
-    this.systemStatus.textContent = this.coverageHealth === null ? 'Coverage checking' : `Coverage ${current}/${surfaces.length}`;
-    this.systemStatus.title = this.coverageHealth === null
+    this.systemStatus.dataset.state = this.coverageCheckFailed ? 'offline'
+      : this.coverageHealth === null ? 'updating'
+        : current === surfaces.length ? 'current' : 'degraded';
+    this.systemStatus.textContent = this.coverageCheckFailed ? 'Coverage unavailable'
+      : this.coverageHealth === null ? 'Coverage checking' : `Coverage ${current}/${surfaces.length}`;
+    this.systemStatus.title = this.coverageCheckFailed
+      ? 'Could not verify data readiness. Open coverage to retry.'
+      : this.coverageHealth === null
       ? 'Checking report, analysis, risk, air, and ship readiness'
       : `${current} current · ${surfaces.length - current - unavailable} delayed · ${unavailable} unavailable`;
   }
 
   private inspectCoverage(open = true): void {
     this.selection = { kind: 'coverage' };
-    const surfaces = getCoverageSurfaces(this.coverageHealth);
+    const surfaces = getCoverageSurfaces(this.coverageHealth, this.coverageCheckFailed);
     const checkedAt = this.coverageHealth
       ? `Checked ${formatTimeAgo(coerceDate(this.coverageHealth.checkedAt))}`
-      : 'Checking readiness now';
+      : this.coverageCheckFailed ? 'Readiness check unavailable' : 'Checking readiness now';
     const content = this.beginInspector('Coverage', 'Data readiness', checkedAt);
     const intro = el('p', 'ops-inspector-copy');
     intro.textContent = 'Current means the source is inside its published freshness window. Delayed and unavailable coverage is kept visible here instead of being presented as live.';
@@ -2924,6 +3053,11 @@ export class OpsShell {
     const note = el('p', 'ops-brief-provenance');
     note.textContent = 'Readiness is verified independently from whether a map layer is switched on.';
     content.appendChild(note);
+    content.appendChild(actionButton('Check again', (button) => {
+      button.disabled = true;
+      button.textContent = 'Checking…';
+      void this.refreshCoverage();
+    }));
     if (open) this.openInspector();
   }
 
@@ -2933,7 +3067,7 @@ export class OpsShell {
     const generatedAt = new Date();
     const markdown = buildVantageReportMarkdown({
       brief,
-      coverage: getCoverageSurfaces(this.coverageHealth),
+      coverage: getCoverageSurfaces(this.coverageHealth, this.coverageCheckFailed),
       monitor,
       pulse,
       url: window.location.href,

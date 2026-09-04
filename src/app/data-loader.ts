@@ -1902,6 +1902,12 @@ export class DataLoaderManager implements AppModule {
     this.loadedNewsSignature = null;
   }
 
+  /** An explicit user retry may probe again while automatic polling cools down. */
+  async retryNews(): Promise<void> {
+    this.digestBreaker.cooldownUntil = 0;
+    await this.loadNews();
+  }
+
   async loadNews(): Promise<void> {
     // Reset happy variant accumulator for fresh pipeline run
     if (SITE_VARIANT === 'happy') {

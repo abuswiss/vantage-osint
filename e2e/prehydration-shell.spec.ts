@@ -518,6 +518,12 @@ test.describe('server-rendered welcome page', () => {
 
   for (const language of ['fr', 'ar']) {
     test(`keeps the English prerender for ${language} when welcome copy falls back`, async ({ page }) => {
+      // These locales now have real welcome translations. Pin the missing
+      // namespace scenario instead of depending on the current catalog text.
+      await page.route(`**/pro/assets/${language}-*.js`, (route) => route.fulfill({
+        contentType: 'text/javascript',
+        body: 'export default {};',
+      }));
       const pageErrors: string[] = [];
       page.on('pageerror', (error) => pageErrors.push(error.message));
       await page.addInitScript(() => {

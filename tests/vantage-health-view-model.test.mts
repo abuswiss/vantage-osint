@@ -33,4 +33,11 @@ describe('Vantage coverage view model', () => {
     assert.equal(parseVantageHealth({ status: 'ready' }), null);
     assert.equal(getCoverageSurfaces(null).every((surface) => surface.state === 'checking'), true);
   });
+
+  it('distinguishes a failed readiness request from an in-progress check', () => {
+    const surfaces = getCoverageSurfaces(null, true);
+    assert.equal(surfaces.length, 5);
+    assert.ok(surfaces.every((surface) => surface.state === 'unavailable'));
+    assert.match(surfaces[0]!.detail, /could not be completed/);
+  });
 });
