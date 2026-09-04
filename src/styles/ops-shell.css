@@ -341,8 +341,7 @@ body.ops-mode .ops-top-right .ops-brief-button:focus-visible {
   transform-origin: top left;
   transition:
     opacity var(--motion-fast),
-    transform var(--motion-fast),
-    display var(--motion-fast) allow-discrete;
+    transform var(--motion-fast);
 }
 .ops-layer-popover[hidden] {
   display: none;
